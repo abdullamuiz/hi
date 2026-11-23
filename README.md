@@ -10,7 +10,7 @@ A private chat for exactly two people, with **Drops**: interactive cards you pla
 It also has text, link previews, photos, a shared scrapbook of pinned moments, "mood weather" next to your name, and push notifications.
 
 It's an installable PWA (iPhone and Android) built with Vite + Preact + TypeScript on Firebase, and it's ready to wrap with Capacitor later.
-The UI follows `design/Chat-prototype.html`.
+The UI follows the design prototype in `design/`. `Chat-with-Drops-standalone.html` opens directly in any browser (fonts included); `Chat-prototype.html` is the same design as source markup.
 
 | Chat | Feeling Map | Summary & story |
 |---|---|---|
