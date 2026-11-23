@@ -6,7 +6,8 @@ import { GENERAL, createTab, ensureGeneralTab, markRead, updateTab, watchTabs } 
 import { ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
-import { currentTheme, type ThemeId } from '../lib/themes';
+import { currentTheme, onThemeChange, type ThemeId } from '../lib/themes';
+import { ModeToggle } from './ModeToggle';
 import { drops, getDrop } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
 import { firstName, initial } from '../lib/names';
@@ -110,6 +111,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   }, [room.id, user.uid]);
 
   useEffect(() => { pushStatus().then(setPush); }, []);
+  useEffect(() => onThemeChange((id) => setTheme(id)), []);
 
   // Escape closes any open sheet.
   useEffect(() => {
@@ -221,6 +223,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
           <div class="hdr-name">{partner.name}</div>
           <PartnerStatus member={partnerMember} joined={!!partnerUid} />
         </div>
+        <ModeToggle uid={user.uid} />
         <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })} aria-label="Set your mood weather">
           <MoodIcon mood={myMood} />
         </button>

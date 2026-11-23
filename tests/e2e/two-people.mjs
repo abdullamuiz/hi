@@ -32,7 +32,12 @@ async function person(email) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error(`[${email}] pageerror`, e.message));
   await page.goto(APP);
-  if (email.startsWith('alice')) await shot(page, 'sign-in');
+  if (email.startsWith('alice')) {
+    await shot(page, 'sign-in');
+    await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+    await shot(page, 'sign-in-dark');
+    await page.getByRole('button', { name: 'Switch to light mode' }).click();
+  }
   await page.getByLabel('E-mail me a sign-in link').fill(email);
   await page.getByRole('button', { name: 'Send link' }).click();
   await page.getByText(`Link sent to ${email}`).waitFor();
@@ -198,20 +203,29 @@ try {
   await alice.getByRole('button', { name: /Stormy/ }).click();
   await bob.getByText(/Stormy today/).waitFor();
 
-  step('Themes');
-  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'hi');
+  step('Light/dark toggle, themes and icons');
+  const state = (p) => p.evaluate(() => ({
+    theme: document.documentElement.dataset.theme,
+    mode: document.documentElement.dataset.mode,
+    favicon: document.querySelector('link[rel="icon"][type="image/svg+xml"]').getAttribute('href'),
+  }));
+  assert.deepEqual(await state(alice), { theme: 'hi', mode: 'light', favicon: './icons/favicon-teal.svg' });
   await shot(alice, 'theme-hi');
+  await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
+  assert.deepEqual(await state(alice), { theme: 'dark', mode: 'dark', favicon: './icons/favicon-navy.svg' });
+  await shot(alice, 'theme-dark');
   await alice.getByRole('button', { name: 'Set your mood weather' }).click();
-  await alice.getByRole('radio', { name: /Midnight/ }).click();
-  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'midnight');
-  await shot(alice, 'theme-sheet-midnight');
+  await alice.getByRole('radio', { name: /Hi Dark/, checked: true }).waitFor();
+  await shot(alice, 'theme-sheet-dark');
   await alice.keyboard.press('Escape');
-  await shot(alice, 'theme-midnight');
-  // The choice follows the account: a fresh device for alice picks it up.
+  // The choice follows the account: alice reloads and is still dark; bob is unaffected.
   await alice.reload();
   await alice.getByRole('textbox', { name: 'Message' }).waitFor();
-  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'midnight');
-  assert.equal(await bob.evaluate(() => document.documentElement.dataset.theme), 'hi', "bob's theme is his own");
+  assert.equal((await state(alice)).mode, 'dark');
+  assert.equal((await state(bob)).mode, 'light', "bob's theme is his own");
+  await alice.getByRole('button', { name: 'Switch to light mode' }).click();
+  assert.equal((await state(alice)).mode, 'light');
+  await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
 
   step('Outsider cannot see anything');
   await eve.reload();

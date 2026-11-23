@@ -1,10 +1,11 @@
 // Builds public/icons/ from the designer's icon set in design/icons/.
 //
-//   design/icons/navy/   the app icon set that ships (matches the default "Hi" theme)
-//   design/icons/teal/   alternate colourway; its colours are used for the dark-mode favicon
+//   design/icons/teal/   LIGHT mode (the default): Home Screen / install icons ship from this set
+//   design/icons/navy/   DARK mode: browser-tab icon and in-app logo when the app is dark
 //
-// Copies the navy PNGs/SVGs as-is, then generates:
-//   favicon.svg              navy bubble, switching to the teal bubble when the browser is in dark mode
+// Copies the teal PNGs/SVGs as-is, then generates:
+//   favicon-teal.svg, favicon-navy.svg, bubble-teal.svg, bubble-navy.svg   (the app swaps these with its mode)
+//   favicon.svg              teal bubble, switching to the navy bubble when the browser is in dark mode
 //   favicon-16/48.png        raster favicons (32/64 are the designer's); favicon.ico bundles 16, 32 and 48
 //   badge-96.png             monochrome bubble for Android notification badges
 //
@@ -15,31 +16,37 @@ import { copyFileSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
-const SRC = 'design/icons/navy';
+const SRC = 'design/icons/teal';
+const DARK_SRC = 'design/icons/navy';
 const OUT = 'public/icons';
 mkdirSync(OUT, { recursive: true });
 
 for (const f of [
   'icon-192.png', 'icon-512.png', 'icon-1024.png', 'maskable-192.png', 'maskable-512.png',
   'apple-touch-icon.png', 'android-foreground-432.png', 'favicon-32.png', 'favicon-64.png',
-  'bubble.svg', 'ios.svg', 'maskable.svg', 'android-foreground.svg',
+  'ios.svg', 'maskable.svg', 'android-foreground.svg',
 ]) copyFileSync(`${SRC}/${f}`, `${OUT}/${f}`);
+copyFileSync(`${SRC}/favicon.svg`, `${OUT}/favicon-teal.svg`);
+copyFileSync(`${DARK_SRC}/favicon.svg`, `${OUT}/favicon-navy.svg`);
+copyFileSync(`${SRC}/bubble.svg`, `${OUT}/bubble-teal.svg`);
+copyFileSync(`${DARK_SRC}/bubble.svg`, `${OUT}/bubble-navy.svg`);
 
-// --- favicon.svg: same artwork, colours as classes so dark mode can swap them.
-const NAVY = '#252C48', TEAL_BUBBLE = '#1E7F93', DOT = '#54B5C6', LETTERS = '#F2EFE6';
-const navySvg = readFileSync(`${SRC}/favicon.svg`, 'utf8');
-const adaptive = navySvg
-  .replaceAll(`fill="${NAVY}"`, 'class="b"')
+// --- favicon.svg: same artwork, colours as classes so the browser's dark mode can swap them
+// (used before the app has started; afterwards the app points the icon at favicon-teal/navy.svg).
+const NAVY = '#252C48', TEAL_BUBBLE = '#1E7F93', TEAL_DOT = '#54B5C6', LETTERS = '#F2EFE6';
+const tealSvg = readFileSync(`${SRC}/favicon.svg`, 'utf8');
+const adaptive = tealSvg
+  .replaceAll(`fill="${TEAL_BUBBLE}"`, 'class="b"')
   .replaceAll(`fill="${LETTERS}"`, 'class="l"')
-  .replace(`fill="${DOT}"`, 'class="d"')
-  .replace(/>/, `><style>.b{fill:${NAVY}}.l{fill:${LETTERS}}.d{fill:${DOT}}` +
-    `@media (prefers-color-scheme:dark){.b{fill:${TEAL_BUBBLE}}.d{fill:${NAVY}}}</style>`);
+  .replace(`fill="${NAVY}"`, 'class="d"')
+  .replace(/>/, `><style>.b{fill:${TEAL_BUBBLE}}.l{fill:${LETTERS}}.d{fill:${NAVY}}` +
+    `@media (prefers-color-scheme:dark){.b{fill:${NAVY}}.d{fill:${TEAL_DOT}}}</style>`);
 if (/fill="#/.test(adaptive.replace(/<style>.*<\/style>/, ''))) throw new Error('favicon.svg: unexpected colours in source');
 writeFileSync(`${OUT}/favicon.svg`, adaptive);
 
 // --- rasters
 const sized = (svg, n) => svg.replace(/width="\d+" height="\d+"/, `width="${n}" height="${n}"`);
-const bubblePaths = [...navySvg.matchAll(/<(rect|path)[^>]*fill="#252C48"[^>]*\/>/g)].map((m) => m[0].replace(/fill="#252C48"/, 'fill="#000"'));
+const bubblePaths = [...tealSvg.matchAll(/<(rect|path)[^>]*fill="#1E7F93"[^>]*\/>/g)].map((m) => m[0].replace(/fill="#1E7F93"/, 'fill="#000"'));
 const badge = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">${bubblePaths.join('')}</svg>`;
 
 const browser = await chromium.launch();
@@ -52,7 +59,7 @@ async function png(svg, n) {
 // 32 and 64 come hand-tuned from the designer; render only the missing sizes.
 const fav = { 32: readFileSync(`${SRC}/favicon-32.png`) };
 for (const n of [16, 48]) {
-  fav[n] = await png(navySvg, n);
+  fav[n] = await png(tealSvg, n);
   writeFileSync(`${OUT}/favicon-${n}.png`, fav[n]);
 }
 writeFileSync(`${OUT}/badge-96.png`, await png(badge, 96));
