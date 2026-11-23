@@ -1,0 +1,35 @@
+{
+  "name": "drops-chat",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "emulators": "node scripts/emulators.mjs",
+    "dev:all": "npm --prefix functions run build && concurrently -k -n emu,web \"npm:emulators\" \"vite\"",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --dir tests/unit",
+    "test:rules": "firebase emulators:exec --only firestore,storage,auth --project demo-drops \"vitest run --dir tests/rules\"",
+    "test": "npm run test:unit && npm run test:rules && npm --prefix functions test",
+    "icons": "node scripts/make-icons.mjs",
+    "deploy": "npm run build && npm --prefix functions run build && firebase deploy",
+    "test:e2e": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,storage,functions --project demo-drops \"node tests/e2e/two-people.mjs\""
+  },
+  "dependencies": {
+    "firebase": "^13.4.0",
+    "preact": "^11.2.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.6",
+    "concurrently": "^10.0.7",
+    "firebase-tools": "^15.37.0",
+    "playwright": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}
