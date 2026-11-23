@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat with Drops</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2F5BEA}a:hover{color:#1E3FB0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+button{font-family:inherit;cursor:pointer}
+input{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; display: flex; flex-direction: column; background: #F5F6FA; color: #16181D; font-family: Inter, system-ui, sans-serif; overflow: hidden">
+
+  <header style="display: flex; align-items: center; gap: 10px; padding: 18px 14px 12px 16px; background: #FFFFFF; border-bottom: 1px solid #E3E5EC">
+    <div style="width: 42px; height: 42px; flex-shrink: 0; border-radius: 21px; background: #F2A15F; color: #16181D; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px">C</div>
+    <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0">
+      <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px">Colleague</div>
+      <div style="display: flex; align-items: center; gap: 5px; font-size: 13px; color: #5B606B">
+        <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5B606B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z"></path></svg>
+        Cloudy today · online
+      </div>
+    </div>
+    <button onClick="{{ openMood }}" aria-label="Set your mood weather" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #E3E5EC; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <sc-if value="{{ mySunny }}" hint-placeholder-val="{{ true }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C26A12" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></sc-if>
+      <sc-if value="{{ myCloudy }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5160" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z"></path></svg></sc-if>
+      <sc-if value="{{ myFoggy }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5160" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M6 13h12M4 17h16"></path></svg></sc-if>
+      <sc-if value="{{ myStormy }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B3F9E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 0 1 .5-8A6 6 0 0 1 19 9a3.5 3.5 0 0 1-1 6.9"></path><path d="M13 12l-3 5h4l-3 5"></path></svg></sc-if>
+    </button>
+    <button onClick="{{ openScrap }}" aria-label="Open scrapbook" style="position: relative; width: 44px; height: 44px; border-radius: 12px; border: 1px solid #E3E5EC; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"></path></svg>
+      <sc-if value="{{ hasScrap }}" hint-placeholder-val="{{ false }}">
+        <span style="position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 10px; background: #2F5BEA; color: #FFFFFF; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center">{{ scrapCount }}</span>
+      </sc-if>
+    </button>
+  </header>
+
+  <main ref="{{ setScroll }}" style="flex-grow: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+    <div style="align-self: center; font-size: 12px; color: #5B606B; font-weight: 500; padding: 4px 10px; background: #E9EBF1; border-radius: 10px">Today</div>
+    <sc-for list="{{ items }}" as="m" hint-placeholder-count="4">
+
+      <sc-if value="{{ m.theirs }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; justify-content: flex-start">
+          <div style="max-width: 78%; background: #FFF1E4; border-radius: 18px 18px 18px 6px; padding: 10px 14px; font-size: 15px; line-height: 1.4">{{ m.text }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ m.mine }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; justify-content: flex-end">
+          <div style="max-width: 78%; background: #2F5BEA; color: #FFFFFF; border-radius: 18px 18px 6px 18px; padding: 10px 14px; font-size: 15px; line-height: 1.4">{{ m.text }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ m.isLink }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; justify-content: {{ m.justify }}">
+          <div style="width: 272px; border-radius: 18px; overflow: hidden; background: #FFFFFF; border: 1px solid #E3E5EC">
+            <div style="height: 118px; background: #1C2233; display: flex; align-items: center; justify-content: center">
+              <sc-if value="{{ m.isVideo }}" hint-placeholder-val="{{ true }}">
+                <svg aria-hidden="true" width="52" height="52" viewBox="0 0 52 52"><circle cx="26" cy="26" r="25" fill="#FFFFFF" fill-opacity="0.16"></circle><path d="M21 16l16 10-16 10z" fill="#FFFFFF"></path></svg>
+              </sc-if>
+              <sc-if value="{{ m.isPage }}" hint-placeholder-val="{{ false }}">
+                <svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>
+              </sc-if>
+            </div>
+            <div style="padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px">
+              <div style="font-size: 12px; color: #5B606B; font-weight: 500">{{ m.domain }}</div>
+              <a href="{{ m.href }}" target="_blank" rel="noopener" style="font-weight: 600; font-size: 15px; color: #16181D; text-decoration: none; line-height: 1.3">{{ m.title }}</a>
+              <div style="font-size: 13px; color: #3A3E47; line-height: 1.35">{{ m.desc }}</div>
+              <sc-if value="{{ m.isVideo }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ m.onFeel }}" style="margin-top: 8px; height: 40px; border-radius: 10px; border: 1px solid #DADDE5; background: #F7F8FB; color: #16181D; font-size: 13px; font-weight: 600">Watched it? Start a Feeling Map</button>
+              </sc-if>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ m.isPhoto }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; justify-content: {{ m.justify }}">
+          <div style="width: 240px; display: flex; flex-direction: column; gap: 6px">
+            <button onClick="{{ m.onView }}" aria-label="View photo full screen" style="position: relative; display: block; width: 240px; height: 180px; padding: 0; border: none; border-radius: 18px; overflow: hidden; background: #DCE6F5">
+              <svg aria-hidden="true" width="240" height="180" viewBox="0 0 240 180" style="display: block"><rect width="240" height="180" fill="#DCE6F5"></rect><circle cx="182" cy="50" r="22" fill="#F2A15F"></circle><polygon points="0,180 70,88 118,148 166,102 240,180" fill="#7E90B8"></polygon><polygon points="0,180 46,128 104,180" fill="#4E618C"></polygon></svg>
+              <span style="position: absolute; left: 10px; bottom: 10px; font-size: 11px; font-weight: 600; background: #FFFFFF; color: #16181D; padding: 3px 8px; border-radius: 8px">Sample photo</span>
+            </button>
+            <sc-if value="{{ m.hasCaption }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size: 14px; color: #3A3E47; padding: 0 6px; text-align: {{ m.capAlign }}">{{ m.caption }}</div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ m.isSys }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; justify-content: center">
+          <div style="font-size: 13px; color: #5B606B; text-align: center; padding: 2px 20px">{{ m.text }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ m.isDrop }}" hint-placeholder-val="{{ false }}">
+        <section style="background: #FFFFFF; border: 1px solid #E3E5EC; border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+          <div style="display: flex; align-items: center; gap: 10px">
+            <div style="width: 36px; height: 36px; border-radius: 10px; background: #16181D; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z"></path></svg>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 1px; flex-grow: 1">
+              <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 16px">{{ m.title }}</div>
+              <div style="font-size: 12px; color: #5B606B">{{ m.sub }} · dropped by {{ m.fromName }}</div>
+            </div>
+          </div>
+
+          <sc-if value="{{ m.isFeel }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 12px">
+              <sc-if value="{{ m.fNotDone }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 12px">
+                  <div style="display: flex; justify-content: space-between; align-items: baseline">
+                    <div style="font-weight: 600; font-size: 16px">{{ m.sceneName }}</div>
+                    <div style="font-size: 12px; color: #5B606B">{{ m.sceneNum }}</div>
+                  </div>
+                  <button onClick="{{ m.onGrid }}" aria-label="Mood grid: tap where this scene left you" style="position: relative; display: block; width: 100%; height: 210px; padding: 0; border-radius: 14px; border: 1px solid #DADDE5; background: #F7F8FB; overflow: hidden; cursor: crosshair">
+                    <span style="position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #DADDE5"></span>
+                    <span style="position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: #DADDE5"></span>
+                    <span style="position: absolute; top: 6px; left: 0; right: 0; text-align: center; font-size: 11px; color: #5B606B; font-weight: 500">Intense</span>
+                    <span style="position: absolute; bottom: 6px; left: 0; right: 0; text-align: center; font-size: 11px; color: #5B606B; font-weight: 500">Calm</span>
+                    <span style="position: absolute; left: 8px; top: calc(50% + 4px); font-size: 11px; color: #5B606B; font-weight: 500">Heavy</span>
+                    <span style="position: absolute; right: 8px; top: calc(50% + 4px); font-size: 11px; color: #5B606B; font-weight: 500">Uplifting</span>
+                    <sc-if value="{{ m.fLocked }}" hint-placeholder-val="{{ false }}"><span style="{{ m.cDot }}"></span></sc-if>
+                    <sc-if value="{{ m.hasMine }}" hint-placeholder-val="{{ false }}"><span style="{{ m.myDot }}"></span></sc-if>
+                  </button>
+                  <sc-if value="{{ m.fHidden }}" hint-placeholder-val="{{ true }}">
+                    <div style="display: flex; flex-direction: column; gap: 10px">
+                      <div style="font-size: 13px; color: #6B4A2E; background: #FFF4EA; border-radius: 10px; padding: 8px 12px">Colleague placed their dot · hidden until you lock in</div>
+                      <sc-if value="{{ m.canLock }}" hint-placeholder-val="{{ false }}">
+                        <button onClick="{{ m.onLock }}" style="height: 48px; border-radius: 12px; border: none; background: #16181D; color: #FFFFFF; font-size: 15px; font-weight: 600">Lock in &amp; reveal</button>
+                      </sc-if>
+                      <sc-if value="{{ m.cantLock }}" hint-placeholder-val="{{ true }}">
+                        <button disabled="disabled" style="height: 48px; border-radius: 12px; border: none; background: #E3E5EC; color: #5B606B; font-size: 15px; font-weight: 600; cursor: default">Tap the grid to place your dot</button>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ m.fLocked }}" hint-placeholder-val="{{ false }}">
+                    <div style="display: flex; align-items: center; gap: 10px">
+                      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px">
+                        <div style="font-weight: 600; font-size: 15px">{{ m.fGap }}</div>
+                        <div style="font-size: 12px; color: #5B606B">Circle = you · square = Colleague</div>
+                      </div>
+                      <button onClick="{{ m.onNext }}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: none; background: #16181D; color: #FFFFFF; font-size: 14px; font-weight: 600">{{ m.nextLabel }}</button>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.fDone }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px">
+                  <div style="background: #16181D; color: #FFFFFF; border-radius: 14px; padding: 14px">
+                    <div style="font-size: 12px; font-weight: 600; color: #B9C6F7">Talk about this one</div>
+                    <div style="font-size: 16px; margin-top: 4px">You felt most differently at <strong>{{ m.biggest }}</strong></div>
+                  </div>
+                  <sc-for list="{{ m.summary }}" as="r" hint-placeholder-count="4">
+                    <div style="display: flex; flex-direction: column; gap: 5px">
+                      <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="font-weight: 500">{{ r.name }}</span><span style="color: #5B606B">{{ r.label }}</span></div>
+                      <div style="height: 6px; border-radius: 3px; background: #EEF0F4"><div style="{{ r.bar }}"></div></div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ m.isBlind }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 12px">
+              <div style="font-weight: 600; font-size: 16px; line-height: 1.35">{{ m.question }}</div>
+              <sc-if value="{{ m.bOpen }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 10px">
+                  <label for="{{ m.inputId }}" class="sr">Your answer</label>
+                  <input id="{{ m.inputId }}" value="{{ m.bDraft }}" onChange="{{ m.onBDraft }}" placeholder="Your answer, kept private" style="height: 48px; border-radius: 12px; border: 1px solid #DADDE5; padding: 0 14px; font-size: 15px; background: #F7F8FB">
+                  <div style="font-size: 13px; color: #6B4A2E; background: #FFF4EA; border-radius: 10px; padding: 8px 12px">Colleague has answered · hidden</div>
+                  <sc-if value="{{ m.bCan }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ m.onBLock }}" style="height: 48px; border-radius: 12px; border: none; background: #16181D; color: #FFFFFF; font-size: 15px; font-weight: 600">Lock in &amp; flip</button>
+                  </sc-if>
+                  <sc-if value="{{ m.bCant }}" hint-placeholder-val="{{ true }}">
+                    <button disabled="disabled" style="height: 48px; border-radius: 12px; border: none; background: #E3E5EC; color: #5B606B; font-size: 15px; font-weight: 600; cursor: default">Type an answer first</button>
+                  </sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.bLocked }}" hint-placeholder-val="{{ false }}">
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+                  <div style="background: #2F5BEA; color: #FFFFFF; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px">
+                    <div style="font-size: 12px; font-weight: 600">You</div>
+                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; overflow-wrap: anywhere">{{ m.myAns }}</div>
+                  </div>
+                  <div style="background: #F2A15F; color: #16181D; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 6px">
+                    <div style="font-size: 12px; font-weight: 600">Colleague</div>
+                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700">Hopeful</div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ m.isGap }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 12px">
+              <div style="font-weight: 600; font-size: 16px; line-height: 1.35">{{ m.question }}</div>
+              <sc-if value="{{ m.gOpen }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 8px">
+                  <label for="{{ m.inputId }}" class="sr">Your take</label>
+                  <input id="{{ m.inputId }}" type="range" min="0" max="100" value="{{ m.gVal }}" onChange="{{ m.onGVal }}" style="width: 100%; height: 44px; accent-color: #2F5BEA; margin: 0">
+                  <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B606B"><span>Not at all</span><span>Every minute</span></div>
+                  <button onClick="{{ m.onGLock }}" style="height: 48px; border-radius: 12px; border: none; background: #16181D; color: #FFFFFF; font-size: 15px; font-weight: 600">Lock my take</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.gLocked }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px">
+                  <div style="position: relative; height: 8px; margin: 10px 4px 4px; border-radius: 4px; background: #E3E5EC">
+                    <div style="{{ m.cMark }}"></div>
+                    <div style="{{ m.mMark }}"></div>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B606B"><span>Not at all</span><span>Every minute</span></div>
+                  <div style="display: flex; align-items: baseline; gap: 10px">
+                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700">{{ m.gapNum }}</div>
+                    <div style="font-size: 14px; color: #3A3E47">points apart. {{ m.gPrompt }}</div>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ m.isStory }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 10px">
+              <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 14px; background: #F7F8FB">
+                <sc-for list="{{ m.lines }}" as="l" hint-placeholder-count="2">
+                  <sc-if value="{{ l.c }}" hint-placeholder-val="{{ true }}">
+                    <div style="font-size: 15px; line-height: 1.45; padding-left: 10px; border-left: 3px solid #F2A15F">{{ l.text }}</div>
+                  </sc-if>
+                  <sc-if value="{{ l.me }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size: 15px; line-height: 1.45; padding-left: 10px; border-left: 3px solid #2F5BEA">{{ l.text }}</div>
+                  </sc-if>
+                </sc-for>
+              </div>
+              <div style="font-size: 12px; color: #5B606B">{{ m.sCount }} lines · blue = you, orange = Colleague</div>
+              <sc-if value="{{ m.sOpen }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; gap: 8px">
+                  <label for="{{ m.inputId }}" class="sr">Your next line</label>
+                  <input id="{{ m.inputId }}" value="{{ m.sDraft }}" onChange="{{ m.onSDraft }}" onKeyDown="{{ m.onSKey }}" placeholder="Write the next line…" style="flex-grow: 1; min-width: 0; height: 46px; border-radius: 12px; border: 1px solid #DADDE5; padding: 0 12px; font-size: 15px; background: #F7F8FB">
+                  <button onClick="{{ m.onSAdd }}" style="height: 46px; padding: 0 16px; border-radius: 12px; border: none; background: #16181D; color: #FFFFFF; font-size: 14px; font-weight: 600">Add</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.sWaiting }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size: 13px; color: #6B4A2E">Colleague is writing the next line…</div>
+              </sc-if>
+              <sc-if value="{{ m.sDone }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size: 14px; font-weight: 600">The end. Pin it to keep it.</div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <div style="display: flex; justify-content: flex-end; border-top: 1px solid #EEF0F4; padding-top: 10px">
+            <sc-if value="{{ m.unpinned }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ m.onPin }}" style="height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid #DADDE5; background: #FFFFFF; color: #16181D; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px">
+                <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"></path></svg>
+                Pin to scrapbook
+              </button>
+            </sc-if>
+            <sc-if value="{{ m.pinned }}" hint-placeholder-val="{{ false }}">
+              <span style="height: 40px; padding: 0 14px; display: flex; align-items: center; font-size: 13px; font-weight: 600; color: #2F5BEA">Pinned</span>
+            </sc-if>
+          </div>
+        </section>
+      </sc-if>
+
+    </sc-for>
+    <sc-if value="{{ typing }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; justify-content: flex-start">
+        <div style="background: #FFF1E4; border-radius: 18px 18px 18px 6px; padding: 10px 14px; font-size: 14px; color: #6B4A2E">Colleague is typing…</div>
+      </div>
+    </sc-if>
+  </main>
+
+  <footer style="display: flex; align-items: center; gap: 8px; padding: 10px 12px 26px; background: #FFFFFF; border-top: 1px solid #E3E5EC">
+    <button onClick="{{ openTray }}" aria-label="Add a Drop" style="width: 46px; height: 46px; flex-shrink: 0; border-radius: 23px; border: none; background: #16181D; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
+    <button onClick="{{ sendPhoto }}" aria-label="Send a photo" style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 22px; border: 1px solid #E3E5EC; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><circle cx="9" cy="10" r="1.8"></circle><path d="M21 16l-5-5-8 8"></path></svg>
+    </button>
+    <label for="chat-input" class="sr">Message</label>
+    <input id="chat-input" value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="Message" style="flex-grow: 1; min-width: 0; height: 46px; border-radius: 23px; border: 1px solid #E3E5EC; padding: 0 16px; font-size: 15px; background: #F5F6FA">
+    <button onClick="{{ send }}" aria-label="Send" style="width: 46px; height: 46px; flex-shrink: 0; border-radius: 23px; border: none; background: #2F5BEA; display: flex; align-items: center; justify-content: center">
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+    </button>
+  </footer>
+
+  <sc-if value="{{ viewerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #0E1016; display: flex; flex-direction: column; color: #FFFFFF">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 18px 16px">
+        <div style="font-size: 14px; font-weight: 600">{{ viewerFrom }}</div>
+        <button onClick="{{ closeViewer }}" aria-label="Close photo" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: #262A35; display: flex; align-items: center; justify-content: center">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+      <div style="flex-grow: 1; display: flex; align-items: center; justify-content: center">
+        <svg role="img" aria-label="Sample photo" width="390" height="292" viewBox="0 0 240 180" style="display: block"><rect width="240" height="180" fill="#DCE6F5"></rect><circle cx="182" cy="50" r="22" fill="#F2A15F"></circle><polygon points="0,180 70,88 118,148 166,102 240,180" fill="#7E90B8"></polygon><polygon points="0,180 46,128 104,180" fill="#4E618C"></polygon></svg>
+      </div>
+      <div style="padding: 16px 16px 30px; display: flex; flex-direction: column; gap: 12px">
+        <div style="font-size: 15px">{{ viewerCaption }}</div>
+        <div style="display: flex; gap: 10px">
+          <button onClick="{{ pinPhoto }}" style="flex-grow: 1; height: 48px; border-radius: 12px; border: none; background: #FFFFFF; color: #16181D; font-size: 15px; font-weight: 600">Pin to scrapbook</button>
+          <button onClick="{{ closeViewer }}" style="height: 48px; padding: 0 18px; border-radius: 12px; border: 1px solid #3A3F4C; background: transparent; color: #FFFFFF; font-size: 15px; font-weight: 600">Back to chat</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ sheetOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; justify-content: flex-end">
+      <button onClick="{{ closeSheet }}" aria-label="Close" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border: none; background: rgba(22, 24, 29, 0.45); cursor: default"></button>
+      <div style="position: relative; background: #FFFFFF; border-radius: 24px 24px 0 0; padding: 22px 16px 30px; display: flex; flex-direction: column; gap: 14px">
+
+        <sc-if value="{{ trayOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 14px">
+            <div>
+              <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px">Drop something</div>
+              <div style="font-size: 13px; color: #5B606B; margin-top: 2px">Interactive cards you both play with, right in the chat</div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+              <sc-for list="{{ trayItems }}" as="t" hint-placeholder-count="4">
+                <button onClick="{{ t.add }}" style="min-height: 96px; padding: 14px; border-radius: 16px; border: 1px solid #E3E5EC; background: #F7F8FB; text-align: left; display: flex; flex-direction: column; gap: 6px; color: #16181D">
+                  <span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 16px">{{ t.name }}</span>
+                  <span style="font-size: 13px; color: #5B606B; line-height: 1.35">{{ t.desc }}</span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="font-size: 12px; color: #5B606B">New Drops built in Claude show up here once you enable them.</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ moodOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 12px">
+            <div>
+              <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px">Your mood weather</div>
+              <div style="font-size: 13px; color: #5B606B; margin-top: 2px">Shows next to your name instead of "online"</div>
+            </div>
+            <sc-for list="{{ moods }}" as="w" hint-placeholder-count="4">
+              <button onClick="{{ w.pick }}" style="{{ w.rowStyle }}">
+                <span style="width: 40px; height: 40px; border-radius: 12px; background: #F0F1F5; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+                  <sc-if value="{{ w.isSunny }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C26A12" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></sc-if>
+                  <sc-if value="{{ w.isCloudy }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5160" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z"></path></svg></sc-if>
+                  <sc-if value="{{ w.isFoggy }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4A5160" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M6 13h12M4 17h16"></path></svg></sc-if>
+                  <sc-if value="{{ w.isStormy }}" hint-placeholder-val="{{ false }}"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B3F9E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 0 1 .5-8A6 6 0 0 1 19 9a3.5 3.5 0 0 1-1 6.9"></path><path d="M13 12l-3 5h4l-3 5"></path></svg></sc-if>
+                </span>
+                <span style="display: flex; flex-direction: column; gap: 1px">
+                  <span style="font-weight: 600; font-size: 15px">{{ w.label }}</span>
+                  <span style="font-size: 13px; color: #5B606B">{{ w.desc }}</span>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ scrapOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 12px">
+            <div>
+              <div style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 20px">Scrapbook</div>
+              <div style="font-size: 13px; color: #5B606B; margin-top: 2px">Moments you both pinned</div>
+            </div>
+            <sc-if value="{{ noScrap }}" hint-placeholder-val="{{ true }}">
+              <div style="padding: 20px; border-radius: 14px; background: #F7F8FB; font-size: 14px; color: #5B606B; text-align: center">Nothing pinned yet. Tap "Pin to scrapbook" on any Drop.</div>
+            </sc-if>
+            <sc-for list="{{ scrap }}" as="p" hint-placeholder-count="0">
+              <div style="padding: 14px; border-radius: 14px; background: #F7F8FB; border: 1px solid #E3E5EC; display: flex; flex-direction: column; gap: 4px">
+                <div style="font-weight: 600; font-size: 15px">{{ p.title }}</div>
+                <div style="font-size: 13px; color: #3A3E47">{{ p.detail }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  componentWillUnmount() { (this.tm || []).forEach(function (t) { clearTimeout(t); }); }
+  componentDidUpdate() {
+    var s = this.st();
+    var k = s.msgs.length + (s.typing ? 1 : 0);
+    var self = this;
+    Object.keys(s.drops).forEach(function (id) { var d = s.drops[id]; if (d.kind === 'story') k += d.lines.length * 100; });
+    if (k !== this.lastK) {
+      this.lastK = k;
+      if (this.el) { var el = this.el; setTimeout(function () { el.scrollTop = el.scrollHeight; }, 30); }
+    }
+  }
+  later(ms, fn) { this.tm = this.tm || []; this.tm.push(setTimeout(fn, ms)); }
+  nid() { this.n = (this.n || 100) + 1; return this.n; }
+  scenes() {
+    return [
+      { name: 'Leaving Earth', c: { x: 25, y: 55 } },
+      { name: "Miller's planet", c: { x: 28, y: 12 } },
+      { name: 'The docking spin', c: { x: 72, y: 8 } },
+      { name: 'The bookshelf', c: { x: 84, y: 40 } }
+    ];
+  }
+  newDrop(kind) {
+    if (kind === 'feel') return { kind: 'feel', scene: 0, mine: {}, locked: {}, done: false, pinned: false };
+    if (kind === 'blind') return { kind: 'blind', draft: '', ans: '', locked: false, pinned: false };
+    if (kind === 'gap') return { kind: 'gap', val: 50, locked: false, pinned: false };
+    return { kind: 'story', lines: [{ who: 'c', text: 'The ship drifted past the last moon in the system.' }], draft: '', ci: 0, waiting: false, pinned: false };
+  }
+  st() {
+    var s = this.state || {};
+    if (!this.init) {
+      this.init = {
+        msgs: [
+          { id: 'm1', kind: 'text', from: 'c', text: 'Finally finished Interstellar last night' },
+          { id: 'm2', kind: 'text', from: 'me', text: 'Same! I have thoughts. Lots of them.' },
+          { id: 'm2b', kind: 'link', from: 'me', href: 'https://www.youtube.com/results?search_query=interstellar+official+trailer', domain: 'youtube.com', title: 'Interstellar – Official Trailer', desc: 'Rewatching this before we talk', isVideo: true },
+          { id: 'm2c', kind: 'photo', from: 'c', caption: 'Cinema snacks were elite' },
+          { id: 'm3', kind: 'text', from: 'c', text: 'Ok, not just text this time. Dropping something.' },
+          { id: 'm4', kind: 'drop', from: 'c', dropId: 'd1' },
+          { id: 'm5', kind: 'sys', text: 'Tap + to drop a Blind Reveal, Gap Slider or Story' }
+        ],
+        drops: { d1: this.newDrop('feel') }
+      };
+    }
+    return {
+      msgs: s.msgs || this.init.msgs,
+      drops: s.drops || this.init.drops,
+      draft: s.draft || '',
+      typing: !!s.typing,
+      sheet: s.sheet || null,
+      mood: s.mood || 'sunny',
+      scrap: s.scrap || [],
+      viewer: s.viewer || null
+    };
+  }
+  sendPhoto() {
+    var s = this.st();
+    this.setState({ msgs: s.msgs.concat([{ id: 'm' + this.nid(), kind: 'photo', from: 'me', caption: '' }]) });
+    this.sayC('Ha, caption this one', 1500);
+  }
+  upd(id, patch) {
+    var s = this.st();
+    var drops = Object.assign({}, s.drops);
+    drops[id] = Object.assign({}, drops[id], patch);
+    this.setState({ drops: drops });
+  }
+  sayC(text, ms) {
+    var self = this;
+    this.setState({ typing: true });
+    this.later(ms, function () {
+      var s = self.st();
+      self.setState({ typing: false, msgs: s.msgs.concat([{ id: 'm' + self.nid(), kind: 'text', from: 'c', text: text }]) });
+    });
+  }
+  send() {
+    var s = this.st();
+    var t = s.draft.trim();
+    if (!t) return;
+    var canned = ['Haha, fair', 'Wait, explain that one', 'Drop a Gap Slider on that', 'Ok you win this round', 'That is exactly what I felt'];
+    this.ci = (this.ci || 0) + 1;
+    var urlM = t.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
+    if (urlM) {
+      var href = /^https?:/i.test(urlM[0]) ? urlM[0] : 'https://' + urlM[0];
+      var domain = href.replace(/^https?:\/\//i, '').split('/')[0].replace(/^www\./i, '');
+      var isVideo = /youtube|youtu\.be|vimeo|netflix/i.test(domain);
+      var rest = t.replace(urlM[0], '').trim();
+      this.setState({ draft: '', msgs: s.msgs.concat([{ id: 'm' + this.nid(), kind: 'link', from: 'me', href: href, domain: domain, title: (isVideo ? 'Video' : 'Page') + ' on ' + domain, desc: rest || 'In the real app, the page title and image load here', isVideo: isVideo }]) });
+      this.sayC(isVideo ? 'Ooh, watching it now' : 'Opening it', 1400);
+      return;
+    }
+    this.setState({ draft: '', msgs: s.msgs.concat([{ id: 'm' + this.nid(), kind: 'text', from: 'me', text: t }]) });
+    this.sayC(canned[this.ci % canned.length], 1400);
+  }
+  addDrop(kind) {
+    var s = this.st();
+    var id = 'd' + this.nid();
+    var drops = Object.assign({}, s.drops);
+    drops[id] = this.newDrop(kind);
+    this.setState({ drops: drops, sheet: null, msgs: s.msgs.concat([{ id: 'm' + this.nid(), kind: 'drop', from: 'me', dropId: id }]) });
+    var lines = { feel: 'Placing my dots now', blind: 'Answered. No peeking!', gap: 'Slid mine. Your move', story: 'I wrote the first line, your turn' };
+    this.sayC(lines[kind], 1600);
+  }
+  pin(id, title, detail) {
+    var s = this.st();
+    var drops = Object.assign({}, s.drops);
+    drops[id] = Object.assign({}, drops[id], { pinned: true });
+    this.setState({ drops: drops, scrap: s.scrap.concat([{ id: 'p' + this.nid(), title: title, detail: detail }]) });
+  }
+  renderVals() {
+    var self = this;
+    var s = this.st();
+    var SC = this.scenes();
+    var dotB = 'position: absolute; width: 18px; height: 18px; box-sizing: border-box; border: 3px solid #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.3); ';
+    var lab = function (d) { return d < 20 ? 'In sync' : (d < 45 ? 'A bit apart' : 'Worlds apart'); };
+    var C_GAP = 82;
+
+    var items = s.msgs.map(function (m) {
+      var v = {
+        theirs: m.kind === 'text' && m.from === 'c',
+        mine: m.kind === 'text' && m.from === 'me',
+        isSys: m.kind === 'sys',
+        isDrop: m.kind === 'drop',
+        text: m.text || '',
+        isFeel: false, isBlind: false, isGap: false, isStory: false,
+        isLink: m.kind === 'link',
+        isPhoto: m.kind === 'photo',
+        justify: m.from === 'me' ? 'flex-end' : 'flex-start'
+      };
+      if (m.kind === 'link') {
+        v.href = m.href; v.domain = m.domain; v.title = m.title; v.desc = m.desc;
+        v.isVideo = !!m.isVideo; v.isPage = !m.isVideo;
+        v.onFeel = function () { self.addDrop('feel'); };
+        return v;
+      }
+      if (m.kind === 'photo') {
+        v.caption = m.caption || '';
+        v.hasCaption = !!m.caption;
+        v.capAlign = m.from === 'me' ? 'right' : 'left';
+        v.onView = function () { self.setState({ viewer: m.id }); };
+        return v;
+      }
+      if (m.kind !== 'drop') return v;
+      var id = m.dropId;
+      var d = s.drops[id];
+      var cur = function () { return self.st().drops[id]; };
+      v.fromName = m.from === 'me' ? 'you' : 'Colleague';
+      v.pinned = !!d.pinned;
+      v.unpinned = !d.pinned;
+      v.inputId = 'in-' + id;
+
+      if (d.kind === 'feel') {
+        var i = d.scene, sc = SC[i], mm = d.mine[i], lk = !!d.locked[i];
+        v.isFeel = true;
+        v.title = 'Feeling Map';
+        v.sub = 'Interstellar';
+        v.fDone = d.done; v.fNotDone = !d.done;
+        v.sceneName = sc.name;
+        v.sceneNum = 'Scene ' + (i + 1) + ' of ' + SC.length;
+        v.hasMine = !!mm; v.fLocked = lk; v.fHidden = !lk;
+        v.myDot = mm ? dotB + 'border-radius: 9px; background: #2F5BEA; left: calc(' + mm.x + '% - 9px); top: calc(' + mm.y + '% - 9px)' : '';
+        v.cDot = dotB + 'border-radius: 4px; background: #F2A15F; left: calc(' + sc.c.x + '% - 9px); top: calc(' + sc.c.y + '% - 9px)';
+        v.canLock = !!mm && !lk; v.cantLock = !mm && !lk;
+        v.fGap = lab(mm ? Math.hypot(mm.x - sc.c.x, mm.y - sc.c.y) : 0);
+        v.nextLabel = i < SC.length - 1 ? 'Next scene' : 'See summary';
+        v.onGrid = function (e) {
+          var c = cur();
+          if (c.done || c.locked[c.scene]) return;
+          var r = e.currentTarget.getBoundingClientRect();
+          var x = Math.max(4, Math.min(96, Math.round((e.clientX - r.left) / r.width * 100)));
+          var y = Math.max(5, Math.min(95, Math.round((e.clientY - r.top) / r.height * 100)));
+          var mine = Object.assign({}, c.mine); mine[c.scene] = { x: x, y: y };
+          self.upd(id, { mine: mine });
+        };
+        v.onLock = function () {
+          var c = cur();
+          if (!c.mine[c.scene]) return;
+          var locked = Object.assign({}, c.locked); locked[c.scene] = true;
+          self.upd(id, { locked: locked });
+        };
+        v.onNext = function () {
+          var c = cur();
+          if (c.scene < SC.length - 1) self.upd(id, { scene: c.scene + 1 }); else self.upd(id, { done: true });
+        };
+        var best = -1, bi = 0;
+        var ds = SC.map(function (x, j) {
+          var q = d.mine[j];
+          var dd = q ? Math.hypot(q.x - x.c.x, q.y - x.c.y) : 0;
+          if (dd > best) { best = dd; bi = j; }
+          return dd;
+        });
+        v.biggest = SC[bi].name;
+        v.summary = SC.map(function (x, j) {
+          return {
+            name: x.name,
+            label: lab(ds[j]),
+            bar: 'height: 6px; border-radius: 3px; background: ' + (j === bi ? '#16181D' : '#9AA0AD') + '; width: ' + Math.max(4, Math.min(100, Math.round(ds[j] / 1.1))) + '%'
+          };
+        });
+        v.onPin = function () { self.pin(id, 'Feeling Map · Interstellar', d.done ? 'Felt most differently at ' + SC[bi].name : 'In progress · scene ' + (d.scene + 1)); };
+      } else if (d.kind === 'blind') {
+        v.isBlind = true;
+        v.title = 'Blind Reveal';
+        v.sub = 'Answer privately';
+        v.question = 'One word for how the ending made you feel?';
+        v.bOpen = !d.locked; v.bLocked = d.locked;
+        v.bDraft = d.draft;
+        v.bCan = !!d.draft.trim(); v.bCant = !d.draft.trim();
+        v.myAns = d.ans;
+        v.onBDraft = function (e) { self.upd(id, { draft: e.target.value }); };
+        v.onBLock = function () { var c = cur(); var a = c.draft.trim(); if (a) self.upd(id, { ans: a, locked: true }); };
+        v.onPin = function () { self.pin(id, 'Blind Reveal · the ending', d.locked ? 'You: ' + d.ans + ' · Colleague: Hopeful' : 'Still waiting on your answer'); };
+      } else if (d.kind === 'gap') {
+        var gap = Math.abs(d.val - C_GAP);
+        v.isGap = true;
+        v.title = 'Gap Slider';
+        v.sub = 'Hot take';
+        v.question = 'Was the long runtime worth it?';
+        v.gOpen = !d.locked; v.gLocked = d.locked;
+        v.gVal = d.val;
+        v.onGVal = function (e) { self.upd(id, { val: Number(e.target.value) }); };
+        v.onGLock = function () { self.upd(id, { locked: true }); };
+        var mk = 'position: absolute; top: -6px; width: 20px; height: 20px; box-sizing: border-box; border: 3px solid #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.3); ';
+        v.mMark = mk + 'border-radius: 10px; background: #2F5BEA; left: calc(' + d.val + '% - 10px)';
+        v.cMark = mk + 'border-radius: 5px; background: #F2A15F; left: calc(' + C_GAP + '% - 10px)';
+        v.gapNum = gap;
+        v.gPrompt = gap < 15 ? 'Basically the same take.' : (gap < 40 ? 'Close-ish. Who budges?' : 'Big gap. Make your case in one message.');
+        v.onPin = function () { self.pin(id, 'Gap Slider · runtime', d.locked ? gap + ' points apart' : 'Not locked yet'); };
+      } else {
+        var CL = ['Then the radio crackled with a voice nobody expected.', 'It was their own voice, recorded years from now.', 'So they turned the ship around, toward the voice.', 'Nobody on board slept that night.'];
+        v.isStory = true;
+        v.title = 'Tag-team Story';
+        v.sub = 'One line each';
+        v.lines = d.lines.map(function (l) { return { text: l.text, me: l.who === 'me', c: l.who === 'c' }; });
+        v.sCount = d.lines.length + ' / 8';
+        v.sDone = d.lines.length >= 8;
+        v.sWaiting = !!d.waiting && d.lines.length < 8;
+        v.sOpen = !d.waiting && d.lines.length < 8;
+        v.sDraft = d.draft;
+        v.onSDraft = function (e) { self.upd(id, { draft: e.target.value }); };
+        var add = function () {
+          var c = cur();
+          var t = c.draft.trim();
+          if (!t || c.lines.length >= 8 || c.waiting) return;
+          self.upd(id, { lines: c.lines.concat([{ who: 'me', text: t }]), draft: '', waiting: true });
+          self.later(1500, function () {
+            var c2 = cur();
+            if (c2.lines.length < 8) self.upd(id, { lines: c2.lines.concat([{ who: 'c', text: CL[(c2.ci || 0) % CL.length] }]), ci: (c2.ci || 0) + 1, waiting: false });
+            else self.upd(id, { waiting: false });
+          });
+        };
+        v.onSAdd = add;
+        v.onSKey = function (e) { if (e.key === 'Enter') add(); };
+        v.onPin = function () { self.pin(id, 'Tag-team Story', d.lines.map(function (l) { return l.text; }).join(' ')); };
+      }
+      return v;
+    });
+
+    var moodDefs = [
+      { id: 'sunny', label: 'Sunny', desc: 'Good day, up for anything' },
+      { id: 'cloudy', label: 'Cloudy', desc: 'A bit meh' },
+      { id: 'foggy', label: 'Foggy', desc: 'Tired, replies will be slow' },
+      { id: 'stormy', label: 'Stormy', desc: 'Rough day, be gentle' }
+    ];
+
+    var vm = s.viewer ? s.msgs.filter(function (m) { return m.id === s.viewer; })[0] : null;
+
+    return {
+      viewerOpen: !!vm,
+      viewerCaption: vm ? (vm.caption || 'No caption yet') : '',
+      viewerFrom: vm ? (vm.from === 'me' ? 'You' : 'Colleague') : '',
+      closeViewer: function () { self.setState({ viewer: null }); },
+      pinPhoto: function () {
+        var c = self.st();
+        self.setState({ viewer: null, scrap: c.scrap.concat([{ id: 'p' + self.nid(), title: 'Photo from ' + (vm && vm.from === 'me' ? 'you' : 'Colleague'), detail: (vm && vm.caption) || 'No caption' }]) });
+      },
+      sendPhoto: function () { self.sendPhoto(); },
+      setScroll: function (el) { self.el = el; },
+      items: items,
+      typing: s.typing,
+      draft: s.draft,
+      onDraft: function (e) { self.setState({ draft: e.target.value }); },
+      onKey: function (e) { if (e.key === 'Enter') self.send(); },
+      send: function () { self.send(); },
+      openTray: function () { self.setState({ sheet: 'tray' }); },
+      openMood: function () { self.setState({ sheet: 'mood' }); },
+      openScrap: function () { self.setState({ sheet: 'scrap' }); },
+      closeSheet: function () { self.setState({ sheet: null }); },
+      sheetOpen: !!s.sheet,
+      trayOpen: s.sheet === 'tray',
+      moodOpen: s.sheet === 'mood',
+      scrapOpen: s.sheet === 'scrap',
+      trayItems: [
+        { name: 'Feeling Map', desc: 'Plot how each scene felt', add: function () { self.addDrop('feel'); } },
+        { name: 'Blind Reveal', desc: 'Answer privately, flip together', add: function () { self.addDrop('blind'); } },
+        { name: 'Gap Slider', desc: 'See how far apart your takes are', add: function () { self.addDrop('gap'); } },
+        { name: 'Tag-team Story', desc: 'Write a story one line each', add: function () { self.addDrop('story'); } }
+      ],
+      mySunny: s.mood === 'sunny', myCloudy: s.mood === 'cloudy', myFoggy: s.mood === 'foggy', myStormy: s.mood === 'stormy',
+      moods: moodDefs.map(function (w) {
+        var on = s.mood === w.id;
+        return {
+          label: w.label, desc: w.desc,
+          isSunny: w.id === 'sunny', isCloudy: w.id === 'cloudy', isFoggy: w.id === 'foggy', isStormy: w.id === 'stormy',
+          rowStyle: 'display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 12px; border-radius: 14px; text-align: left; color: #16181D; background: ' + (on ? '#EEF2FE' : '#FFFFFF') + '; border: 2px solid ' + (on ? '#2F5BEA' : '#E3E5EC'),
+          pick: function () { self.setState({ mood: w.id, sheet: null }); }
+        };
+      }),
+      scrap: s.scrap,
+      hasScrap: s.scrap.length > 0,
+      noScrap: s.scrap.length === 0,
+      scrapCount: s.scrap.length
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+rules_version = '2';
+
+// Drops Chat — Firestore security rules.
+//
+// Data model (see docs/ARCHITECTURE.md):
+//   users/{uid}/tokens/{fcmToken}                 private: push tokens
+//   rooms/{roomId}                                 owner, members[<=2], invites[1]
+//     members/{uid}                                public profile + mood weather
+//     messages/{id}                                chat messages (append-only)
+//     pins/{id}                                    scrapbook
+//     drops/{dropId}                               a Drop card: type + content
+//       sealed/{uid}_{key}                         a PRIVATE answer
+//       locks/{uid}_{key}                          public "I locked {key}" marker
+//       entries/{id}                               public, append-only lines
+//       users/{uid}                                public per-user progress
+//
+// Hidden answers: a sealed doc can be read by its owner at any time, and by the
+// other member only once (a) the owner has locked it and (b) the reader has a
+// lock marker for the same key, which itself can only exist if the reader's own
+// sealed doc is locked. A locked sealed doc can never be changed again.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function roomData(roomId) { return get(/databases/$(database)/documents/rooms/$(roomId)).data; }
+    function isMember(roomId) { return signedIn() && me() in roomData(roomId).members; }
+    function verifiedEmail() {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+    function myEmail() { return request.auth.token.email.lower(); }
+    function incoming() { return request.resource.data; }
+    function onlyKeys(keys) { return incoming().keys().hasOnly(keys); }
+    function changedKeys() { return incoming().diff(resource.data).affectedKeys(); }
+    function str(s, min, max) { return s is string && s.size() >= min && s.size() <= max; }
+    function isKey(k) { return k is string && k.matches('^[A-Za-z0-9-]{1,40}$'); }
+    function lowerEmail(e) { return str(e, 3, 254) && e == e.lower() && e.matches('^[^@\\s]+@[^@\\s]+$'); }
+
+    // ---------------------------------------------------------------- users
+    match /users/{uid} {
+      allow read, write: if signedIn() && me() == uid;
+
+      match /tokens/{token} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid
+          && onlyKeys(['token', 'ua', 'updatedAt'])
+          && incoming().token == token
+          && str(incoming().ua, 0, 300)
+          && incoming().updatedAt == request.time;
+      }
+    }
+
+    // ---------------------------------------------------------------- rooms
+    match /rooms/{roomId} {
+      function canSeeRoom() {
+        return signedIn() && (
+          me() in resource.data.members
+          || (verifiedEmail() && myEmail() in resource.data.invites)
+        );
+      }
+      allow get, list: if canSeeRoom();
+
+      allow create: if signedIn()
+        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'createdAt'])
+        && incoming().owner == me()
+        && incoming().members == [me()]
+        && incoming().invites is list
+        && incoming().invites.size() == 1
+        && lowerEmail(incoming().invites[0])
+        && str(incoming().ownerName, 0, 80)
+        && incoming().createdAt == request.time;
+
+      allow update: if signedIn() && (
+        // The invited partner joins. Afterwards the room holds two members and
+        // neither branch below can ever add a third.
+        (
+          resource.data.members.size() == 1
+          && verifiedEmail()
+          && myEmail() in resource.data.invites
+          && !(me() in resource.data.members)
+          && changedKeys().hasOnly(['members'])
+          && incoming().members == resource.data.members.concat([me()])
+        )
+        ||
+        // The owner changes who is invited, while still alone in the room.
+        (
+          resource.data.owner == me()
+          && resource.data.members.size() == 1
+          && changedKeys().hasOnly(['invites'])
+          && incoming().invites is list
+          && incoming().invites.size() == 1
+          && lowerEmail(incoming().invites[0])
+        )
+      );
+      allow delete: if false;
+
+      // -------------------------------------------------------- members
+      match /members/{uid} {
+        allow read: if isMember(roomId);
+        allow create, update: if isMember(roomId)
+          && me() == uid
+          && onlyKeys(['uid', 'name', 'photoURL', 'mood', 'lastSeen', 'typingUntil'])
+          && incoming().uid == uid
+          // Optional fields: read with get() — touching a missing field is a rules error.
+          && str(incoming().get('name', ''), 0, 80)
+          && (incoming().get('photoURL', null) == null || str(incoming().photoURL, 0, 2048))
+          && (incoming().get('mood', null) == null || incoming().mood in ['sunny', 'cloudy', 'foggy', 'stormy'])
+          && (incoming().get('lastSeen', null) == null || incoming().lastSeen is timestamp)
+          && (incoming().get('typingUntil', null) == null || incoming().typingUntil is timestamp);
+        allow delete: if false;
+      }
+
+      // -------------------------------------------------------- messages
+      match /messages/{msgId} {
+        function validText() {
+          return incoming().kind == 'text'
+            && str(incoming().text, 1, 4000)
+            && onlyKeys(['uid', 'kind', 'text', 'createdAt']);
+        }
+        function validLink() {
+          return incoming().kind == 'link'
+            && str(incoming().text, 0, 4000)
+            && onlyKeys(['uid', 'kind', 'text', 'link', 'createdAt'])
+            && incoming().link is map
+            && incoming().link.status == 'pending'
+            && str(incoming().link.url, 8, 2048)
+            && incoming().link.url.matches('^https?://.+');
+        }
+        function validPhoto() {
+          return incoming().kind == 'photo'
+            && str(incoming().text, 0, 1000)
+            && onlyKeys(['uid', 'kind', 'text', 'photo', 'createdAt'])
+            && incoming().photo is map
+            && incoming().photo.keys().hasOnly(['path', 'width', 'height'])
+            && incoming().photo.path is string
+            && incoming().photo.path.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}[.]jpg$')
+            && incoming().photo.width is int && incoming().photo.height is int;
+        }
+        function validDrop() {
+          return incoming().kind == 'drop'
+            && str(incoming().text, 0, 200)
+            && onlyKeys(['uid', 'kind', 'text', 'dropId', 'createdAt'])
+            && incoming().dropId is string
+            && getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(incoming().dropId)).data.createdBy == me();
+        }
+
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId)
+          && incoming().uid == me()
+          && incoming().createdAt == request.time
+          && (validText() || validLink() || validPhoto() || validDrop());
+        // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
+        allow update, delete: if false;
+      }
+
+      // -------------------------------------------------------- scrapbook
+      match /pins/{pinId} {
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId)
+          && onlyKeys(['by', 'title', 'detail', 'dropId', 'messageId', 'createdAt'])
+          && incoming().by == me()
+          && str(incoming().title, 1, 120)
+          && str(incoming().detail, 0, 3000)
+          && (incoming().dropId == null || incoming().dropId is string)
+          && (incoming().messageId == null || incoming().messageId is string)
+          && incoming().createdAt == request.time;
+        allow delete: if isMember(roomId) && resource.data.by == me();
+        allow update: if false;
+      }
+
+      // -------------------------------------------------------- drops
+      match /drops/{dropId} {
+        function dropDoc(sub, id) {
+          return /databases/$(database)/documents/rooms/$(roomId)/drops/$(dropId)/$(sub)/$(id);
+        }
+
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId)
+          && onlyKeys(['type', 'createdBy', 'createdAt', 'content'])
+          && incoming().createdBy == me()
+          && str(incoming().type, 1, 40)
+          && incoming().type.matches('^[a-z0-9-]+$')
+          && incoming().content is map
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+
+        // A private answer. Doc id is always "{uid}_{key}".
+        match /sealed/{sealId} {
+          function validSealed() {
+            return onlyKeys(['uid', 'key', 'value', 'locked', 'updatedAt'])
+              && incoming().uid == me()
+              && isKey(incoming().key)
+              && sealId == me() + '_' + incoming().key
+              && incoming().locked is bool
+              && (!(incoming().value is string) || incoming().value.size() <= 500)
+              && incoming().updatedAt == request.time;
+          }
+
+          allow get: if isMember(roomId) && (
+            resource.data.uid == me()
+            || (
+              resource.data.locked == true
+              && exists(dropDoc('locks', me() + '_' + resource.data.key))
+            )
+          );
+          // Queries may only ever return the caller's own answers.
+          allow list: if isMember(roomId) && resource.data.uid == me();
+
+          allow create: if isMember(roomId) && validSealed();
+          // Editable until locked; frozen forever after.
+          allow update: if isMember(roomId)
+            && resource.data.uid == me()
+            && resource.data.locked != true
+            && validSealed();
+          allow delete: if false;
+        }
+
+        // Public marker "uid has locked key". Only creatable together with (or
+        // after) locking the matching sealed doc.
+        match /locks/{lockId} {
+          allow read: if isMember(roomId);
+          allow create: if isMember(roomId)
+            && onlyKeys(['uid', 'key', 'at'])
+            && incoming().uid == me()
+            && isKey(incoming().key)
+            && lockId == me() + '_' + incoming().key
+            && incoming().at == request.time
+            && getAfter(dropDoc('sealed', lockId)).data.locked == true;
+          allow update, delete: if false;
+        }
+
+        // Public, append-only contributions (e.g. Tag-team Story lines).
+        match /entries/{entryId} {
+          allow read: if isMember(roomId);
+          allow create: if isMember(roomId)
+            && onlyKeys(['uid', 'text', 'createdAt'])
+            && incoming().uid == me()
+            && str(incoming().text, 1, 280)
+            && incoming().createdAt == request.time;
+          allow update, delete: if false;
+        }
+
+        // Public per-user progress (e.g. which Feeling Map scene I'm on).
+        match /users/{uid} {
+          allow read: if isMember(roomId);
+          allow create, update: if isMember(roomId) && me() == uid && incoming().size() <= 20;
+          allow delete: if false;
+        }
+      }
+    }
+  }
+}

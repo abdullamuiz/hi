@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Photos live at rooms/{roomId}/photos/{uid}/{file}.jpg
+// Readable by room members; writable only by the uploader, once, as a small image.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isMember(roomId) {
+      return request.auth != null
+        && request.auth.uid in firestore.get(/databases/(default)/documents/rooms/$(roomId)).data.members;
+    }
+
+    match /rooms/{roomId}/photos/{uid}/{file} {
+      allow read: if isMember(roomId);
+      allow create: if isMember(roomId)
+        && request.auth.uid == uid
+        && file.matches('^[A-Za-z0-9_-]{1,64}[.]jpg$')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
+    }
+
+    match /{everythingElse=**} {
+      allow read, write: if false;
+    }
+  }
+}
