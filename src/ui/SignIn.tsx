@@ -56,7 +56,7 @@ export function SignIn() {
           <Logo size={56} />
           <div class="brand-name">Drops Chat</div>
         </div>
-        <p class="lede">A private chat for two — with Drops: little cards you play together, right in the conversation.</p>
+        <p class="lede">A new way to share moods, thoughts and experiences through conversation. Just say “Hi”.</p>
         {usingEmulators && <div class="emu">Local test mode: using the Firebase Emulator Suite, so accounts and messages here are not real.</div>}
         {err && <div class="err" role="alert">{err}</div>}
 
