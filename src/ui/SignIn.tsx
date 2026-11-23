@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { finishEmailLink, looksLikeSignInLink, rememberedEmail, sendEmailLink, signInWithGoogle } from '../data/auth';
 import { usingEmulators } from '../firebase';
 import { GoogleIcon, Logo } from './icons';
+import { ModeToggle } from './ModeToggle';
 
 const friendly = (e: any) => {
   const c = e?.code || '';
@@ -49,6 +50,7 @@ export function SignIn() {
 
   return (
     <div class="app">
+      <ModeToggle class="icon-btn screen-toggle" />
       <div class="screen">
         <div class="brand">
           <Logo size={56} />

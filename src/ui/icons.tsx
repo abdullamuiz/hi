@@ -3,9 +3,12 @@ import type { MoodId } from '../types';
 type P = { size?: number };
 const base = { 'aria-hidden': true, fill: 'none', viewBox: '0 0 24 24', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } as const;
 
-/** The "Hi" speech-bubble logo (public/icons/bubble.svg, from design/icons/navy). */
+/** The "Hi" speech-bubble logo: teal in light mode, navy in dark mode (CSS picks one). */
 export const Logo = ({ size = 48 }: P) => (
-  <img src="./icons/bubble.svg" width={size} height={size} alt="" aria-hidden="true" style={{ display: 'block' }} />
+  <span class="logo" aria-hidden="true">
+    <img class="logo-light" src="./icons/bubble-teal.svg" width={size} height={size} alt="" />
+    <img class="logo-dark" src="./icons/bubble-navy.svg" width={size} height={size} alt="" />
+  </span>
 );
 export const DropIcon = ({ size = 18, color = 'currentColor' }: P & { color?: string }) => (
   <svg {...base} width={size} height={size} stroke={color} stroke-width="2"><path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z" /></svg>

@@ -3,7 +3,8 @@
  * src/styles.css (":root" there is the "Hi" theme). Chosen per person; saved on
  * this device and in users/{uid} so it follows you to other devices.
  */
-export type ThemeId = 'hi' | 'system' | 'classic' | 'midnight' | 'blossom' | 'forest';
+export type ThemeId = 'hi' | 'dark' | 'system' | 'classic' | 'blossom' | 'forest';
+export type Mode = 'light' | 'dark';
 
 type Tokens = Record<string, string>;
 
@@ -22,18 +23,19 @@ const CLASSIC: Tokens = {
   '--desk': '#E9EBF1', '--photo-bg': '#DCE6F5',
 };
 
-const MIDNIGHT: Tokens = {
-  '--me': '#4BB4CB', '--on-me': '#0F1320', '--me-dark': '#7FD0E0',
-  '--them': '#F2A15F', '--on-them': '#0F1320',
-  '--ink': '#EEF1F7', '--on-ink': '#0F1320',
-  '--ground': '#0F1320', '--surface': '#182033',
-  '--line': '#2A3450', '--line-2': '#36425F', '--hair': '#232C44', '--soft': '#1E2740', '--pill': '#232C44',
-  '--muted': '#9AA3B8', '--body-2': '#C7CEDD',
-  '--their-bubble': '#26304A', '--note-bg': '#2B2A2A', '--note-fg': '#F2C79A',
-  '--media': '#0B0E18', '--chip-bg': '#232C44', '--sel-bg': '#1C3346',
-  '--reveal-ink': '#0F5566', '--bar-soft': '#5B657D',
-  '--sun': '#F2B45F', '--cloud': '#C7CEDD', '--storm': '#A9B0FF',
-  '--desk': '#0A0D16', '--photo-bg': '#222B42',
+/** Hi Dark: the navy ground with alabaster text and the teal accent. */
+const DARK: Tokens = {
+  '--me': '#54B5C6', '--on-me': '#1B2036', '--me-dark': '#7FCAD7',
+  '--them': '#F2EFE6', '--on-them': '#252C48',
+  '--ink': '#F2EFE6', '--on-ink': '#252C48',
+  '--ground': '#252C48', '--surface': '#2E365A',
+  '--line': '#3C4569', '--line-2': '#4A5479', '--hair': '#353E62', '--soft': '#2A3254', '--pill': '#353E62',
+  '--muted': '#AEB4C8', '--body-2': '#D9DCE6',
+  '--their-bubble': '#3A4470', '--note-bg': '#33406A', '--note-fg': '#BFE6EE',
+  '--media': '#1B2036', '--chip-bg': '#353E62', '--sel-bg': '#2F4A66',
+  '--reveal-ink': '#1E7F93', '--bar-soft': '#7E86A3',
+  '--sun': '#F2B45F', '--cloud': '#D9DCE6', '--storm': '#B7BCFF',
+  '--desk': '#1B2036', '--photo-bg': '#34406A',
 };
 
 const BLOSSOM: Tokens = {
@@ -71,17 +73,18 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { id: 'hi', label: 'Hi', desc: 'Navy, teal and alabaster', swatch: ['#F2EFE6', '#252C48', '#54B5C6'] },
-  { id: 'system', label: 'Match my phone', desc: 'Hi by day, Midnight in dark mode', swatch: ['#F2EFE6', '#0F1320', '#54B5C6'] },
-  { id: 'midnight', label: 'Midnight', desc: 'Dark, easy on the eyes', swatch: ['#0F1320', '#4BB4CB', '#F2A15F'] },
+  { id: 'hi', label: 'Hi Light', desc: 'Alabaster with navy and teal', swatch: ['#F2EFE6', '#252C48', '#54B5C6'] },
+  { id: 'dark', label: 'Hi Dark', desc: 'Navy with alabaster and teal', swatch: ['#252C48', '#F2EFE6', '#54B5C6'] },
+  { id: 'system', label: 'Match my phone', desc: 'Hi Light or Hi Dark, following your phone', swatch: ['#F2EFE6', '#252C48', '#54B5C6'] },
   { id: 'classic', label: 'Classic', desc: 'The original blue and orange', swatch: ['#F5F6FA', '#2F5BEA', '#F2A15F'] },
   { id: 'blossom', label: 'Blossom', desc: 'Rose and marigold', swatch: ['#FBF3F1', '#B83F72', '#E9A23B'] },
   { id: 'forest', label: 'Forest', desc: 'Pine green and amber', swatch: ['#F1F4EF', '#2F6B4F', '#E0A23E'] },
 ];
 
 const TOKENS: Record<Exclude<ThemeId, 'system'>, Tokens> = {
-  hi: HI, classic: CLASSIC, midnight: MIDNIGHT, blossom: BLOSSOM, forest: FOREST,
+  hi: HI, dark: DARK, classic: CLASSIC, blossom: BLOSSOM, forest: FOREST,
 };
+const DARK_THEMES = new Set<string>(['dark']);
 
 const KEY = 'hi.theme';
 const dark = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
@@ -90,31 +93,58 @@ export function isThemeId(x: unknown): x is ThemeId {
   return typeof x === 'string' && THEMES.some((t) => t.id === x);
 }
 
+/** Accepts ids saved by older versions ("midnight" became "dark"). */
+export function normaliseTheme(x: unknown): ThemeId | null {
+  if (x === 'midnight') return 'dark';
+  return isThemeId(x) ? x : null;
+}
+
 export function savedTheme(): ThemeId {
   try {
-    const v = localStorage.getItem(KEY);
-    if (isThemeId(v)) return v;
+    const v = normaliseTheme(localStorage.getItem(KEY));
+    if (v) return v;
   } catch { /* ignore */ }
   return 'hi';
 }
 
 let current: ThemeId = 'hi';
 let applied: Tokens = {};
+const listeners = new Set<(id: ThemeId, mode: Mode) => void>();
+
+/** Light or dark, after resolving "Match my phone". */
+export function currentMode(): Mode {
+  return document.documentElement.dataset.mode === 'dark' ? 'dark' : 'light';
+}
+
+/** Called whenever the theme changes (e.g. to keep a toggle button in sync). */
+export function onThemeChange(fn: (id: ThemeId, mode: Mode) => void) {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+}
+
+/** The light/dark switch: Hi Light ↔ Hi Dark. */
+export const toggledTheme = (): ThemeId => (currentMode() === 'dark' ? 'hi' : 'dark');
 
 /** Resolve "system" to a concrete palette and write it onto <html>. */
 export function applyTheme(id: ThemeId, persist = true) {
   current = id;
-  const concrete = id === 'system' ? (dark() ? 'midnight' : 'hi') : id;
+  const concrete = id === 'system' ? (dark() ? 'dark' : 'hi') : id;
+  const mode: Mode = DARK_THEMES.has(concrete) ? 'dark' : 'light';
   const tokens = TOKENS[concrete];
   const root = document.documentElement;
   Object.keys(applied).forEach((k) => root.style.removeProperty(k));
   Object.entries(tokens).forEach(([k, v]) => root.style.setProperty(k, v));
   applied = tokens;
   root.dataset.theme = concrete;
-  root.style.colorScheme = concrete === 'midnight' ? 'dark' : 'light';
+  root.dataset.mode = mode;
+  root.style.colorScheme = mode;
   const surface = tokens['--surface'] || '#FFFFFF';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', surface);
+  // Browser-tab icon follows the app's mode: teal bubble in light, navy in dark.
+  document.querySelector('link[rel="icon"][type="image/svg+xml"]')
+    ?.setAttribute('href', mode === 'dark' ? './icons/favicon-navy.svg' : './icons/favicon-teal.svg');
   if (persist) { try { localStorage.setItem(KEY, id); } catch { /* ignore */ } }
+  listeners.forEach((fn) => fn(id, mode));
 }
 
 export const currentTheme = () => current;

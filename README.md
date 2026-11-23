@@ -9,7 +9,7 @@ A private chat for exactly two people, with **Tabs** (several parallel conversat
 - **Gap Slider**: slide your take, then see how many points apart you are.
 - **Tag-team Story**: write a story one line each.
 
-It also has text, link previews, photos, a shared scrapbook of pinned moments, "mood weather" next to your name, push notifications, and colour themes (Hi, Midnight dark mode, Classic, Blossom, Forest, or match your phone's light/dark setting).
+It also has text, link previews, photos, a shared scrapbook of pinned moments, "mood weather" next to your name, push notifications, and a **light/dark switch** in the header (Hi Light on alabaster, Hi Dark on navy) plus more colour themes (Classic, Blossom, Forest, or match your phone).
 
 It's an installable PWA (iPhone and Android) built with Vite + Preact + TypeScript on Firebase, and it's ready to wrap with Capacitor later.
 The UI follows the design prototype in `design/`, with the "Hi" navy, teal and alabaster palette as the default theme (the prototype's original colours are the **Classic** theme). `Chat-with-Drops-standalone.html` opens directly in any browser (fonts included); `Chat-prototype.html` is the same design as source markup.
@@ -18,9 +18,9 @@ The UI follows the design prototype in `design/`, with the "Hi" navy, teal and a
 |---|---|---|
 | ![](docs/screenshots/chat.png) | ![](docs/screenshots/feeling-map.png) | ![](docs/screenshots/summary-story.png) |
 
-| Hi theme | Midnight theme | Theme picker |
+| Hi Light | Hi Dark | Theme picker |
 |---|---|---|
-| ![](docs/screenshots/theme-hi.png) | ![](docs/screenshots/theme-midnight.png) | ![](docs/screenshots/theme-picker.png) |
+| ![](docs/screenshots/theme-hi.png) | ![](docs/screenshots/theme-dark.png) | ![](docs/screenshots/theme-picker.png) |
 
 ---
 
@@ -264,12 +264,14 @@ Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this als
 
 ## Icons and themes
 
-- **Icons:** the designer's set lives in `design/icons/`. **navy** is the shipped colourway: bubble `#252C48`, lettering `#F2EFE6`, dot `#54B5C6`, lettering in Pacifico (OFL). **teal** is the alternate. `npm run icons` copies the navy set into `public/icons/` and generates:
-  - `favicon.svg`: the navy bubble, which switches to the teal bubble in dark-mode browsers so it stays visible on dark tab bars.
-  - `favicon-16.png` and `favicon-48.png`, plus `public/favicon.ico` (16, 32 and 48 px for older browsers, bookmarks and Windows).
+- **Icons:** the designer's sets live in `design/icons/`. **Teal** is for **light mode**: it's the Home Screen/install icon (light is the default) and the tab icon while the app is light. **Navy** is for **dark mode**. `npm run icons` copies them into `public/icons/` and generates:
+  - `favicon-teal.svg` and `favicon-navy.svg`: the app switches the browser-tab icon to match its mode.
+  - `favicon.svg`: teal, or navy when the browser is in dark mode. It's used before the app has started.
+  - `favicon-16/48.png` and `public/favicon.ico` (16, 32 and 48 px).
   - `badge-96.png`: the notification badge.
 
-  The 32 and 64 px favicons are the designer's own. `icon-1024.png` and `android-foreground-432.png` are ready for the Capacitor builds later.
+  A Home Screen icon can't change with light/dark mode on iPhone or Android, so the installed icon is always teal. To use navy instead, change `SRC` in `scripts/make-icons.mjs` and run `npm run icons`. Lettering is Pacifico (OFL).
+- **Light/dark:** the moon / half-circle button in the header (and on the sign-in screen) switches between **Hi Light** (alabaster `#F2EFE6`) and **Hi Dark** (navy `#252C48`).
 - **Themes:** each person picks one under **mood weather button → Theme**. It's saved on the device and in `users/{uid}`, so it follows them to other devices, and it only changes their own view. To add a theme, add a palette to `src/lib/themes.ts`. The token names are the CSS variables at the top of `src/styles.css`.
 
 ## 9. Later: native apps with Capacitor

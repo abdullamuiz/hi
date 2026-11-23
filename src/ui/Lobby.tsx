@@ -5,6 +5,7 @@ import { signOut } from '../data/auth';
 import { firstName } from '../lib/names';
 import type { Room } from '../types';
 import { Logo } from './icons';
+import { ModeToggle } from './ModeToggle';
 
 interface Props {
   user: User;
@@ -48,6 +49,7 @@ export function Lobby({ user, invites, waiting }: Props) {
 
   return (
     <div class="app">
+      <ModeToggle uid={user.uid} class="icon-btn screen-toggle" />
       <div class="screen">
         <div class="brand">
           <Logo size={56} />
