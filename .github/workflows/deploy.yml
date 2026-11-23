@@ -3,6 +3,7 @@ name: Test and deploy
 # Pull requests: type-check, build and run the unit, security-rules and functions tests.
 # Push to main (i.e. a merged PR): the same tests, then deploy to Firebase project hi-dropchat.
 # Needs the FIREBASE_SERVICE_ACCOUNT repository secret — see README → "Automatic deploys from GitHub".
+# The service account needs the roles Firebase Admin + Service Usage Consumer.
 on:
   pull_request:
   push:
@@ -73,6 +74,8 @@ jobs:
           KEY="$RUNNER_TEMP/firebase-sa.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
           export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          # Show which service account is deploying (the e-mail is not secret; the key is never printed).
+          echo "Deploying as: $(jq -r '.client_email // "unknown (is the secret a service-account JSON key?)"' "$KEY")"
           TARGETS="hosting,firestore:rules"
           if [ "$DEPLOY_BACKEND" = "true" ]; then
             npm ci --prefix functions
