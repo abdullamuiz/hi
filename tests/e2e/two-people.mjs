@@ -13,6 +13,8 @@ const PROJECT = 'demo-drops';
 const SHOTS = process.env.SHOTS_DIR || 'test-results/e2e';
 mkdirSync(SHOTS, { recursive: true });
 
+// Never let the e2e run talk to the real Firebase project.
+process.env.VITE_USE_EMULATORS = 'true';
 const server = await createServer({ server: { host: '127.0.0.1', port: 5174, strictPort: true }, logLevel: 'error' });
 await server.listen();
 const APP = 'http://127.0.0.1:5174/';
@@ -70,6 +72,32 @@ try {
   await bob.getByText('Finally finished Interstellar last night').waitFor();
   await bob.getByRole('textbox', { name: 'Message' }).fill('Same! I have thoughts. Lots of them.');
   await bob.keyboard.press('Enter');
+  await alice.getByText('Same! I have thoughts.').waitFor();
+
+  step('Tabs: create, unread count, open, rename, archive');
+  await alice.getByRole('button', { name: 'New tab' }).click();
+  await alice.getByLabel('Name').fill('Trip plans');
+  await alice.getByRole('radio', { name: '#36AFC6' }).click();
+  await alice.getByRole('button', { name: 'Create tab' }).click();
+  await alice.getByRole('tab', { name: /Trip plans/, selected: true }).waitFor();
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Flights are cheap in March');
+  await alice.keyboard.press('Enter');
+  await alice.getByText('Flights are cheap in March').waitFor();
+  await bob.getByRole('tab', { name: 'Trip plans, 1 unread' }).waitFor();
+  assert.equal(await bob.getByText('Flights are cheap in March').count(), 0, 'other tab messages stay out of General');
+  await shot(bob, 'tabs-unread');
+  await bob.getByRole('tab', { name: /Trip plans/ }).click();
+  await bob.getByText('Flights are cheap in March').waitFor();
+  await bob.getByRole('tab', { name: /Trip plans.*options/ }).click();
+  await bob.getByLabel('Name').fill('Trip');
+  await bob.getByRole('button', { name: 'Save' }).click();
+  await alice.getByRole('tab', { name: /^Trip \(tap/ }).waitFor();
+  await alice.getByRole('tab', { name: /^Trip/ }).click();
+  await alice.getByRole('button', { name: 'Archive tab' }).click();
+  await alice.getByRole('tab', { name: /General/, selected: true }).waitFor();
+  await alice.getByRole('button', { name: 'Archived · 1' }).waitFor();
+  await bob.getByRole('tab', { name: /General/ }).click();
+  await bob.getByRole('button', { name: 'Archived · 1' }).waitFor();
   await alice.getByText('Same! I have thoughts.').waitFor();
 
   step('Link card');
@@ -170,6 +198,21 @@ try {
   await alice.getByRole('button', { name: /Stormy/ }).click();
   await bob.getByText(/Stormy today/).waitFor();
 
+  step('Themes');
+  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'hi');
+  await shot(alice, 'theme-hi');
+  await alice.getByRole('button', { name: 'Set your mood weather' }).click();
+  await alice.getByRole('radio', { name: /Midnight/ }).click();
+  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'midnight');
+  await shot(alice, 'theme-sheet-midnight');
+  await alice.keyboard.press('Escape');
+  await shot(alice, 'theme-midnight');
+  // The choice follows the account: a fresh device for alice picks it up.
+  await alice.reload();
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'midnight');
+  assert.equal(await bob.evaluate(() => document.documentElement.dataset.theme), 'hi', "bob's theme is his own");
+
   step('Outsider cannot see anything');
   await eve.reload();
   await eve.getByText('Start your room').waitFor();
@@ -180,7 +223,7 @@ try {
   await shot(alice, 'alice-bottom');
   await alice.getByRole('button', { name: 'Add a Drop' }).click();
   await shot(alice, 'tray');
-  await alice.getByRole('button', { name: 'Close' }).click();
+  await alice.keyboard.press('Escape');
   await alice.getByRole('button', { name: 'Open scrapbook' }).click();
   await shot(alice, 'scrapbook');
   console.log('\nE2E PASSED — screenshots in', SHOTS);

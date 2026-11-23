@@ -1,26 +1,30 @@
 /**
- * Firebase web config — FILL THIS IN.
+ * Firebase web config for the "hi-dropchat" project.
  *
- * Firebase console → Project settings → General → Your apps → Web app → "SDK setup and configuration".
- * These values are not secrets (they identify the project; security comes from the rules),
- * so it is fine to commit them.
+ * These values are not secrets: they identify the project, and access is
+ * controlled by firestore.rules / storage.rules. (Optionally restrict the API
+ * key to your domains in Google Cloud console → APIs & Services → Credentials.)
  *
- * While apiKey is still 'REPLACE_ME' the app talks to the local Emulator Suite (project "demo-drops").
+ * Local development and the test suites use the Emulator Suite instead
+ * (set VITE_USE_EMULATORS=true, or run `npm run dev:all`).
  */
 export const firebaseConfig = {
-  apiKey: 'REPLACE_ME',
-  // Tip: use your Hosting domain (e.g. your-project.web.app) so Google sign-in works
-  // inside an installed iPhone app. See README → "Sign-in on iPhone".
-  authDomain: 'REPLACE_ME.firebaseapp.com',
-  projectId: 'REPLACE_ME',
-  storageBucket: 'REPLACE_ME.firebasestorage.app',
-  messagingSenderId: 'REPLACE_ME',
-  appId: 'REPLACE_ME',
+  apiKey: 'AIzaSyA_u8H3Zh97KzrmC89ROoE68bsOd5F-uF8',
+  // The Hosting domain (not hi-dropchat.firebaseapp.com) so Google sign-in stays
+  // on the same site — required for Safari / installed iPhone apps.
+  // Works once the app is deployed to Firebase Hosting.
+  authDomain: 'hi-dropchat.web.app',
+  projectId: 'hi-dropchat',
+  storageBucket: 'hi-dropchat.firebasestorage.app',
+  messagingSenderId: '760909245589',
+  appId: '1:760909245589:web:53848c234838ef03d9bf9c',
+  measurementId: 'G-0ZNNMKNBJN',
 };
 
 /**
- * Web Push certificate (VAPID public key).
- * Firebase console → Project settings → Cloud Messaging → Web configuration → Generate key pair.
+ * Web Push certificate (VAPID public key) — STILL NEEDED for notifications.
+ * Firebase console → Project settings → Cloud Messaging → Web configuration →
+ * Web Push certificates → Generate key pair, then paste the key here.
  */
 export const vapidKey = 'REPLACE_ME';
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { finishEmailLink, looksLikeSignInLink, rememberedEmail, sendEmailLink, signInWithGoogle } from '../data/auth';
 import { usingEmulators } from '../firebase';
-import { DropIcon, GoogleIcon } from './icons';
+import { GoogleIcon, Logo } from './icons';
 
 const friendly = (e: any) => {
   const c = e?.code || '';
@@ -51,11 +51,11 @@ export function SignIn() {
     <div class="app">
       <div class="screen">
         <div class="brand">
-          <div class="brand-mark"><DropIcon size={24} /></div>
+          <Logo size={56} />
           <div class="brand-name">Drops Chat</div>
         </div>
         <p class="lede">A private chat for two — with Drops: little cards you play together, right in the conversation.</p>
-        {usingEmulators && <div class="emu">Using the local Firebase Emulator Suite (no real accounts). Fill in src/firebase-config.ts to go live.</div>}
+        {usingEmulators && <div class="emu">Local test mode: using the Firebase Emulator Suite, so accounts and messages here are not real.</div>}
         {err && <div class="err" role="alert">{err}</div>}
 
         {needEmailFor ? (

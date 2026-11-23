@@ -1,20 +1,26 @@
-# Drops Chat
+<img src="public/icons/icon.svg" width="96" alt="Hi">
 
-A private chat for exactly two people, with **Drops**: interactive cards you play together in the conversation.
+# Hi · Drops Chat
+
+A private chat for exactly two people, with **Tabs** (several parallel conversations, each with its own unread count) and **Drops**: interactive cards you play together in the conversation.
 
 - **Feeling Map**: each of you plots how every scene felt on an intense/calm × heavy/uplifting grid. Dots stay hidden until you both lock in.
 - **Blind Reveal**: answer a question privately, then flip together.
 - **Gap Slider**: slide your take, then see how many points apart you are.
 - **Tag-team Story**: write a story one line each.
 
-It also has text, link previews, photos, a shared scrapbook of pinned moments, "mood weather" next to your name, and push notifications.
+It also has text, link previews, photos, a shared scrapbook of pinned moments, "mood weather" next to your name, push notifications, and colour themes (Hi, Midnight dark mode, Classic, Blossom, Forest, or match your phone's light/dark setting).
 
 It's an installable PWA (iPhone and Android) built with Vite + Preact + TypeScript on Firebase, and it's ready to wrap with Capacitor later.
-The UI follows the design prototype in `design/`. `Chat-with-Drops-standalone.html` opens directly in any browser (fonts included); `Chat-prototype.html` is the same design as source markup.
+The UI follows the design prototype in `design/`, with the "Hi" navy, teal and alabaster palette as the default theme (the prototype's original colours are the **Classic** theme). `Chat-with-Drops-standalone.html` opens directly in any browser (fonts included); `Chat-prototype.html` is the same design as source markup.
 
 | Chat | Feeling Map | Summary & story |
 |---|---|---|
 | ![](docs/screenshots/chat.png) | ![](docs/screenshots/feeling-map.png) | ![](docs/screenshots/summary-story.png) |
+
+| Hi theme | Midnight theme | Theme picker |
+|---|---|---|
+| ![](docs/screenshots/theme-hi.png) | ![](docs/screenshots/theme-midnight.png) | ![](docs/screenshots/theme-picker.png) |
 
 ---
 
@@ -51,7 +57,7 @@ npm run dev:all
 This builds the Cloud Functions, starts the emulators (Auth, Firestore, Storage, Functions, plus the UI at
 http://127.0.0.1:4000), and starts the app at **http://localhost:5173**.
 
-While `src/firebase-config.ts` still has `REPLACE_ME` values, the app automatically talks to the emulators (project `demo-drops`), so you don't need a real project.
+`dev:all` always runs against the emulators (project `demo-drops`), never your real `hi-dropchat` data. `npm run dev` on its own runs the app against the **real** project in `src/firebase-config.ts`.
 
 **Signing in locally:** use "E-mail me a sign-in link". The emulator doesn't send e-mail. Open
 **Emulator UI → Authentication** (or look in the terminal) and click the sign-in link. "Continue with Google" also works and shows a fake account picker.
@@ -86,6 +92,8 @@ It needs Playwright's Chromium. If you don't have it, run `npx playwright instal
 
 ## 3. Create the Firebase project
 
+> ✅ Done for `hi-dropchat`: the web config is already in `src/firebase-config.ts` and `.firebaserc`. Check the sign-in providers, Firestore and Storage (steps 2–4), and generate the Web Push key (step 6).
+
 1. Go to https://console.firebase.google.com and choose **Add project**. Name it something like `drops-chat`. Google Analytics isn't needed.
 2. **Build → Authentication → Get started.** Then:
    - **Sign-in method → Google**: Enable, pick a support e-mail, Save.
@@ -111,7 +119,9 @@ Two people chatting will stay well inside the free quotas, so expect **$0**. The
 
 ## 5. Fill in the config
 
-Edit **`src/firebase-config.ts`**:
+> ✅ Already filled in for `hi-dropchat`, except **`vapidKey`** (step 3.6). It's needed for notifications.
+
+For reference, **`src/firebase-config.ts`** looks like this:
 
 ```ts
 export const firebaseConfig = {
@@ -127,14 +137,10 @@ export const vapidKey = 'B…';               // from step 3.6
 
 > **Sign-in on iPhone:** set `authDomain` to the domain you serve the app from (`your-project-id.web.app`, or your custom domain), **not** `*.firebaseapp.com`. Then the Google sign-in redirect stays on the same site, which Safari and installed Home Screen apps need.
 
-Point the CLI at your project. Replace `your-project-id` in `.firebaserc`, or run:
+`.firebaserc` already points at `hi-dropchat`. Log the CLI in once:
 
 ```bash
 npx firebase login
-```
-
-```bash
-npx firebase use --add
 ```
 
 Firestore and Functions regions: Functions default to `us-central1`. If your Firestore is elsewhere (for example `europe-west1`), change `region` in `functions/src/index.ts` to match. That's faster, and some regions require it for Firestore triggers.
@@ -174,7 +180,8 @@ To deploy only one part later: `npx firebase deploy --only hosting`, `--only fir
 
 ```
 src/
-  firebase-config.ts     ← you fill this in
+  firebase-config.ts     the hi-dropchat web config (+ vapidKey to add)
+  lib/themes.ts          colour themes (add one by adding a palette)
   firebase.ts            init + emulator wiring + offline cache
   app.tsx                auth → lobby (invite/join) → chat
   ui/                    Chat, DropCard (host for plugins), sheets, bubbles, sign-in, lobby
@@ -194,9 +201,10 @@ docs/ADDING_A_DROP.md    how to add a new Drop
 ### Data model
 
 ```
-rooms/{roomId}                      owner, members (max 2), invites [e-mail]
-  members/{uid}                     name, photo, mood weather, lastSeen, typingUntil
-  messages/{id}                     text | link | photo | drop      (append-only)
+rooms/{roomId}                      owner, members (max 2), invites [e-mail], timezone (Indian/Maldives)
+  members/{uid}                     name, photo, mood weather, lastSeen, typing (+tab), lastRead {tabId: time}
+  tabs/{tabId}                      name, colour, archived, order, lastMessageAt   ("general" always exists)
+    messages/{id}                   text | link | photo | drop      (append-only)
   pins/{id}                         scrapbook
   drops/{dropId}                    type + content (the Drop's JSON definition snapshot)
     sealed/{uid}_{key}              a PRIVATE answer
@@ -229,6 +237,18 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 ### Photos
 
 Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this also strips EXIF/GPS), then uploaded to `rooms/{roomId}/photos/{uid}/…`. Storage rules allow members to read, and the owner to write once (≤ 5 MB, images only).
+
+## Tabs
+
+- Every room has a **General** tab. The **+** at the end of the tab bar adds another (name and colour). Tap the open tab for options: rename, recolour, archive. General can't be archived.
+- Unread counts come from `members/{uid}.lastRead[tabId]`, so they sync across your devices. The total also shows on the app icon where the browser supports badges.
+- Notifications name the tab ("Sam · Trip plans"), and tapping one opens that tab.
+- Drops, docs and sessions belong to a tab. Scrapbook, search and streak are room-wide (see `SPEC.md`).
+
+## Icons and themes
+
+- **Icons:** the sources are `public/icons/logo.svg` (the "Hi" bubble: favicon and in-app mark), `icon.svg` (app icon on alabaster) and `icon-maskable.svg` (Android safe zone). The letters are DM Serif Display outlines (SIL Open Font License), so no font is loaded. After editing an SVG, run `npm run icons` to regenerate the PNGs.
+- **Themes:** each person picks one under **mood weather button → Theme**. It's saved on the device and in `users/{uid}`, so it follows them to other devices, and it only changes their own view. To add a theme, add a palette to `src/lib/themes.ts`. The token names are the CSS variables at the top of `src/styles.css`.
 
 ## 9. Later: native apps with Capacitor
 

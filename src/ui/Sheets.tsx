@@ -6,6 +6,7 @@ import { signOut } from '../data/auth';
 import { disablePush } from '../data/push';
 import type { MoodId, Pin } from '../types';
 import { MoodIcon, MOODS } from './icons';
+import { THEMES, type ThemeId } from '../lib/themes';
 
 export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void }) {
   return (
@@ -88,9 +89,12 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
   );
 }
 
-interface MoodProps { current: MoodId; onPick(m: MoodId): void; push: PushStatus; onPush(): void; user: User }
+interface MoodProps {
+  current: MoodId; onPick(m: MoodId): void; push: PushStatus; onPush(): void; user: User;
+  theme: ThemeId; onTheme(t: ThemeId): void;
+}
 
-export function MoodSheet({ current, onPick, push, onPush, user }: MoodProps) {
+export function MoodSheet({ current, onPick, push, onPush, user, theme, onTheme }: MoodProps) {
   const pushLabel: Record<PushStatus, string> = {
     granted: 'On',
     denied: 'Blocked in browser settings',
@@ -114,6 +118,27 @@ export function MoodSheet({ current, onPick, push, onPush, user }: MoodProps) {
         </button>
       ))}
       <div class="settings">
+        <div class="field-label" id="theme-label">Theme</div>
+        <div class="theme-grid" role="radiogroup" aria-labelledby="theme-label">
+          {THEMES.map((t) => (
+            <button
+              type="button"
+              key={t.id}
+              role="radio"
+              aria-checked={theme === t.id}
+              class={`theme-opt${theme === t.id ? ' on' : ''}`}
+              onClick={() => onTheme(t.id)}
+              title={t.desc}
+            >
+              <span class="swatch" aria-hidden="true">
+                <span style={{ background: t.swatch[0] }} />
+                <span style={{ background: t.swatch[1] }} />
+                <span style={{ background: t.swatch[2] }} />
+              </span>
+              <span class="theme-name">{t.label}</span>
+            </button>
+          ))}
+        </div>
         <div class="settings-row">
           <span>Notifications</span>
           {push === 'default' ? <button type="button" class="link-btn" onClick={onPush}>Turn on</button> : <span>{pushLabel[push]}</span>}
@@ -122,12 +147,13 @@ export function MoodSheet({ current, onPick, push, onPush, user }: MoodProps) {
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</span>
           <button type="button" class="link-btn" onClick={async () => { await disablePush(user.uid); await signOut(); }}>Sign out</button>
         </div>
+        <div class="fine">About: messages are protected by access rules but are not end-to-end encrypted.</div>
       </div>
     </div>
   );
 }
 
-export function ScrapSheet({ pins, nameOf }: { pins: Pin[]; nameOf(uid: string): string }) {
+export function ScrapSheet({ pins, nameOf, tabName }: { pins: Pin[]; nameOf(uid: string): string; tabName(id: string | null): string }) {
   return (
     <div class="stack">
       <div>
@@ -139,7 +165,9 @@ export function ScrapSheet({ pins, nameOf }: { pins: Pin[]; nameOf(uid: string):
         <div class="scrap-item" key={p.id}>
           <div class="scrap-title">{p.title}</div>
           <div class="scrap-detail">{p.detail}</div>
-          <div class="fine">Pinned by {nameOf(p.by)}</div>
+          <div class="fine">
+            {[tabName(p.tabId), p.createdAt ? p.createdAt.toDate().toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '', `pinned by ${nameOf(p.by)}`].filter(Boolean).join(' · ')}
+          </div>
         </div>
       ))}
     </div>

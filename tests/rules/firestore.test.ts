@@ -33,8 +33,14 @@ async function seedRoom(members: string[] = ['alice', 'bob']) {
     const db = ctx.firestore();
     await setDoc(doc(db, 'rooms', ROOM), { owner: 'alice', ownerName: 'Alice', members, invites: ['bob@example.com'], createdAt: new Date() });
     await setDoc(doc(db, 'rooms', ROOM, 'drops', 'd1'), { type: 'blind-reveal', createdBy: 'alice', createdAt: new Date(), content: {} });
+    await setDoc(doc(db, 'rooms', ROOM, 'tabs', 'general'), tabDoc('alice', 'General'));
   });
 }
+
+function tabDoc(createdBy: string, name: string, extra: Record<string, unknown> = {}) {
+  return { name, colour: '#232B47', wallpaper: null, mode: 'casual', disappearing: false, archived: false, order: 0, createdBy, createdAt: new Date(), lastMessageAt: null, ...extra };
+}
+const msgs = (db: Firestore, tab = 'general') => collection(db, 'rooms', ROOM, 'tabs', tab, 'messages');
 
 function sealedRef(db: Firestore, uid: string, key = 'answer') {
   return doc(db, 'rooms', ROOM, 'drops', 'd1', 'sealed', `${uid}_${key}`);
@@ -61,7 +67,7 @@ beforeEach(async () => { await env.clearFirestore(); });
 describe('rooms', () => {
   it('lets a user create a room with exactly one invite', async () => {
     await assertSucceeds(setDoc(doc(alice(), 'rooms', 'r2'), {
-      owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: ['bob@example.com'], createdAt: serverTimestamp(),
+      owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: ['bob@example.com'], timezone: 'Indian/Maldives', createdAt: serverTimestamp(),
     }));
   });
 
@@ -90,41 +96,78 @@ describe('rooms', () => {
   it('hides the room from outsiders', async () => {
     await seedRoom();
     await assertFails(getDoc(doc(eve(), 'rooms', ROOM)));
-    await assertFails(getDocs(collection(eve(), 'rooms', ROOM, 'messages')));
+    await assertFails(getDocs(msgs(eve())));
   });
 });
 
 describe('messages', () => {
   it('members can post as themselves only', async () => {
     await seedRoom();
-    await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
-    await assertFails(setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'm2'), { uid: 'bob', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
-    await assertFails(setDoc(doc(eve(), 'rooms', ROOM, 'messages', 'm3'), { uid: 'eve', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(alice()), 'm2'), { uid: 'bob', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(eve()), 'm3'), { uid: 'eve', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
   });
 
   it('messages are immutable', async () => {
     await seedRoom();
-    await setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() });
-    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM, 'messages', 'm1'), { text: 'edited' }));
+    await setDoc(doc(msgs(alice()), 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() });
+    await assertFails(updateDoc(doc(msgs(alice()), 'm1'), { text: 'edited' }));
   });
 
   it('a photo message must point at the sender\'s own folder', async () => {
     await seedRoom();
     const base = { uid: 'alice', kind: 'photo', text: '', createdAt: serverTimestamp() };
-    await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'p1'), { ...base, photo: { path: `rooms/${ROOM}/photos/alice/abc.jpg`, width: 10, height: 10 } }));
-    await assertFails(setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'p2'), { ...base, photo: { path: `rooms/${ROOM}/photos/bob/abc.jpg`, width: 10, height: 10 } }));
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'p1'), { ...base, photo: { path: `rooms/${ROOM}/photos/alice/abc.jpg`, width: 10, height: 10 } }));
+    await assertFails(setDoc(doc(msgs(alice()), 'p2'), { ...base, photo: { path: `rooms/${ROOM}/photos/bob/abc.jpg`, width: 10, height: 10 } }));
   });
 
   it('a link message starts pending', async () => {
     await seedRoom();
-    await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'l1'), {
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'l1'), {
       uid: 'alice', kind: 'link', text: '', createdAt: serverTimestamp(),
       link: { url: 'https://example.com', domain: 'example.com', title: null, description: null, image: null, siteName: null, isVideo: false, status: 'pending' },
     }));
-    await assertFails(setDoc(doc(alice(), 'rooms', ROOM, 'messages', 'l2'), {
+    await assertFails(setDoc(doc(msgs(alice()), 'l2'), {
       uid: 'alice', kind: 'link', text: '', createdAt: serverTimestamp(),
       link: { url: 'javascript:alert(1)', status: 'pending' },
     }));
+  });
+});
+
+describe('tabs', () => {
+  const newTab = (uid: string, extra: Record<string, unknown> = {}) => ({ ...tabDoc(uid, 'Plans', { order: 1 }), createdAt: serverTimestamp(), ...extra });
+
+  it('members create tabs; outsiders cannot see them', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(doc(bob(), 'rooms', ROOM, 'tabs', 'plans'), newTab('bob')));
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'tabs', 'x'), newTab('alice')));
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'tabs', 'y'), newTab('bob', { colour: 'red' })));
+    await assertFails(getDocs(collection(eve(), 'rooms', ROOM, 'tabs')));
+    await assertFails(setDoc(doc(eve(), 'rooms', ROOM, 'tabs', 'z'), newTab('eve')));
+  });
+
+  it('either member can rename/recolour/archive; General cannot be archived', async () => {
+    await seedRoom();
+    await setDoc(doc(bob(), 'rooms', ROOM, 'tabs', 'plans'), newTab('bob'));
+    await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM, 'tabs', 'plans'), { name: 'Trip', colour: '#36AFC6', archived: true }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM, 'tabs', 'plans'), { createdBy: 'alice' }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM, 'tabs', 'plans'), { mode: 'work' }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM, 'tabs', 'general'), { archived: true }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM, 'tabs', 'plans'), { lastMessageAt: new Date(2020, 1, 1) }));
+  });
+
+  it('a message and the tab bump commit together', async () => {
+    await seedRoom();
+    const db = alice();
+    const b = writeBatch(db);
+    b.set(doc(msgs(db), 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() });
+    b.update(doc(db, 'rooms', ROOM, 'tabs', 'general'), { lastMessageAt: serverTimestamp() });
+    await assertSucceeds(b.commit());
+  });
+
+  it('messages need an existing tab', async () => {
+    await seedRoom();
+    await assertFails(setDoc(doc(msgs(alice(), 'nope'), 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
   });
 });
 
@@ -142,7 +185,8 @@ describe('members & mood weather', () => {
     const ref = doc(bob(), 'rooms', ROOM, 'members', 'bob');
     await assertSucceeds(setDoc(ref, { uid: 'bob', name: 'Bob', photoURL: null, lastSeen: serverTimestamp() }, { merge: true }));
     await assertSucceeds(setDoc(ref, { uid: 'bob', mood: 'foggy' }, { merge: true }));
-    await assertSucceeds(setDoc(ref, { uid: 'bob', typingUntil: new Date(Date.now() + 5000) }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { uid: 'bob', typingUntil: new Date(Date.now() + 5000), typingTab: 'general' }, { merge: true }));
+    await assertSucceeds(setDoc(ref, { uid: 'bob', lastRead: { general: serverTimestamp() } }, { merge: true }));
     await assertFails(setDoc(ref, { uid: 'bob', extra: 1 }, { merge: true }));
   });
 });
@@ -223,10 +267,10 @@ describe('drops, entries & pins', () => {
     const db = bob();
     const b = writeBatch(db);
     b.set(doc(db, 'rooms', ROOM, 'drops', 'd2'), { type: 'gap-slider', createdBy: 'bob', createdAt: serverTimestamp(), content: { question: 'q' } });
-    b.set(doc(db, 'rooms', ROOM, 'messages', 'md'), { uid: 'bob', kind: 'drop', text: '', dropId: 'd2', createdAt: serverTimestamp() });
+    b.set(doc(msgs(db), 'md'), { uid: 'bob', kind: 'drop', text: '', dropId: 'd2', createdAt: serverTimestamp() });
     await assertSucceeds(b.commit());
     // d1 was created by alice
-    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'messages', 'mx'), { uid: 'bob', kind: 'drop', text: '', dropId: 'd1', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(bob()), 'mx'), { uid: 'bob', kind: 'drop', text: '', dropId: 'd1', createdAt: serverTimestamp() }));
   });
 
   it('pins belong to the pinner', async () => {
