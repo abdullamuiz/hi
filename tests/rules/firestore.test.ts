@@ -71,6 +71,37 @@ describe('rooms', () => {
     }));
   });
 
+  it('lets a user start a room alone and invite someone later', async () => {
+    const ref = doc(alice(), 'rooms', 'solo');
+    await assertSucceeds(setDoc(ref, { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: [], timezone: 'Indian/Maldives', createdAt: serverTimestamp() }));
+    // Bob isn't invited yet, so he can't join.
+    await assertFails(updateDoc(doc(bob(), 'rooms', 'solo'), { members: ['alice', 'bob'] }));
+    await assertFails(updateDoc(ref, { invites: ['alice@example.com'] }));
+    await assertFails(updateDoc(ref, { invites: ['bob@example.com', 'eve@example.com'] }));
+    await assertFails(updateDoc(ref, { invites: ['Bob@Example.com'] }));
+    await assertSucceeds(updateDoc(ref, { invites: ['bob@example.com'] }));
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', 'solo'), { members: ['alice', 'bob'] }));
+    await assertFails(updateDoc(ref, { invites: ['eve@example.com'] }));
+  });
+
+  it('creates room, profile and General tab in one atomic write', async () => {
+    const db = alice();
+    const b = writeBatch(db);
+    b.set(doc(db, 'rooms', 'atomic'), { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: [], timezone: 'Indian/Maldives', createdAt: serverTimestamp() });
+    b.set(doc(db, 'rooms', 'atomic', 'members', 'alice'), { uid: 'alice', name: 'Alice', photoURL: null, lastSeen: serverTimestamp() });
+    b.set(doc(db, 'rooms', 'atomic', 'tabs', 'general'), { ...tabDoc('alice', 'General'), createdAt: serverTimestamp() });
+    await assertSucceeds(b.commit());
+    // ...but nobody can add a profile or tab to a room they aren't in.
+    await assertFails(setDoc(doc(eve(), 'rooms', 'atomic', 'members', 'eve'), { uid: 'eve', name: 'Eve', photoURL: null }));
+    await assertFails(setDoc(doc(eve(), 'rooms', 'atomic', 'tabs', 'x'), { ...tabDoc('eve', 'X'), createdAt: serverTimestamp() }));
+  });
+
+  it('rejects a room created with two invites', async () => {
+    await assertFails(setDoc(doc(alice(), 'rooms', 'r3'), {
+      owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: ['bob@example.com', 'eve@example.com'], createdAt: serverTimestamp(),
+    }));
+  });
+
   it('rejects a room created with an extra member', async () => {
     await assertFails(setDoc(doc(alice(), 'rooms', 'r2'), {
       owner: 'alice', ownerName: 'Alice', members: ['alice', 'eve'], invites: ['bob@example.com'], createdAt: serverTimestamp(),

@@ -28,10 +28,11 @@ function toTab(id: string, d: any): Tab {
   };
 }
 
-export function watchTabs(roomId: string, cb: (tabs: Tab[]) => void, onError?: (e: Error) => void) {
+export function watchTabs(roomId: string, cb: (tabs: Tab[], fromServer: boolean) => void, onError?: (e: Error) => void) {
   return onSnapshot(
     query(tabsCol(roomId), orderBy('order')),
-    (s) => cb(s.docs.map((d) => toTab(d.id, d.data({ serverTimestamps: 'estimate' })))),
+    { includeMetadataChanges: true },
+    (s) => cb(s.docs.map((d) => toTab(d.id, d.data({ serverTimestamps: 'estimate' }))), !s.metadata.fromCache),
     onError,
   );
 }
@@ -43,11 +44,13 @@ function newTabDoc(uid: string, name: string, colour: string, order: number) {
   };
 }
 
-/** Every room has a "General" tab. Safe to call repeatedly from both members. */
+export const generalTabDoc = (uid: string) => newTabDoc(uid, 'General', TAB_COLOURS[0], 0);
+
+/** Repairs a room that has no General tab (rooms created before tabs existed). */
 export async function ensureGeneralTab(roomId: string, uid: string) {
   const ref = doc(db, 'rooms', roomId, 'tabs', GENERAL);
   const snap = await getDoc(ref).catch(() => null);
-  if (snap && !snap.exists()) await setDoc(ref, newTabDoc(uid, 'General', TAB_COLOURS[0], 0)).catch(() => {});
+  if (snap && !snap.exists()) await setDoc(ref, generalTabDoc(uid)).catch(() => {});
 }
 
 export async function createTab(roomId: string, uid: string, name: string, colour: string, order: number) {
