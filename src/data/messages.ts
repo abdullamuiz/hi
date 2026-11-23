@@ -1,5 +1,5 @@
 import {
-  collection, doc, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, writeBatch,
+  collection, doc, limitToLast, onSnapshot, orderBy, query, serverTimestamp, writeBatch, type WriteBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -7,56 +7,63 @@ import { findLink } from '../lib/links';
 import { compressImage } from '../lib/image';
 import type { Message } from '../types';
 
-export function watchMessages(roomId: string, cb: (m: Message[]) => void, onError?: (e: Error) => void) {
-  const q = query(collection(db, 'rooms', roomId, 'messages'), orderBy('createdAt'), limitToLast(300));
+const msgsCol = (roomId: string, tabId: string) => collection(db, 'rooms', roomId, 'tabs', tabId, 'messages');
+
+export function watchMessages(roomId: string, tabId: string, cb: (m: Message[]) => void, onError?: (e: Error) => void) {
+  const q = query(msgsCol(roomId, tabId), orderBy('createdAt'), limitToLast(300));
   return onSnapshot(q, (s) => {
-    cb(s.docs.map((d) => ({ id: d.id, text: '', ...(d.data({ serverTimestamps: 'estimate' }) as any) })));
+    cb(s.docs.map((d) => ({ id: d.id, tabId, text: '', ...(d.data({ serverTimestamps: 'estimate' }) as any) })));
   }, onError);
 }
 
-const newId = (roomId: string) => doc(collection(db, 'rooms', roomId, 'messages')).id;
+const newId = (roomId: string, tabId: string) => doc(msgsCol(roomId, tabId)).id;
 
-export async function sendText(roomId: string, uid: string, raw: string) {
+/** Writes a message and bumps the tab's lastMessageAt in the same atomic batch. */
+function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>) {
+  b.set(doc(msgsCol(roomId, tabId), id), { ...data, createdAt: serverTimestamp() });
+  b.update(doc(db, 'rooms', roomId, 'tabs', tabId), { lastMessageAt: serverTimestamp() });
+}
+
+export async function sendText(roomId: string, tabId: string, uid: string, raw: string) {
   const text = raw.trim().slice(0, 4000);
   if (!text) return;
   const link = findLink(text);
-  const msgRef = doc(db, 'rooms', roomId, 'messages', newId(roomId));
+  const b = writeBatch(db);
   if (link) {
-    await setDoc(msgRef, {
-      uid, kind: 'link', text: link.rest, createdAt: serverTimestamp(),
+    addMessage(b, roomId, tabId, newId(roomId, tabId), {
+      uid, kind: 'link', text: link.rest,
       link: {
         url: link.url, domain: link.domain, isVideo: link.isVideo,
         title: null, description: null, image: null, siteName: null, status: 'pending',
       },
     });
   } else {
-    await setDoc(msgRef, { uid, kind: 'text', text, createdAt: serverTimestamp() });
+    addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text });
   }
+  await b.commit();
 }
 
-export async function sendPhoto(roomId: string, uid: string, file: File, caption: string) {
+export async function sendPhoto(roomId: string, tabId: string, uid: string, file: File, caption: string) {
   const { blob, width, height } = await compressImage(file, 1600);
-  const id = newId(roomId);
+  const id = newId(roomId, tabId);
   const path = `rooms/${roomId}/photos/${uid}/${id}.jpg`;
   await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg', cacheControl: 'private, max-age=31536000' });
-  await setDoc(doc(db, 'rooms', roomId, 'messages', id), {
-    uid, kind: 'photo', text: caption.trim().slice(0, 1000), photo: { path, width, height }, createdAt: serverTimestamp(),
-  });
+  const b = writeBatch(db);
+  addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text: caption.trim().slice(0, 1000), photo: { path, width, height } });
+  await b.commit();
 }
 
 /** Creates a Drop and the chat message that carries it, atomically. */
 export async function createDrop(
-  roomId: string, uid: string, type: string, content: Record<string, unknown>, firstEntries: string[] = [],
+  roomId: string, tabId: string, uid: string, type: string, content: Record<string, unknown>, firstEntries: string[] = [],
 ) {
-  const batch = writeBatch(db);
+  const b = writeBatch(db);
   const dropRef = doc(collection(db, 'rooms', roomId, 'drops'));
-  batch.set(dropRef, { type, createdBy: uid, createdAt: serverTimestamp(), content });
+  b.set(dropRef, { type, createdBy: uid, createdAt: serverTimestamp(), content });
   firstEntries.forEach((text) => {
-    batch.set(doc(collection(dropRef, 'entries')), { uid, text: text.slice(0, 280), createdAt: serverTimestamp() });
+    b.set(doc(collection(dropRef, 'entries')), { uid, text: text.slice(0, 280), createdAt: serverTimestamp() });
   });
-  batch.set(doc(db, 'rooms', roomId, 'messages', newId(roomId)), {
-    uid, kind: 'drop', text: '', dropId: dropRef.id, createdAt: serverTimestamp(),
-  });
-  await batch.commit();
+  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id });
+  await b.commit();
   return dropRef.id;
 }

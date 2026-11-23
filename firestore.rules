@@ -5,8 +5,9 @@ rules_version = '2';
 // Data model (see docs/ARCHITECTURE.md):
 //   users/{uid}/tokens/{fcmToken}                 private: push tokens
 //   rooms/{roomId}                                 owner, members[<=2], invites[1]
-//     members/{uid}                                public profile + mood weather
-//     messages/{id}                                chat messages (append-only)
+//     members/{uid}                                public profile, mood weather, lastRead per tab
+//     tabs/{tabId}                                 parallel conversations ("General" + more)
+//       messages/{id}                              chat messages (append-only)
 //     pins/{id}                                    scrapbook
 //     drops/{dropId}                               a Drop card: type + content
 //       sealed/{uid}_{key}                         a PRIVATE answer
@@ -63,7 +64,8 @@ service cloud.firestore {
       allow get, list: if canSeeRoom();
 
       allow create: if signedIn()
-        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'createdAt'])
+        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'timezone', 'createdAt'])
+        && (incoming().get('timezone', 'Indian/Maldives') is string && incoming().get('timezone', 'Indian/Maldives').size() <= 64)
         && incoming().owner == me()
         && incoming().members == [me()]
         && incoming().invites is list
@@ -101,65 +103,99 @@ service cloud.firestore {
         allow read: if isMember(roomId);
         allow create, update: if isMember(roomId)
           && me() == uid
-          && onlyKeys(['uid', 'name', 'photoURL', 'mood', 'lastSeen', 'typingUntil'])
+          && onlyKeys(['uid', 'name', 'photoURL', 'mood', 'lastSeen', 'typingUntil', 'typingTab', 'lastRead'])
           && incoming().uid == uid
           // Optional fields: read with get() — touching a missing field is a rules error.
           && str(incoming().get('name', ''), 0, 80)
           && (incoming().get('photoURL', null) == null || str(incoming().photoURL, 0, 2048))
           && (incoming().get('mood', null) == null || incoming().mood in ['sunny', 'cloudy', 'foggy', 'stormy'])
           && (incoming().get('lastSeen', null) == null || incoming().lastSeen is timestamp)
-          && (incoming().get('typingUntil', null) == null || incoming().typingUntil is timestamp);
+          && (incoming().get('typingUntil', null) == null || incoming().typingUntil is timestamp)
+          && (incoming().get('typingTab', null) == null || str(incoming().typingTab, 1, 40))
+          && incoming().get('lastRead', {}) is map
+          && incoming().get('lastRead', {}).size() <= 200;
         allow delete: if false;
       }
 
-      // -------------------------------------------------------- messages
-      match /messages/{msgId} {
-        function validText() {
-          return incoming().kind == 'text'
-            && str(incoming().text, 1, 4000)
-            && onlyKeys(['uid', 'kind', 'text', 'createdAt']);
+      // -------------------------------------------------------- tabs
+      match /tabs/{tabId} {
+        function validTab() {
+          return str(incoming().name, 1, 30)
+            && incoming().colour is string && incoming().colour.matches('^#[0-9A-Fa-f]{6}$')
+            && incoming().archived is bool
+            && incoming().order is number
+            && incoming().mode in ['casual', 'work']
+            && incoming().disappearing is bool
+            && (incoming().wallpaper == null || str(incoming().wallpaper, 1, 200));
         }
-        function validLink() {
-          return incoming().kind == 'link'
-            && str(incoming().text, 0, 4000)
-            && onlyKeys(['uid', 'kind', 'text', 'link', 'createdAt'])
-            && incoming().link is map
-            && incoming().link.status == 'pending'
-            && str(incoming().link.url, 8, 2048)
-            && incoming().link.url.matches('^https?://.+');
-        }
-        function validPhoto() {
-          return incoming().kind == 'photo'
-            && str(incoming().text, 0, 1000)
-            && onlyKeys(['uid', 'kind', 'text', 'photo', 'createdAt'])
-            && incoming().photo is map
-            && incoming().photo.keys().hasOnly(['path', 'width', 'height'])
-            && incoming().photo.path is string
-            && incoming().photo.path.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}[.]jpg$')
-            && incoming().photo.width is int && incoming().photo.height is int;
-        }
-        function validDrop() {
-          return incoming().kind == 'drop'
-            && str(incoming().text, 0, 200)
-            && onlyKeys(['uid', 'kind', 'text', 'dropId', 'createdAt'])
-            && incoming().dropId is string
-            && getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(incoming().dropId)).data.createdBy == me();
-        }
-
         allow read: if isMember(roomId);
         allow create: if isMember(roomId)
-          && incoming().uid == me()
+          && tabId.matches('^[A-Za-z0-9_-]{1,40}$')
+          && onlyKeys(['name', 'colour', 'wallpaper', 'mode', 'disappearing', 'archived', 'order', 'createdBy', 'createdAt', 'lastMessageAt'])
+          && incoming().createdBy == me()
           && incoming().createdAt == request.time
-          && (validText() || validLink() || validPhoto() || validDrop());
-        // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
-        allow update, delete: if false;
+          && incoming().lastMessageAt == null
+          && validTab();
+        // Either member can rename, recolour, reorder or archive. lastMessageAt is
+        // only ever "now" (written in the same batch as a message).
+        allow update: if isMember(roomId)
+          && changedKeys().hasOnly(['name', 'colour', 'archived', 'order', 'lastMessageAt'])
+          && validTab()
+          && (!changedKeys().hasAny(['lastMessageAt']) || incoming().lastMessageAt == request.time)
+          && !(tabId == 'general' && incoming().archived == true);
+        allow delete: if false;
+
+        // -------------------------------------------------------- messages
+        match /messages/{msgId} {
+          function validText() {
+            return incoming().kind == 'text'
+              && str(incoming().text, 1, 4000)
+              && onlyKeys(['uid', 'kind', 'text', 'createdAt']);
+          }
+          function validLink() {
+            return incoming().kind == 'link'
+              && str(incoming().text, 0, 4000)
+              && onlyKeys(['uid', 'kind', 'text', 'link', 'createdAt'])
+              && incoming().link is map
+              && incoming().link.status == 'pending'
+              && str(incoming().link.url, 8, 2048)
+              && incoming().link.url.matches('^https?://.+');
+          }
+          function validPhoto() {
+            return incoming().kind == 'photo'
+              && str(incoming().text, 0, 1000)
+              && onlyKeys(['uid', 'kind', 'text', 'photo', 'createdAt'])
+              && incoming().photo is map
+              && incoming().photo.keys().hasOnly(['path', 'width', 'height'])
+              && incoming().photo.path is string
+              && incoming().photo.path.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}[.]jpg$')
+              && incoming().photo.width is int && incoming().photo.height is int;
+          }
+          function validDrop() {
+            return incoming().kind == 'drop'
+              && str(incoming().text, 0, 200)
+              && onlyKeys(['uid', 'kind', 'text', 'dropId', 'createdAt'])
+              && incoming().dropId is string
+              && getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(incoming().dropId)).data.createdBy == me();
+          }
+
+          allow read: if isMember(roomId);
+          allow create: if isMember(roomId)
+            && exists(/databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId))
+            && incoming().uid == me()
+            && incoming().createdAt == request.time
+            && (validText() || validLink() || validPhoto() || validDrop());
+          // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
+          allow update, delete: if false;
+        }
       }
 
       // -------------------------------------------------------- scrapbook
       match /pins/{pinId} {
         allow read: if isMember(roomId);
         allow create: if isMember(roomId)
-          && onlyKeys(['by', 'title', 'detail', 'dropId', 'messageId', 'createdAt'])
+          && onlyKeys(['by', 'title', 'detail', 'dropId', 'messageId', 'tabId', 'createdAt'])
+          && (incoming().get('tabId', null) == null || incoming().tabId is string)
           && incoming().by == me()
           && str(incoming().title, 1, 120)
           && str(incoming().detail, 0, 3000)

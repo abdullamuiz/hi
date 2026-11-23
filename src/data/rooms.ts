@@ -5,11 +5,13 @@ import {
 import type { User } from 'firebase/auth';
 import { db } from '../firebase';
 import type { Member, MoodId, Room } from '../types';
+import { ensureGeneralTab } from './tabs';
 
 const roomsCol = collection(db, 'rooms');
+export const DEFAULT_TZ = 'Indian/Maldives';
 
 function toRoom(id: string, d: any): Room {
-  return { id, owner: d.owner, ownerName: d.ownerName || '', members: d.members || [], invites: d.invites || [], createdAt: d.createdAt || null };
+  return { id, owner: d.owner, ownerName: d.ownerName || '', members: d.members || [], invites: d.invites || [], timezone: d.timezone || DEFAULT_TZ, createdAt: d.createdAt || null };
 }
 
 export function watchMyRooms(uid: string, cb: (rooms: Room[]) => void, onError?: (e: Error) => void) {
@@ -39,9 +41,11 @@ export async function createRoom(user: User, partnerEmail: string): Promise<stri
     ownerName: user.displayName || user.email || '',
     members: [user.uid],
     invites: [partnerEmail.trim().toLowerCase()],
+    timezone: DEFAULT_TZ,
     createdAt: serverTimestamp(),
   });
   await ensureMember(ref.id, user);
+  await ensureGeneralTab(ref.id, user.uid);
   return ref.id;
 }
 
@@ -86,6 +90,8 @@ export function watchMembers(roomId: string, cb: (m: Record<string, Member>) => 
         mood: x.mood ?? null,
         lastSeen: x.lastSeen ?? null,
         typingUntil: x.typingUntil ?? null,
+        typingTab: x.typingTab ?? null,
+        lastRead: x.lastRead || {},
       };
     });
     cb(out);
@@ -102,5 +108,5 @@ export const setMood = (roomId: string, uid: string, mood: MoodId) =>
 export const heartbeat = (roomId: string, uid: string) =>
   setDoc(memberRef(roomId, uid), { uid, lastSeen: serverTimestamp() }, { merge: true });
 
-export const setTyping = (roomId: string, uid: string, typing: boolean) =>
-  setDoc(memberRef(roomId, uid), { uid, typingUntil: typing ? Timestamp.fromMillis(Date.now() + 6000) : null }, { merge: true });
+export const setTyping = (roomId: string, uid: string, tabId: string, typing: boolean) =>
+  setDoc(memberRef(roomId, uid), { uid, typingTab: tabId, typingUntil: typing ? Timestamp.fromMillis(Date.now() + 6000) : null }, { merge: true });

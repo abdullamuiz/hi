@@ -147,12 +147,13 @@ export function MoodSheet({ current, onPick, push, onPush, user, theme, onTheme 
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</span>
           <button type="button" class="link-btn" onClick={async () => { await disablePush(user.uid); await signOut(); }}>Sign out</button>
         </div>
+        <div class="fine">About: messages are protected by access rules but are not end-to-end encrypted.</div>
       </div>
     </div>
   );
 }
 
-export function ScrapSheet({ pins, nameOf }: { pins: Pin[]; nameOf(uid: string): string }) {
+export function ScrapSheet({ pins, nameOf, tabName }: { pins: Pin[]; nameOf(uid: string): string; tabName(id: string | null): string }) {
   return (
     <div class="stack">
       <div>
@@ -164,7 +165,9 @@ export function ScrapSheet({ pins, nameOf }: { pins: Pin[]; nameOf(uid: string):
         <div class="scrap-item" key={p.id}>
           <div class="scrap-title">{p.title}</div>
           <div class="scrap-detail">{p.detail}</div>
-          <div class="fine">Pinned by {nameOf(p.by)}</div>
+          <div class="fine">
+            {[tabName(p.tabId), p.createdAt ? p.createdAt.toDate().toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '', `pinned by ${nameOf(p.by)}`].filter(Boolean).join(' · ')}
+          </div>
         </div>
       ))}
     </div>
