@@ -71,8 +71,8 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { id: 'hi', label: 'Hi', desc: 'Navy, teal and alabaster', swatch: ['#F4F1E8', '#232B47', '#36AFC6'] },
-  { id: 'system', label: 'Match my phone', desc: 'Hi by day, Midnight in dark mode', swatch: ['#F4F1E8', '#0F1320', '#36AFC6'] },
+  { id: 'hi', label: 'Hi', desc: 'Navy, teal and alabaster', swatch: ['#F2EFE6', '#252C48', '#54B5C6'] },
+  { id: 'system', label: 'Match my phone', desc: 'Hi by day, Midnight in dark mode', swatch: ['#F2EFE6', '#0F1320', '#54B5C6'] },
   { id: 'midnight', label: 'Midnight', desc: 'Dark, easy on the eyes', swatch: ['#0F1320', '#4BB4CB', '#F2A15F'] },
   { id: 'classic', label: 'Classic', desc: 'The original blue and orange', swatch: ['#F5F6FA', '#2F5BEA', '#F2A15F'] },
   { id: 'blossom', label: 'Blossom', desc: 'Rose and marigold', swatch: ['#FBF3F1', '#B83F72', '#E9A23B'] },

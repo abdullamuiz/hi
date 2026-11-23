@@ -77,7 +77,7 @@ try {
   step('Tabs: create, unread count, open, rename, archive');
   await alice.getByRole('button', { name: 'New tab' }).click();
   await alice.getByLabel('Name').fill('Trip plans');
-  await alice.getByRole('radio', { name: '#36AFC6' }).click();
+  await alice.getByRole('radio', { name: '#1E7F93' }).click();
   await alice.getByRole('button', { name: 'Create tab' }).click();
   await alice.getByRole('tab', { name: /Trip plans/, selected: true }).waitFor();
   await alice.getByRole('textbox', { name: 'Message' }).fill('Flights are cheap in March');
