@@ -1,0 +1,82 @@
+name: Test and deploy
+
+# Pull requests: type-check, build and run the unit, security-rules and functions tests.
+# Push to main (i.e. a merged PR): the same tests, then deploy to Firebase project hi-dropchat.
+# Needs the FIREBASE_SERVICE_ACCOUNT repository secret — see README → "Automatic deploys from GitHub".
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      # The Firestore and Storage emulators run on Java.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm ci --prefix functions
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # One deploy at a time; a newer merge waits for the running one.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://hi-dropchat.web.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Deploy to Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # Set the repository variable DEPLOY_BACKEND=true once the project is on the
+          # Blaze plan to also deploy Storage rules and Cloud Functions.
+          DEPLOY_BACKEND: ${{ vars.DEPLOY_BACKEND }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::Missing the FIREBASE_SERVICE_ACCOUNT secret. See README → Automatic deploys from GitHub."
+            exit 1
+          fi
+          KEY="$RUNNER_TEMP/firebase-sa.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
+          export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          TARGETS="hosting,firestore:rules"
+          if [ "$DEPLOY_BACKEND" = "true" ]; then
+            npm ci --prefix functions
+            TARGETS="$TARGETS,storage,functions"
+          fi
+          npx firebase deploy --only "$TARGETS" --project hi-dropchat --non-interactive --force
+          rm -f "$KEY"
