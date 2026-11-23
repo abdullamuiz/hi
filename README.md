@@ -169,7 +169,8 @@ To deploy only one part later: `npx firebase deploy --only hosting`, `--only fir
 
 1. **Create a deploy account.** Open the [service accounts page for hi-dropchat](https://console.cloud.google.com/iam-admin/serviceaccounts?project=hi-dropchat) and sign in with the Google account that owns the Firebase project.
    - Click **+ Create service account**. Name: `github-deploy`. Click **Create and continue**.
-   - **Role:** search for **Firebase Admin** and select it. Click **Continue**, then **Done**.
+   - **Roles:** search for **Firebase Admin** and select it. Then click **+ Add another role** and add **Service Usage Consumer**, which lets the deploy check which Google services are switched on. Click **Continue**, then **Done**.
+   - If a deploy later fails with `Permission denied to get service`, the account is missing one of these two roles. Add it at **IAM & Admin → IAM**: find the account and click the ✏️ pencil.
 2. **Download its key.** Click the new `github-deploy` account, then the **Keys** tab, then **Add key → Create new key → JSON → Create**. A `.json` file downloads.
 3. **Give it to GitHub.** In this repo, go to **Settings → Secrets and variables → Actions → New repository secret**.
    - Name: `FIREBASE_SERVICE_ACCOUNT`
