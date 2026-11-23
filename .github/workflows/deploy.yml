@@ -74,6 +74,8 @@ jobs:
           KEY="$RUNNER_TEMP/firebase-sa.json"
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$KEY"
           export GOOGLE_APPLICATION_CREDENTIALS="$KEY"
+          # Show which service account is deploying (the e-mail is not secret; the key is never printed).
+          echo "Deploying as: $(jq -r '.client_email // "unknown (is the secret a service-account JSON key?)"' "$KEY")"
           TARGETS="hosting,firestore:rules"
           if [ "$DEPLOY_BACKEND" = "true" ]; then
             npm ci --prefix functions
