@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import type { User } from 'firebase/auth';
-import { changeInvite, createRoom, joinRoom } from '../data/rooms';
+import { createRoom, joinRoom } from '../data/rooms';
 import { signOut } from '../data/auth';
 import { firstName } from '../lib/names';
 import type { Room } from '../types';
@@ -9,18 +9,20 @@ import { ModeToggle } from './ModeToggle';
 
 interface Props {
   user: User;
+  /** Rooms that invited my e-mail. */
   invites: Room[];
-  /** A room I own where the partner hasn't joined yet. */
-  waiting: Room | null;
+  /** My own room, if I already started one (I'm still alone in it). */
+  ownRoom: Room | null;
+  onOpenOwn(): void;
 }
 
-export function Lobby({ user, invites, waiting }: Props) {
+const EMAIL_RE = /^[^@\s]+@[^@\s]+$/;
+
+export function Lobby({ user, invites, ownRoom, onOpenOwn }: Props) {
   const [email, setEmail] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
   const myEmail = (user.email || '').toLowerCase();
-  const appUrl = location.origin + location.pathname;
 
   async function run(fn: () => Promise<unknown>) {
     setErr('');
@@ -28,23 +30,13 @@ export function Lobby({ user, invites, waiting }: Props) {
     try { await fn(); } catch (e: any) { setErr(e?.message || 'Something went wrong.'); } finally { setBusy(false); }
   }
 
-  const submit = (e: Event) => {
-    e.preventDefault();
+  const start = (withInvite: boolean) => {
     const v = email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+$/.test(v)) { setErr('Enter their e-mail address.'); return; }
-    if (v === myEmail) { setErr('That’s your own address — invite the other person.'); return; }
-    run(async () => {
-      if (waiting) await changeInvite(waiting.id, v); else await createRoom(user, v);
-      setEditing(false);
-    });
-  };
-
-  const share = async () => {
-    const text = `Join me on Drops Chat — sign in with ${waiting?.invites[0]}: ${appUrl}`;
-    try {
-      if (navigator.share) await navigator.share({ title: 'Drops Chat', text, url: appUrl });
-      else { await navigator.clipboard.writeText(text); setErr(''); alert('Invite copied — paste it to them.'); }
-    } catch { /* cancelled */ }
+    if (withInvite) {
+      if (!EMAIL_RE.test(v)) { setErr('Enter their e-mail address, or tap "Skip, invite later".'); return; }
+      if (v === myEmail) { setErr('That’s your own address — invite the other person.'); return; }
+    }
+    run(() => createRoom(user, withInvite ? v : ''));
   };
 
   return (
@@ -65,24 +57,18 @@ export function Lobby({ user, invites, waiting }: Props) {
           </div>
         ))}
 
-        {waiting && !editing ? (
-          <div class="card">
-            <h2>Waiting for {waiting.invites[0]}</h2>
-            <p class="lede">Send them the app link. Once they sign in with that address, the room opens for both of you.</p>
-            <button class="btn-primary" onClick={share}>Share invite</button>
-            <button class="btn-ghost" onClick={() => { setEmail(waiting.invites[0]); setEditing(true); }}>Invite a different address</button>
-          </div>
+        {ownRoom ? (
+          <button class="btn-ghost" onClick={onOpenOwn}>Not now — open my own room</button>
         ) : (
-          (invites.length === 0 || editing) && (
-            <form class="card" onSubmit={submit}>
-              <h2>{editing ? 'Change who you invited' : 'Start your room'}</h2>
-              <p class="lede">Drops Chat is for exactly two people. Who's the other one?</p>
-              <label class="field-label" for="invite">Their e-mail (the one they'll sign in with)</label>
-              <input id="invite" class="field" type="email" inputMode="email" autocomplete="off" placeholder="them@example.com" value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
-              <button class="btn-primary" disabled={busy}>{editing ? 'Update invite' : 'Invite'}</button>
-              {editing && <button type="button" class="link-btn" onClick={() => setEditing(false)}>Cancel</button>}
-            </form>
-          )
+          <form class="card" onSubmit={(e) => { e.preventDefault(); start(true); }}>
+            <h2>{invites.length ? 'Or start your own room' : 'Start your room'}</h2>
+            <p class="lede">A room is for you and one other person. Invite them now, or start on your own and invite them from the chat later.</p>
+            <label class="field-label" for="invite">Their e-mail (optional)</label>
+            <input id="invite" class="field" type="email" inputMode="email" autocomplete="off" placeholder="them@example.com"
+              value={email} onInput={(e) => setEmail(e.currentTarget.value)} />
+            <button class="btn-primary" disabled={busy || !email.trim()}>Invite and start</button>
+            <button type="button" class="btn-ghost" disabled={busy} onClick={() => start(false)}>Skip, invite later</button>
+          </form>
         )}
 
         <div class="settings-row">

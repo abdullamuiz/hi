@@ -3,7 +3,8 @@ import type { User } from 'firebase/auth';
 import { createDrop, sendPhoto, sendText, watchMessages } from '../data/messages';
 import { addPin, watchPins } from '../data/pins';
 import { GENERAL, createTab, ensureGeneralTab, markRead, updateTab, watchTabs } from '../data/tabs';
-import { ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
+import { changeInvite, ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
+import { InviteSheet } from './InviteSheet';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
 import { currentTheme, onThemeChange, type ThemeId } from '../lib/themes';
@@ -27,7 +28,8 @@ type Sheet =
   | { kind: 'setup'; type: string; prefill?: Record<string, unknown> }
   | { kind: 'tab-new' }
   | { kind: 'tab-edit'; tabId: string }
-  | { kind: 'archived' };
+  | { kind: 'archived' }
+  | { kind: 'invite' };
 
 const BANNER_KEY = 'drops.pushBannerDismissed';
 const tabKey = (roomId: string) => `hi.tab.${roomId}`;
@@ -62,18 +64,22 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   const me = useMemo<Person>(() => ({ uid: user.uid, name: firstName(meMember?.name || user.displayName || user.email, 'You'), isMe: true }), [user.uid, meMember?.name, user.displayName, user.email]);
   const partner = useMemo<Person>(() => ({
     uid: partnerUid,
-    name: partnerUid ? firstName(partnerMember?.name, 'Them') : firstName(room.invites[0], 'Them'),
+    name: partnerUid ? firstName(partnerMember?.name, 'Them') : room.invites[0] ? firstName(room.invites[0], 'Them') : 'Just you',
     isMe: false,
   }), [partnerUid, partnerMember?.name, room.invites[0]]);
 
   // --- subscriptions ---------------------------------------------------------
   useEffect(() => {
     ensureMember(room.id, user).catch(console.warn);
-    ensureGeneralTab(room.id, user.uid);
+    let repaired = false;
     const unsubs = [
-      watchTabs(room.id, setTabs, (e) => flash(e.message)),
-      watchMembers(room.id, setMembers),
-      watchPins(room.id, setPins),
+      watchTabs(room.id, (t, fromServer) => {
+        setTabs(t);
+        // Older rooms may lack a General tab: create it once the server confirms it's missing.
+        if (fromServer && !repaired && !t.some((x) => x.id === GENERAL)) { repaired = true; ensureGeneralTab(room.id, user.uid); }
+      }, (e) => flash(e.message)),
+      watchMembers(room.id, setMembers, (e) => console.warn('members', e)),
+      watchPins(room.id, setPins, (e) => console.warn('pins', e)),
     ];
     return () => unsubs.forEach((u) => u());
   }, [room.id, user.uid]);
@@ -136,9 +142,14 @@ export function Chat({ user, room }: { user: User; room: Room }) {
     }
   };
 
+  // A brand-new room's tab may still be being created; messages need it to exist.
+  const tabReady = tabs.some((t) => t.id === activeTab);
+  const notReady = () => { flash('One moment — setting up your room…'); };
+
   const send = () => {
     const t = draft.trim();
     if (!t) return;
+    if (!tabReady) return notReady();
     setDraft('');
     lastTypingWrite.current = 0;
     setTyping(room.id, user.uid, activeTab, false).catch(() => {});
@@ -151,6 +162,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
+    if (!tabReady) return notReady();
     const caption = draft;
     setDraft('');
     flash('Sending photo…');
@@ -170,6 +182,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
 
   const dropIt = async (def: DropDefinition<any>, content: Record<string, unknown>) => {
     setSheet(null);
+    if (!tabReady) return notReady();
     try {
       await createDrop(room.id, activeTab, user.uid, def.type, content, def.initialEntries?.(content) || []);
     } catch (e: any) {
@@ -221,7 +234,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
         </div>
         <div class="hdr-text">
           <div class="hdr-name">{partner.name}</div>
-          <PartnerStatus member={partnerMember} joined={!!partnerUid} />
+          <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
         </div>
         <ModeToggle uid={user.uid} />
         <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })} aria-label="Set your mood weather">
@@ -252,8 +265,16 @@ export function Chat({ user, room }: { user: User; room: Room }) {
         partner={partner}
         typing={<TypingIndicator member={partnerMember} name={partner.name} tabId={activeTab} />}
         tabName={currentTab && currentTab.id !== GENERAL ? currentTab.name : ''}
-        banner={
-          !bannerHidden && (push === 'default' || push === 'needs-install') ? (
+        banner={<>
+          {!partnerUid && (
+            <div class="sys-card">
+              <span>{room.invites[0]
+                ? `Waiting for ${room.invites[0]} to join. Send them the link so they can sign in with that e-mail.`
+                : 'It’s just you here for now. Invite someone when you’re ready.'}</span>
+              <button type="button" onClick={() => setSheet({ kind: 'invite' })}>{room.invites[0] ? 'Invite' : 'Invite someone'}</button>
+            </div>
+          )}
+          {partnerUid && !bannerHidden && (push === 'default' || push === 'needs-install') ? (
             <div class="sys-card">
               <span>{push === 'needs-install'
                 ? `Add Drops to your Home Screen (Share → Add to Home Screen) to get notified when ${partner.name} messages.`
@@ -261,8 +282,8 @@ export function Chat({ user, room }: { user: User; room: Room }) {
               {push === 'default' && <button type="button" onClick={turnOnPush}>Turn on</button>}
               <button type="button" class="x" onClick={hideBanner} aria-label="Dismiss">✕</button>
             </div>
-          ) : null
-        }
+          ) : null}
+        </>}
         renderMessage={(m) => {
           const mine = m.uid === user.uid;
           if (m.kind === 'text') {
@@ -361,6 +382,14 @@ export function Chat({ user, room }: { user: User; room: Room }) {
                 />
               ) : null;
             })()}
+            {sheet.kind === 'invite' && (
+              <InviteSheet
+                current={room.invites[0] || ''}
+                myEmail={(user.email || '').toLowerCase()}
+                onSave={(email) => changeInvite(room.id, email)}
+                onDone={() => setSheet(null)}
+              />
+            )}
             {sheet.kind === 'archived' && (
               <ArchivedSheet
                 tabs={tabs}
@@ -464,9 +493,9 @@ function useNow(ms: number, active = true) {
   return now;
 }
 
-function PartnerStatus({ member, joined }: { member?: Member; joined: boolean }) {
+function PartnerStatus({ member, joined, invited }: { member?: Member; joined: boolean; invited: string }) {
   const now = useNow(30_000);
-  if (!joined) return <div class="hdr-sub">Invite sent · not joined yet</div>;
+  if (!joined) return <div class="hdr-sub">{invited ? 'Invite sent · not joined yet' : 'No one invited yet'}</div>;
   const mood = member?.mood ? MOODS.find((m) => m.id === member.mood) : undefined;
   const seen = lastSeenLabel(member?.lastSeen ? member.lastSeen.toMillis() : null, now);
   return (

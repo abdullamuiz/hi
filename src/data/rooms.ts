@@ -1,11 +1,11 @@
 import {
-  addDoc, collection, doc, onSnapshot, query, runTransaction, serverTimestamp,
+  collection, doc, onSnapshot, writeBatch, query, runTransaction, serverTimestamp,
   setDoc, Timestamp, updateDoc, where, arrayUnion,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from '../firebase';
 import type { Member, MoodId, Room } from '../types';
-import { ensureGeneralTab } from './tabs';
+import { GENERAL, generalTabDoc } from './tabs';
 
 const roomsCol = collection(db, 'rooms');
 export const DEFAULT_TZ = 'Indian/Maldives';
@@ -15,9 +15,13 @@ function toRoom(id: string, d: any): Room {
 }
 
 export function watchMyRooms(uid: string, cb: (rooms: Room[]) => void, onError?: (e: Error) => void) {
+  // Only rooms the server has confirmed: a room I'm still creating isn't readable for
+  // its sub-collections yet, so opening it early would get listeners refused.
   return onSnapshot(
     query(roomsCol, where('members', 'array-contains', uid)),
-    (s) => cb(s.docs.map((d) => toRoom(d.id, d.data({ serverTimestamps: 'estimate' })))),
+    { includeMetadataChanges: true },
+    // (createdAt stays null until the server has accepted the room; later edits don't hide it.)
+    (s) => cb(s.docs.filter((d) => d.data().createdAt != null).map((d) => toRoom(d.id, d.data({ serverTimestamps: 'estimate' })))),
     onError,
   );
 }
@@ -35,17 +39,24 @@ export function watchInvites(email: string, uid: string, cb: (rooms: Room[]) => 
   );
 }
 
-export async function createRoom(user: User, partnerEmail: string): Promise<string> {
-  const ref = await addDoc(roomsCol, {
+/**
+ * Creates my room, my profile in it and its General tab in ONE atomic write, so the
+ * room never exists without its tab. The partner's e-mail is optional (invite later).
+ */
+export async function createRoom(user: User, partnerEmail = ''): Promise<string> {
+  const ref = doc(roomsCol);
+  const b = writeBatch(db);
+  b.set(ref, {
     owner: user.uid,
     ownerName: user.displayName || user.email || '',
     members: [user.uid],
-    invites: [partnerEmail.trim().toLowerCase()],
+    invites: partnerEmail.trim() ? [partnerEmail.trim().toLowerCase()] : [],
     timezone: DEFAULT_TZ,
     createdAt: serverTimestamp(),
   });
-  await ensureMember(ref.id, user);
-  await ensureGeneralTab(ref.id, user.uid);
+  b.set(doc(db, 'rooms', ref.id, 'members', user.uid), memberProfile(user));
+  b.set(doc(db, 'rooms', ref.id, 'tabs', GENERAL), generalTabDoc(user.uid));
+  await b.commit();
   return ref.id;
 }
 
@@ -65,21 +76,21 @@ export async function joinRoom(roomId: string, user: User) {
   await ensureMember(roomId, user);
 }
 
-export async function ensureMember(roomId: string, user: User) {
-  await setDoc(
-    doc(db, 'rooms', roomId, 'members', user.uid),
-    {
-      uid: user.uid,
-      name: (user.displayName || user.email || '').slice(0, 80),
-      photoURL: user.photoURL ? user.photoURL.slice(0, 2048) : null,
-      lastSeen: serverTimestamp(),
-    },
-    { merge: true },
-  );
+function memberProfile(user: User) {
+  return {
+    uid: user.uid,
+    name: (user.displayName || user.email || '').slice(0, 80),
+    photoURL: user.photoURL ? user.photoURL.slice(0, 2048) : null,
+    lastSeen: serverTimestamp(),
+  };
 }
 
-export function watchMembers(roomId: string, cb: (m: Record<string, Member>) => void) {
-  return onSnapshot(collection(db, 'rooms', roomId, 'members'), (s) => {
+export async function ensureMember(roomId: string, user: User) {
+  await setDoc(doc(db, 'rooms', roomId, 'members', user.uid), memberProfile(user), { merge: true });
+}
+
+export function watchMembers(roomId: string, cb: (m: Record<string, Member>) => void, onError?: (e: Error) => void) {
+  return onSnapshot(collection(db, 'rooms', roomId, 'members'), { includeMetadataChanges: false }, (s) => {
     const out: Record<string, Member> = {};
     s.docs.forEach((d) => {
       const x = d.data({ serverTimestamps: 'estimate' });
@@ -95,7 +106,7 @@ export function watchMembers(roomId: string, cb: (m: Record<string, Member>) => 
       };
     });
     cb(out);
-  });
+  }, onError);
 }
 
 function memberRef(roomId: string, uid: string) {

@@ -31,6 +31,7 @@ async function person(email) {
   const ctx = await browser.newContext(phone);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error(`[${email}] pageerror`, e.message));
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.error(`[${email}] console.${m.type()}`, m.text().slice(0, 300)); });
   await page.goto(APP);
   if (email.startsWith('alice')) {
     await shot(page, 'sign-in');
@@ -51,25 +52,39 @@ async function person(email) {
 const step = (s) => console.log('•', s);
 
 try {
-  step('Alice signs in and invites Bob');
+  step('Alice starts alone, writes, and invites Bob later');
   const alice = await person('alice@example.com');
+  await alice.getByRole('button', { name: 'Skip, invite later' }).click();
+  await alice.getByText('It’s just you here for now.').waitFor();
+  await alice.locator('.hdr-name', { hasText: 'Just you' }).waitFor();
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Note to self: invite Bob');
+  await alice.keyboard.press('Enter');
+  await alice.getByText('Note to self: invite Bob').waitFor();
+  await shot(alice, 'solo-room');
+  await alice.getByRole('button', { name: 'Invite someone' }).click();
+  await alice.getByLabel(/Their e-mail/).fill('alice@example.com');
+  await alice.getByRole('button', { name: 'Save invite' }).click();
+  await alice.getByText('That’s your own address').waitFor();
   await alice.getByLabel(/Their e-mail/).fill('bob@example.com');
-  await alice.getByRole('button', { name: 'Invite' }).click();
-  await alice.getByText('Waiting for bob@example.com').waitFor();
-  await shot(alice, 'lobby-waiting');
+  await alice.getByRole('button', { name: 'Save invite' }).click();
+  await alice.getByText('Invited bob@example.com').waitFor();
+  await shot(alice, 'invite-sheet');
+  await alice.getByRole('button', { name: 'Done' }).click();
+  await alice.getByText('Waiting for bob@example.com to join').waitFor();
 
   step('Eve signs in and sees no invite');
   const eve = await person('eve@example.com');
   await eve.getByText('Start your room').waitFor();
   assert.equal(await eve.getByText(/invited you/).count(), 0);
 
-  step('Bob signs in and joins');
+  step('Bob signs in and joins, and sees what Alice wrote before');
   const bob = await person('bob@example.com');
   await bob.getByRole('button', { name: /Join alice/i }).click();
   await bob.getByRole('textbox', { name: 'Message' }).waitFor();
-  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  await bob.getByText('Note to self: invite Bob').waitFor();
   await bob.locator('.hdr-name', { hasText: 'alice' }).waitFor();
   await alice.locator('.hdr-name', { hasText: 'bob' }).waitFor();
+  assert.equal(await alice.getByText('It’s just you here for now.').count(), 0);
 
   step('Text messages sync both ways');
   await alice.getByRole('textbox', { name: 'Message' }).fill('Finally finished Interstellar last night');

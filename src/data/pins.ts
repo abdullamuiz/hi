@@ -2,9 +2,10 @@ import { addDoc, collection, onSnapshot, orderBy, query, serverTimestamp } from 
 import { db } from '../firebase';
 import type { Pin } from '../types';
 
-export function watchPins(roomId: string, cb: (p: Pin[]) => void) {
+export function watchPins(roomId: string, cb: (p: Pin[]) => void, onError?: (e: Error) => void) {
   return onSnapshot(query(collection(db, 'rooms', roomId, 'pins'), orderBy('createdAt')), (s) =>
     cb(s.docs.map((d) => ({ id: d.id, ...(d.data({ serverTimestamps: 'estimate' }) as any) }))),
+    onError,
   );
 }
 

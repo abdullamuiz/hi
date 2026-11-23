@@ -243,9 +243,10 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 
 ### Rooms and invites
 
-- A room is created with exactly one member (you) and one invited e-mail.
-- Only a signed-in user whose **verified** e-mail matches the invite can join, and only while the room has one member. After that the room is full forever.
-- Until the partner joins, the owner can change the invited address.
+- You can start a room **on your own**. Tap "Skip, invite later" and chat, drop cards and pin things straight away. While you're alone, a banner in the chat has an **Invite someone** button.
+- An invite is one e-mail address. Only a signed-in user whose **verified** e-mail matches it can join, and only while the room has one member. After that the room is full for good.
+- Until someone joins, the owner can add, change or clear the invite. When they join, they see everything already in the room.
+- The room, your profile and its General tab are created in one atomic write, so a room never exists half set-up.
 
 ### Link previews and push
 

@@ -13,6 +13,7 @@ export function App() {
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [invites, setInvites] = useState<Room[]>([]);
   const [err, setErr] = useState('');
+  const [skipInvites, setSkipInvites] = useState(false);
 
   useEffect(() => {
     getRedirectResult(auth).catch((e) => setErr(e?.message || String(e)));
@@ -33,8 +34,13 @@ export function App() {
 
   const full = rooms!.find((r) => r.members.length === 2);
   if (full) return <Chat key={full.id} user={user} room={full} />;
-  const waiting = rooms!.find((r) => r.owner === user.uid) || null;
-  return <Lobby user={user} invites={invites} waiting={waiting} />;
+  const own = rooms!.find((r) => r.owner === user.uid) || null;
+  // Someone invited me: offer to join before dropping me into my own (solo) room.
+  if (invites.length && !(own && skipInvites)) {
+    return <Lobby user={user} invites={invites} ownRoom={own} onOpenOwn={() => setSkipInvites(true)} />;
+  }
+  if (own) return <Chat key={own.id} user={user} room={own} />;
+  return <Lobby user={user} invites={invites} ownRoom={null} onOpenOwn={() => {}} />;
 }
 
 function Splash() {

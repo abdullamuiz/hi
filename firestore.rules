@@ -26,6 +26,10 @@ service cloud.firestore {
     function me() { return request.auth.uid; }
     function roomData(roomId) { return get(/databases/$(database)/documents/rooms/$(roomId)).data; }
     function isMember(roomId) { return signedIn() && me() in roomData(roomId).members; }
+    // For writes made in the same batch that creates the room (room + profile + General tab).
+    function isMemberAfter(roomId) {
+      return signedIn() && me() in getAfter(/databases/$(database)/documents/rooms/$(roomId)).data.members;
+    }
     function verifiedEmail() {
       return signedIn()
         && request.auth.token.email is string
@@ -37,6 +41,7 @@ service cloud.firestore {
     function changedKeys() { return incoming().diff(resource.data).affectedKeys(); }
     function str(s, min, max) { return s is string && s.size() >= min && s.size() <= max; }
     function isKey(k) { return k is string && k.matches('^[A-Za-z0-9-]{1,40}$'); }
+    function validInvites(l) { return l is list && (l.size() == 0 || (l.size() == 1 && lowerEmail(l[0]))); }
     function lowerEmail(e) { return str(e, 3, 254) && e == e.lower() && e.matches('^[^@\\s]+@[^@\\s]+$'); }
 
     // ---------------------------------------------------------------- users
@@ -68,9 +73,8 @@ service cloud.firestore {
         && (incoming().get('timezone', 'Indian/Maldives') is string && incoming().get('timezone', 'Indian/Maldives').size() <= 64)
         && incoming().owner == me()
         && incoming().members == [me()]
-        && incoming().invites is list
-        && incoming().invites.size() == 1
-        && lowerEmail(incoming().invites[0])
+        // Invite now (one e-mail) or later (empty list).
+        && validInvites(incoming().invites)
         && str(incoming().ownerName, 0, 80)
         && incoming().createdAt == request.time;
 
@@ -86,14 +90,13 @@ service cloud.firestore {
           && incoming().members == resource.data.members.concat([me()])
         )
         ||
-        // The owner changes who is invited, while still alone in the room.
+        // The owner invites someone (or changes/clears the invite) while still alone.
         (
           resource.data.owner == me()
           && resource.data.members.size() == 1
           && changedKeys().hasOnly(['invites'])
-          && incoming().invites is list
-          && incoming().invites.size() == 1
-          && lowerEmail(incoming().invites[0])
+          && validInvites(incoming().invites)
+          && !(string(request.auth.token.get('email', '')).lower() in incoming().invites)
         )
       );
       allow delete: if false;
@@ -101,7 +104,7 @@ service cloud.firestore {
       // -------------------------------------------------------- members
       match /members/{uid} {
         allow read: if isMember(roomId);
-        allow create, update: if isMember(roomId)
+        allow create, update: if isMemberAfter(roomId)
           && me() == uid
           && onlyKeys(['uid', 'name', 'photoURL', 'mood', 'lastSeen', 'typingUntil', 'typingTab', 'lastRead'])
           && incoming().uid == uid
@@ -129,7 +132,7 @@ service cloud.firestore {
             && (incoming().wallpaper == null || str(incoming().wallpaper, 1, 200));
         }
         allow read: if isMember(roomId);
-        allow create: if isMember(roomId)
+        allow create: if isMemberAfter(roomId)
           && tabId.matches('^[A-Za-z0-9_-]{1,40}$')
           && onlyKeys(['name', 'colour', 'wallpaper', 'mode', 'disappearing', 'archived', 'order', 'createdBy', 'createdAt', 'lastMessageAt'])
           && incoming().createdBy == me()
