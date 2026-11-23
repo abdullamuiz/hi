@@ -1,7 +1,7 @@
 {
   "name": "Hi \u00b7 Drops Chat",
   "short_name": "Hi",
-  "description": "A private chat for two, with interactive cards called Drops.",
+  "description": "A new way to share moods, thoughts and experiences through conversation. Just say “Hi”.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
