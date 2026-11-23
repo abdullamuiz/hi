@@ -1,4 +1,4 @@
-<img src="public/icons/icon.svg" width="96" alt="Hi">
+<img src="public/icons/icon-512.png" width="96" alt="Hi">
 
 # Hi · Drops Chat
 
@@ -247,7 +247,12 @@ Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this als
 
 ## Icons and themes
 
-- **Icons:** the sources are `public/icons/logo.svg` (the "Hi" bubble: favicon and in-app mark), `icon.svg` (app icon on alabaster) and `icon-maskable.svg` (Android safe zone). The letters are DM Serif Display outlines (SIL Open Font License), so no font is loaded. After editing an SVG, run `npm run icons` to regenerate the PNGs.
+- **Icons:** the designer's set lives in `design/icons/`. **navy** is the shipped colourway: bubble `#252C48`, lettering `#F2EFE6`, dot `#54B5C6`, lettering in Pacifico (OFL). **teal** is the alternate. `npm run icons` copies the navy set into `public/icons/` and generates:
+  - `favicon.svg`: the navy bubble, which switches to the teal bubble in dark-mode browsers so it stays visible on dark tab bars.
+  - `favicon-16.png` and `favicon-48.png`, plus `public/favicon.ico` (16, 32 and 48 px for older browsers, bookmarks and Windows).
+  - `badge-96.png`: the notification badge.
+
+  The 32 and 64 px favicons are the designer's own. `icon-1024.png` and `android-foreground-432.png` are ready for the Capacitor builds later.
 - **Themes:** each person picks one under **mood weather button → Theme**. It's saved on the device and in `users/{uid}`, so it follows them to other devices, and it only changes their own view. To add a theme, add a palette to `src/lib/themes.ts`. The token names are the CSS variables at the top of `src/styles.css`.
 
 ## 9. Later: native apps with Capacitor

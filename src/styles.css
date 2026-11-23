@@ -1,14 +1,14 @@
 /* Drops Chat — styles. Values are taken 1:1 from design/Chat-prototype.html. */
 :root {
   /* Colour tokens. These are the "Hi" theme; src/lib/themes.ts swaps them at runtime. */
-  --me: #232B47;
+  --me: #252C48;
   --on-me: #FFFFFF;
-  --me-dark: #161C30;
-  --them: #36AFC6;
-  --on-them: #232B47;
-  --ink: #232B47;
+  --me-dark: #171C30;
+  --them: #54B5C6;
+  --on-them: #252C48;
+  --ink: #252C48;
   --on-ink: #FFFFFF;
-  --ground: #F4F1E8;
+  --ground: #F2EFE6;
   --surface: #FFFFFF;
   --line: #E4E0D4;
   --line-2: #D8D3C4;
@@ -20,7 +20,7 @@
   --their-bubble: #E2F1F4;
   --note-bg: #E6F3F6;
   --note-fg: #1E5C68;
-  --media: #232B47;
+  --media: #252C48;
   --chip-bg: #EFECE3;
   --sel-bg: #E6F3F6;
   --reveal-ink: #9ED8E4;

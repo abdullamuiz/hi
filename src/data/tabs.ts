@@ -8,7 +8,7 @@ import type { Tab } from '../types';
 export const GENERAL = 'general';
 
 /** Tab dot colours: all keep ≥3:1 contrast against white for the dot and badge. */
-export const TAB_COLOURS = ['#232B47', '#2F5BEA', '#36AFC6', '#2F6B4F', '#E0A23E', '#F2A15F', '#B83F72', '#7A5AF8'];
+export const TAB_COLOURS = ['#252C48', '#2F5BEA', '#1E7F93', '#2F6B4F', '#E0A23E', '#F2A15F', '#B83F72', '#7A5AF8'];
 
 const tabsCol = (roomId: string) => collection(db, 'rooms', roomId, 'tabs');
 
