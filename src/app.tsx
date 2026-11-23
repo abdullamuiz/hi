@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { getRedirectResult, onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import { watchInvites, watchMyRooms } from './data/rooms';
+import { syncThemeFromAccount } from './data/prefs';
 import type { Room } from './types';
 import { SignIn } from './ui/SignIn';
 import { Lobby } from './ui/Lobby';
@@ -20,6 +21,7 @@ export function App() {
 
   useEffect(() => {
     if (!user) return;
+    syncThemeFromAccount(user.uid);
     const unsubs = [watchMyRooms(user.uid, setRooms, (e) => setErr(e.message))];
     if (user.email && user.emailVerified) unsubs.push(watchInvites(user.email, user.uid, setInvites, (e) => setErr(e.message)));
     return () => unsubs.forEach((u) => u());

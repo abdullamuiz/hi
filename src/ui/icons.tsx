@@ -3,20 +3,24 @@ import type { MoodId } from '../types';
 type P = { size?: number };
 const base = { 'aria-hidden': true, fill: 'none', viewBox: '0 0 24 24', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } as const;
 
-export const DropIcon = ({ size = 18, color = '#FFFFFF' }: P & { color?: string }) => (
+/** The "Hi" speech-bubble logo (public/icons/logo.svg). */
+export const Logo = ({ size = 48 }: P) => (
+  <img src="./icons/logo.svg" width={size} height={size} alt="" aria-hidden="true" style={{ display: 'block' }} />
+);
+export const DropIcon = ({ size = 18, color = 'currentColor' }: P & { color?: string }) => (
   <svg {...base} width={size} height={size} stroke={color} stroke-width="2"><path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z" /></svg>
 );
 export const BookmarkIcon = ({ size = 20 }: P) => (
-  <svg {...base} width={size} height={size} stroke="#16181D" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4z" /></svg>
+  <svg {...base} width={size} height={size} stroke="currentColor" stroke-width="2"><path d="M6 3h12v18l-6-4-6 4z" /></svg>
 );
 export const PlusIcon = () => (
-  <svg {...base} width="20" height="20" stroke="#FFFFFF" stroke-width="2.4"><path d="M12 5v14M5 12h14" /></svg>
+  <svg {...base} width="20" height="20" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14" /></svg>
 );
 export const PhotoIcon = () => (
-  <svg {...base} width="20" height="20" stroke="#16181D" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.8" /><path d="M21 16l-5-5-8 8" /></svg>
+  <svg {...base} width="20" height="20" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2" /><circle cx="9" cy="10" r="1.8" /><path d="M21 16l-5-5-8 8" /></svg>
 );
 export const SendIcon = () => (
-  <svg {...base} width="20" height="20" stroke="#FFFFFF" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+  <svg {...base} width="20" height="20" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
 );
 export const CloseIcon = () => (
   <svg {...base} width="18" height="18" stroke="#FFFFFF" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -34,13 +38,13 @@ export const GoogleIcon = () => (
 export function MoodIcon({ mood, size = 22 }: { mood: MoodId; size?: number }) {
   switch (mood) {
     case 'sunny':
-      return <svg {...base} width={size} height={size} stroke="#C26A12" stroke-width="2"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>;
+      return <svg {...base} width={size} height={size} style={{ stroke: 'var(--sun)' }} stroke-width="2"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>;
     case 'cloudy':
-      return <svg {...base} width={size} height={size} stroke="#4A5160" stroke-width="2"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z" /></svg>;
+      return <svg {...base} width={size} height={size} style={{ stroke: 'var(--cloud)' }} stroke-width="2"><path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z" /></svg>;
     case 'foggy':
-      return <svg {...base} width={size} height={size} stroke="#4A5160" stroke-width="2"><path d="M4 9h16M6 13h12M4 17h16" /></svg>;
+      return <svg {...base} width={size} height={size} style={{ stroke: 'var(--cloud)' }} stroke-width="2"><path d="M4 9h16M6 13h12M4 17h16" /></svg>;
     case 'stormy':
-      return <svg {...base} width={size} height={size} stroke="#3B3F9E" stroke-width="2"><path d="M7 15a4 4 0 0 1 .5-8A6 6 0 0 1 19 9a3.5 3.5 0 0 1-1 6.9" /><path d="M13 12l-3 5h4l-3 5" /></svg>;
+      return <svg {...base} width={size} height={size} style={{ stroke: 'var(--storm)' }} stroke-width="2"><path d="M7 15a4 4 0 0 1 .5-8A6 6 0 0 1 19 9a3.5 3.5 0 0 1-1 6.9" /><path d="M13 12l-3 5h4l-3 5" /></svg>;
   }
 }
 

@@ -1,31 +1,35 @@
-// Renders the app icons from SVG using the Playwright Chromium. Run: npm run icons
+// Rasterises the app icons from the SVG sources in public/icons/:
+//   logo.svg           the "Hi" bubble on its own (favicon, in-app brand mark)
+//   icon.svg           app icon: bubble on alabaster (iOS / Android / PWA)
+//   icon-maskable.svg  same, shrunk into Android's maskable safe zone
+// The letters are outlines of DM Serif Display (SIL Open Font License), so no font is needed at runtime.
+// Run: npm run icons   (needs Playwright's Chromium)
 import { createRequire } from 'node:module';
-// Uses an installed Playwright (project or global): npm i -D playwright, or NODE_PATH=$(npm root -g).
+import { readFileSync, writeFileSync } from 'node:fs';
+
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
-import { writeFileSync, mkdirSync } from 'node:fs';
 
-const drop = (s) => `<path d="M12 3c3 4 6 7 6 11a6 6 0 0 1-12 0c0-4 3-7 6-11z" fill="none" stroke="#FFFFFF" stroke-width="${s}" stroke-linecap="round" stroke-linejoin="round"/>`;
-// Full-bleed ink square with a white drop. `pad` shrinks the glyph for maskable safe zone.
-const icon = (size, pad, radius) => `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="${radius}" fill="#16181D"/>
-  <g transform="translate(${pad} ${pad}) scale(${(100 - 2 * pad) / 24})">${drop(2)}<circle cx="17.6" cy="4.6" r="1.6" fill="#F2A15F"/><circle cx="20.4" cy="7.9" r="1.1" fill="#2F5BEA"/></g>
-</svg>`;
-const badge = `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24">${drop(2.4).replace('#FFFFFF', '#000000')}</svg>`;
+const src = (f) => readFileSync(`public/icons/${f}`, 'utf8');
+const sized = (svg, n) => svg.replace('<svg ', `<svg width="${n}" height="${n}" `);
+// Notification badge: Android uses only the alpha channel, so a plain bubble silhouette.
+const bubble = src('logo.svg').match(/<path d="([^"]+)" fill="#232B47"\/>/)[1];
+const badge = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="${bubble}" fill="#000"/></svg>`;
 
-mkdirSync('public/icons', { recursive: true });
-writeFileSync('public/icons/icon.svg', icon(512, 22, 22));
+const jobs = [
+  ['icon-192.png', 192, src('icon.svg'), false],
+  ['icon-512.png', 512, src('icon.svg'), false],
+  ['icon-maskable-512.png', 512, src('icon-maskable.svg'), false],
+  ['apple-touch-icon.png', 180, src('icon.svg'), false],
+  ['favicon-32.png', 32, src('logo.svg'), true],
+  ['badge-96.png', 96, badge, true],
+];
+
 const browser = await chromium.launch();
 const page = await browser.newPage();
-for (const [name, size, svg, transparent] of [
-  ['icon-192.png', 192, icon(192, 22, 0), false],
-  ['icon-512.png', 512, icon(512, 22, 0), false],
-  ['icon-maskable-512.png', 512, icon(512, 30, 0), false],
-  ['apple-touch-icon.png', 180, icon(180, 22, 0), false],
-  ['badge-96.png', 96, badge, true],
-]) {
+for (const [name, size, svg, transparent] of jobs) {
   await page.setViewportSize({ width: size, height: size });
-  await page.setContent(`<html><body style="margin:0;background:transparent">${svg.replace(/width="\d+" height="\d+"/, `width="${size}" height="${size}"`)}</body></html>`);
+  await page.setContent(`<html><body style="margin:0;background:transparent">${sized(svg, size)}</body></html>`);
   writeFileSync(`public/icons/${name}`, await page.screenshot({ omitBackground: transparent }));
 }
 await browser.close();

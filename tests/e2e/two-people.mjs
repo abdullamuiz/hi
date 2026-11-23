@@ -13,6 +13,8 @@ const PROJECT = 'demo-drops';
 const SHOTS = process.env.SHOTS_DIR || 'test-results/e2e';
 mkdirSync(SHOTS, { recursive: true });
 
+// Never let the e2e run talk to the real Firebase project.
+process.env.VITE_USE_EMULATORS = 'true';
 const server = await createServer({ server: { host: '127.0.0.1', port: 5174, strictPort: true }, logLevel: 'error' });
 await server.listen();
 const APP = 'http://127.0.0.1:5174/';
@@ -170,6 +172,21 @@ try {
   await alice.getByRole('button', { name: /Stormy/ }).click();
   await bob.getByText(/Stormy today/).waitFor();
 
+  step('Themes');
+  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'hi');
+  await shot(alice, 'theme-hi');
+  await alice.getByRole('button', { name: 'Set your mood weather' }).click();
+  await alice.getByRole('radio', { name: /Midnight/ }).click();
+  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'midnight');
+  await shot(alice, 'theme-sheet-midnight');
+  await alice.keyboard.press('Escape');
+  await shot(alice, 'theme-midnight');
+  // The choice follows the account: a fresh device for alice picks it up.
+  await alice.reload();
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  assert.equal(await alice.evaluate(() => document.documentElement.dataset.theme), 'midnight');
+  assert.equal(await bob.evaluate(() => document.documentElement.dataset.theme), 'hi', "bob's theme is his own");
+
   step('Outsider cannot see anything');
   await eve.reload();
   await eve.getByText('Start your room').waitFor();
@@ -180,7 +197,7 @@ try {
   await shot(alice, 'alice-bottom');
   await alice.getByRole('button', { name: 'Add a Drop' }).click();
   await shot(alice, 'tray');
-  await alice.getByRole('button', { name: 'Close' }).click();
+  await alice.keyboard.press('Escape');
   await alice.getByRole('button', { name: 'Open scrapbook' }).click();
   await shot(alice, 'scrapbook');
   console.log('\nE2E PASSED — screenshots in', SHOTS);

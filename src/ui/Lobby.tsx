@@ -4,7 +4,7 @@ import { changeInvite, createRoom, joinRoom } from '../data/rooms';
 import { signOut } from '../data/auth';
 import { firstName } from '../lib/names';
 import type { Room } from '../types';
-import { DropIcon } from './icons';
+import { Logo } from './icons';
 
 interface Props {
   user: User;
@@ -50,7 +50,7 @@ export function Lobby({ user, invites, waiting }: Props) {
     <div class="app">
       <div class="screen">
         <div class="brand">
-          <div class="brand-mark"><DropIcon size={24} /></div>
+          <Logo size={56} />
           <div class="brand-name">Hi, {firstName(user.displayName || user.email)}</div>
         </div>
         {err && <div class="err" role="alert">{err}</div>}

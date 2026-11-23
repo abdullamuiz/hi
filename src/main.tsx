@@ -1,6 +1,9 @@
 import { render } from 'preact';
 import { App } from './app';
+import { initTheme } from './lib/themes';
 import './styles.css';
+
+initTheme();
 
 render(<App />, document.getElementById('app')!);
 

@@ -4,6 +4,8 @@ import { createDrop, sendPhoto, sendText, watchMessages } from '../data/messages
 import { addPin, watchPins } from '../data/pins';
 import { ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
+import { chooseTheme } from '../data/prefs';
+import { currentTheme, type ThemeId } from '../lib/themes';
 import { drops, getDrop } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
 import { firstName, initial } from '../lib/names';
@@ -31,6 +33,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const [toast, setToast] = useState('');
+  const [theme, setTheme] = useState<ThemeId>(currentTheme);
   const [push, setPush] = useState<PushStatus>('unsupported');
   const [bannerHidden, setBannerHidden] = useState(() => { try { return !!localStorage.getItem(BANNER_KEY); } catch { return false; } });
   const lastTypingWrite = useRef(0);
@@ -67,6 +70,14 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   }, [room.id, user.uid]);
 
   useEffect(() => { pushStatus().then(setPush); }, []);
+
+  // Escape closes any open sheet.
+  useEffect(() => {
+    if (!sheet) return;
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setSheet(null); };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  }, [!!sheet]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -257,6 +268,8 @@ export function Chat({ user, room }: { user: User; room: Room }) {
                 push={push}
                 onPush={turnOnPush}
                 user={user}
+                theme={theme}
+                onTheme={(t) => { setTheme(t); chooseTheme(user.uid, t); }}
               />
             )}
             {sheet.kind === 'scrap' && <ScrapSheet pins={pins} nameOf={nameOf} />}
