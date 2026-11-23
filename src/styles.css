@@ -109,6 +109,43 @@ input, textarea { font-family: inherit; font-size: 16px; color: var(--ink); }
   font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center;
 }
 
+/* ------------------------------------------------------------------ tabs */
+.tabbar { background: var(--surface); border-bottom: 1px solid var(--line); flex-shrink: 0; }
+.tabbar-row {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px 8px;
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.tabbar-row::-webkit-scrollbar { display: none; }
+.tab-chip {
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+  height: 36px; min-width: 44px; padding: 0 12px; border-radius: 18px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--body-2);
+  font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.tab-chip.on { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.tab-chip.ghost { color: var(--muted); font-weight: 500; }
+.tab-dot { width: 8px; height: 8px; border-radius: 4px; flex-shrink: 0; box-shadow: 0 0 0 1.5px var(--surface); }
+.tab-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.tab-unread {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--me); color: var(--on-me); font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.tab-more { opacity: 0.8; margin-left: -2px; }
+.tab-add {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 18px; padding: 0;
+  border: 1px dashed var(--line-2); background: transparent; color: var(--ink);
+  display: flex; align-items: center; justify-content: center;
+}
+/* 44px touch targets without making the chips look bigger */
+.tab-chip, .tab-add { position: relative; }
+.tab-chip::after, .tab-add::after { content: ''; position: absolute; inset: -4px -2px; }
+.colour-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.colour-opt { width: 36px; height: 36px; border-radius: 18px; border: 3px solid var(--surface); box-shadow: 0 0 0 1px var(--line-2); padding: 0; }
+.colour-opt.on { box-shadow: 0 0 0 2px var(--ink); }
+.archived-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; background: var(--soft); border: 1px solid var(--line); }
+.archived-name { flex-grow: 1; font-weight: 600; font-size: 15px; }
+
 /* ------------------------------------------------------------------ feed */
 .feed {
   position: relative; /* containing block for anything absolutely positioned inside cards */

@@ -2,7 +2,7 @@
 
 # Hi · Drops Chat
 
-A private chat for exactly two people, with **Drops**: interactive cards you play together in the conversation.
+A private chat for exactly two people, with **Tabs** (several parallel conversations, each with its own unread count) and **Drops**: interactive cards you play together in the conversation.
 
 - **Feeling Map**: each of you plots how every scene felt on an intense/calm × heavy/uplifting grid. Dots stay hidden until you both lock in.
 - **Blind Reveal**: answer a question privately, then flip together.
@@ -201,9 +201,10 @@ docs/ADDING_A_DROP.md    how to add a new Drop
 ### Data model
 
 ```
-rooms/{roomId}                      owner, members (max 2), invites [e-mail]
-  members/{uid}                     name, photo, mood weather, lastSeen, typingUntil
-  messages/{id}                     text | link | photo | drop      (append-only)
+rooms/{roomId}                      owner, members (max 2), invites [e-mail], timezone (Indian/Maldives)
+  members/{uid}                     name, photo, mood weather, lastSeen, typing (+tab), lastRead {tabId: time}
+  tabs/{tabId}                      name, colour, archived, order, lastMessageAt   ("general" always exists)
+    messages/{id}                   text | link | photo | drop      (append-only)
   pins/{id}                         scrapbook
   drops/{dropId}                    type + content (the Drop's JSON definition snapshot)
     sealed/{uid}_{key}              a PRIVATE answer
@@ -236,6 +237,13 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 ### Photos
 
 Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this also strips EXIF/GPS), then uploaded to `rooms/{roomId}/photos/{uid}/…`. Storage rules allow members to read, and the owner to write once (≤ 5 MB, images only).
+
+## Tabs
+
+- Every room has a **General** tab. The **+** at the end of the tab bar adds another (name and colour). Tap the open tab for options: rename, recolour, archive. General can't be archived.
+- Unread counts come from `members/{uid}.lastRead[tabId]`, so they sync across your devices. The total also shows on the app icon where the browser supports badges.
+- Notifications name the tab ("Sam · Trip plans"), and tapping one opens that tab.
+- Drops, docs and sessions belong to a tab. Scrapbook, search and streak are room-wide (see `SPEC.md`).
 
 ## Icons and themes
 

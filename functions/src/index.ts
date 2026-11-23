@@ -11,7 +11,7 @@ initializeApp();
 // Small, capped instances keep a two-person app comfortably inside the free tier.
 setGlobalOptions({ region: 'us-central1', maxInstances: 3, memory: '256MiB' });
 
-const MESSAGE = 'rooms/{roomId}/messages/{msgId}';
+const MESSAGE = 'rooms/{roomId}/tabs/{tabId}/messages/{msgId}';
 const VIDEO_RE = /(^|\.)(youtube\.com|youtu\.be|vimeo\.com|netflix\.com|tiktok\.com|twitch\.tv|dailymotion\.com)$/i;
 
 /** Fills in title/description/image for link messages from the page's Open Graph tags. */
@@ -40,14 +40,17 @@ export const linkPreview = onDocumentCreated({ document: MESSAGE, timeoutSeconds
 export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   const msg = event.data?.data();
   if (!msg) return;
-  const { roomId } = event.params;
+  const { roomId, tabId } = event.params;
   const db = getFirestore();
   const room = (await db.doc(`rooms/${roomId}`).get()).data();
   const recipients: string[] = (room?.members || []).filter((u: string) => u !== msg.uid);
   if (!recipients.length) return;
 
   const sender = (await db.doc(`rooms/${roomId}/members/${msg.uid}`).get()).data();
-  const title = String(sender?.name || 'Drops Chat').split(/\s+/)[0];
+  const first = String(sender?.name || 'Hi').split(/\s+/)[0];
+  // Name the tab unless it's General, e.g. "Sam · Trip plans".
+  const tabName = tabId === 'general' ? '' : String((await db.doc(`rooms/${roomId}/tabs/${tabId}`).get()).data()?.name || '');
+  const title = tabName ? `${first} · ${tabName}` : first;
   let dropType: string | undefined;
   if (msg.kind === 'drop' && msg.dropId) {
     dropType = (await db.doc(`rooms/${roomId}/drops/${msg.dropId}`).get()).data()?.type;
@@ -62,7 +65,7 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
       tokens,
       webpush: {
         headers: { Urgency: 'high', TTL: '86400' },
-        data: { title, body, tag: `room-${roomId}`, url: './' },
+        data: { title, body, tag: `room-${roomId}-${tabId}`, url: `./?tab=${encodeURIComponent(tabId)}` },
       },
     });
     const dead = res.responses
