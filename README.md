@@ -163,6 +163,23 @@ Your app is live at `https://your-project-id.web.app`. Then:
 
 To deploy only one part later: `npx firebase deploy --only hosting`, `--only firestore:rules,storage`, or `--only functions`.
 
+### Automatic deploys from GitHub
+
+`.github/workflows/deploy.yml` runs the tests on every pull request. When something is merged into `main`, it runs them again and then publishes the **website** and **Firestore rules** to `hi-dropchat`. You don't need a terminal. It needs one secret, set up once:
+
+1. **Create a deploy account.** Open the [service accounts page for hi-dropchat](https://console.cloud.google.com/iam-admin/serviceaccounts?project=hi-dropchat) and sign in with the Google account that owns the Firebase project.
+   - Click **+ Create service account**. Name: `github-deploy`. Click **Create and continue**.
+   - **Role:** search for **Firebase Admin** and select it. Click **Continue**, then **Done**.
+2. **Download its key.** Click the new `github-deploy` account, then the **Keys** tab, then **Add key → Create new key → JSON → Create**. A `.json` file downloads.
+3. **Give it to GitHub.** In this repo, go to **Settings → Secrets and variables → Actions → New repository secret**.
+   - Name: `FIREBASE_SERVICE_ACCOUNT`
+   - Secret: open the downloaded `.json` file in a text editor and paste **all** of it.
+   - Click **Add secret**.
+4. Delete the downloaded `.json` file from your computer. GitHub keeps the only copy it needs. If it ever leaks, delete the key on the same Keys tab and repeat steps 2–3.
+5. **Run it.** Merge a pull request, or open **Actions → Test and deploy → Run workflow** (branch `main`). After about 3 minutes, https://hi-dropchat.web.app is live. The Actions tab shows each run, with a red ✗ and the reason if something failed.
+
+**After you move to Blaze:** to also deploy the Storage rules and Cloud Functions (photos, link previews, push), go to **Settings → Secrets and variables → Actions → Variables → New repository variable**, set `DEPLOY_BACKEND` = `true`, and give the `github-deploy` account two more roles: **Cloud Functions Admin** and **Service Account User**. The first Functions deploy can take about 5 minutes.
+
 ## 7. Install on iPhone (and Android)
 
 **iPhone / iPad (iOS 16.4+ for notifications):**
