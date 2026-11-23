@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "emulators": "node scripts/emulators.mjs",
-    "dev:all": "npm --prefix functions run build && concurrently -k -n emu,web \"npm:emulators\" \"vite\"",
+    "dev:all": "npm --prefix functions run build && concurrently -k -n emu,web \"npm:emulators\" \"cross-env VITE_USE_EMULATORS=true vite\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -26,6 +26,7 @@
     "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.6.6",
     "concurrently": "^10.0.7",
+    "cross-env": "^10.1.0",
     "firebase-tools": "^15.37.0",
     "playwright": "^1.63.0",
     "typescript": "^7.0.2",

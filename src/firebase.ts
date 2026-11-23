@@ -13,7 +13,9 @@ import { firebaseConfig } from './firebase-config';
 const placeholder = firebaseConfig.apiKey === 'REPLACE_ME';
 export const usingEmulators = placeholder || import.meta.env.VITE_USE_EMULATORS === 'true';
 
-const config = usingEmulators && placeholder
+// Against the emulators always use the demo project, so local runs and tests can
+// never touch the real database.
+const config = usingEmulators
   ? {
       apiKey: 'demo-key',
       authDomain: 'demo-drops.firebaseapp.com',
