@@ -338,16 +338,24 @@ service cloud.firestore {
                     && !existsAfter(schedPath()))
               );
           }
+          // Optional effect (SPEC §4): one screen or bubble effect from a fixed list.
+          function validEffect() {
+            return incoming().get('effect', null) == null
+              || incoming().effect in ['confetti', 'balloons', 'fireworks', 'glow',
+                                       'shout', 'whisper', 'slow', 'spotlight', 'sealed', 'echo'];
+          }
           function validText() {
             return incoming().kind == 'text'
               && str(incoming().text, 1, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'urgent', 'scheduled', 'expiresAt', 'createdAt'])
-              && validNoteReply();
+              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'urgent', 'scheduled', 'effect', 'expiresAt', 'createdAt'])
+              && validNoteReply()
+              && validEffect();
           }
           function validLink() {
             return incoming().kind == 'link'
               && str(incoming().text, 0, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'urgent', 'expiresAt', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'urgent', 'effect', 'expiresAt', 'createdAt'])
+              && validEffect()
               && incoming().link is map
               && incoming().link.status == 'pending'
               && str(incoming().link.url, 8, 2048)
@@ -437,10 +445,10 @@ service cloud.firestore {
           // Delete for everyone: the sender only; content cleared, deleted = true.
           function isDeleteForEveryone() {
             return mine() && alive()
-              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt'])
+              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt', 'effect'])
               && incoming().deleted == true
               && incoming().text == ''
-              && !incoming().keys().hasAny(['link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt']);
+              && !incoming().keys().hasAny(['link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt', 'effect']);
           }
           // Quick reactions: { code: [uid] }. Only my own uid may appear or disappear.
           function rxSame(k) {
