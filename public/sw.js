@@ -1,6 +1,6 @@
 /* Drops Chat service worker: offline app shell + Web Push (FCM).
  * Plain JS on purpose — no build step, no Firebase SDK, no config needed here. */
-const VERSION = 'hi-v2';
+const VERSION = 'hi-v3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -61,17 +61,24 @@ self.addEventListener('push', (e) => {
       renotify: true,
       icon: './icons/icon-192.png',
       badge: './icons/badge-96.png',
-      data: { url: d.url || './' },
+      data: { url: d.url || './', room: d.room || '', tab: d.tab || '' },
     }),
   );
 });
 
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const target = new URL(e.notification.data?.url || './', self.location.href).href;
+  const data = e.notification.data || {};
+  const target = new URL(data.url || './', self.location.href).href;
   e.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
-      for (const c of list) if ('focus' in c) return c.focus();
+      // App already open: bring it forward and ask it to open that chat and tab.
+      for (const c of list) {
+        if ('focus' in c) {
+          if (data.room) c.postMessage({ type: 'open-chat', room: data.room, tab: data.tab || undefined });
+          return c.focus();
+        }
+      }
       return self.clients.openWindow(target);
     }),
   );

@@ -11,14 +11,17 @@ interface Props {
   partner: Person;
   pinned: boolean;
   onPin(title: string, detail: string): void;
+  /** Tells the chat which kind of Drop this is (for previews). */
+  onType?(type: string): void;
 }
 
-export function DropCard({ roomId, dropId, me, partner, pinned, onPin }: Props) {
+export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }: Props) {
   const [s, setS] = useState<DropState>(emptyDropState);
   const partnerUid = partner.uid || null;
   useEffect(() => watchDrop(roomId, dropId, me.uid, partnerUid, setS), [roomId, dropId, me.uid, partnerUid]);
 
   const def = s.drop ? getDrop(s.drop.type) : undefined;
+  useEffect(() => { if (s.drop?.type) onType?.(s.drop.type); }, [s.drop?.type]);
   const createdBy: Person = s.drop?.createdBy === me.uid ? me : partner;
 
   const api = useMemo<DropApi>(() => {

@@ -1,11 +1,13 @@
 import {
-  collection, doc, limitToLast, onSnapshot, orderBy, query, serverTimestamp, writeBatch, type WriteBatch,
+  arrayRemove, arrayUnion, collection, deleteField, doc, FieldPath, limitToLast, onSnapshot, orderBy, query,
+  serverTimestamp, updateDoc, writeBatch, type WriteBatch,
 } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { findLink } from '../lib/links';
 import { compressImage } from '../lib/image';
-import type { Message } from '../types';
+import { snippetOf } from '../lib/messages';
+import type { LastMessage, Message, PhraseReaction, ReactionCode, ReplyRef } from '../types';
 
 const msgsCol = (roomId: string, tabId: string) => collection(db, 'rooms', roomId, 'tabs', tabId, 'messages');
 
@@ -18,27 +20,33 @@ export function watchMessages(roomId: string, tabId: string, cb: (m: Message[]) 
 
 const newId = (roomId: string, tabId: string) => doc(msgsCol(roomId, tabId)).id;
 
-/** Writes a message and bumps the tab's lastMessageAt in the same atomic batch. */
-function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>) {
+/**
+ * Writes a message, bumps the tab's lastMessageAt and the room's chat-list preview,
+ * all in the same atomic batch.
+ */
+function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>, preview: string) {
   b.set(doc(msgsCol(roomId, tabId), id), { ...data, createdAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId, 'tabs', tabId), { lastMessageAt: serverTimestamp() });
+  b.update(doc(db, 'rooms', roomId), { lastMessage: { id, uid: data.uid, tabId, text: preview.slice(0, 160), at: serverTimestamp() } });
 }
 
-export async function sendText(roomId: string, tabId: string, uid: string, raw: string) {
+export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null) {
   const text = raw.trim().slice(0, 4000);
   if (!text) return;
   const link = findLink(text);
   const b = writeBatch(db);
+  const reply = replyTo ? { replyTo: { msgId: replyTo.msgId, snippet: replyTo.snippet.slice(0, 160), senderId: replyTo.senderId } } : {};
   if (link) {
-    addMessage(b, roomId, tabId, newId(roomId, tabId), {
-      uid, kind: 'link', text: link.rest,
+    const data = {
+      uid, kind: 'link', text: link.rest, ...reply,
       link: {
         url: link.url, domain: link.domain, isVideo: link.isVideo,
         title: null, description: null, image: null, siteName: null, status: 'pending',
       },
-    });
+    };
+    addMessage(b, roomId, tabId, newId(roomId, tabId), data, snippetOf(data as any));
   } else {
-    addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text });
+    addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, ...reply }, snippetOf({ kind: 'text', text }));
   }
   await b.commit();
 }
@@ -49,13 +57,14 @@ export async function sendPhoto(roomId: string, tabId: string, uid: string, file
   const path = `rooms/${roomId}/photos/${uid}/${id}.jpg`;
   await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg', cacheControl: 'private, max-age=31536000' });
   const b = writeBatch(db);
-  addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text: caption.trim().slice(0, 1000), photo: { path, width, height } });
+  const text = caption.trim().slice(0, 1000);
+  addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text, photo: { path, width, height } }, snippetOf({ kind: 'photo', text }));
   await b.commit();
 }
 
 /** Creates a Drop and the chat message that carries it, atomically. */
 export async function createDrop(
-  roomId: string, tabId: string, uid: string, type: string, content: Record<string, unknown>, firstEntries: string[] = [],
+  roomId: string, tabId: string, uid: string, type: string, content: Record<string, unknown>, firstEntries: string[] = [], title = 'a Drop',
 ) {
   const b = writeBatch(db);
   const dropRef = doc(collection(db, 'rooms', roomId, 'drops'));
@@ -63,7 +72,54 @@ export async function createDrop(
   firstEntries.forEach((text) => {
     b.set(doc(collection(dropRef, 'entries')), { uid, text: text.slice(0, 280), createdAt: serverTimestamp() });
   });
-  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id });
+  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id }, snippetOf({ kind: 'drop', text: '' }, title));
   await b.commit();
   return dropRef.id;
 }
+
+// ---------------------------------------------------------------------------- message actions
+
+const msgRef = (roomId: string, m: Pick<Message, 'id' | 'tabId'>) => doc(db, 'rooms', roomId, 'tabs', m.tabId, 'messages', m.id);
+
+/** If `m` is the chat-list preview, rewrite that preview (keeping its time). */
+function fixPreview(b: WriteBatch, roomId: string, last: LastMessage | null, m: Pick<Message, 'id'>, text: string) {
+  if (last && last.id === m.id && last.at) {
+    b.update(doc(db, 'rooms', roomId), { lastMessage: { ...last, text: text.slice(0, 160) } });
+  }
+}
+
+/** Edit my own text (rules: within 15 minutes of sending). */
+export async function editMessage(roomId: string, m: Message, raw: string, last: LastMessage | null) {
+  const text = raw.trim().slice(0, 4000);
+  if (!text || text === m.text) return;
+  const b = writeBatch(db);
+  b.update(msgRef(roomId, m), { text, editedAt: serverTimestamp() });
+  fixPreview(b, roomId, last, m, snippetOf({ kind: 'text', text }));
+  await b.commit();
+}
+
+/** "Delete for me" (and its undo). */
+export const hideMessage = (roomId: string, m: Message, uid: string, hidden = true) =>
+  updateDoc(msgRef(roomId, m), { hiddenFor: hidden ? arrayUnion(uid) : arrayRemove(uid) });
+
+/** "Delete for everyone": clears the content; a Cloud Function removes any photo file. */
+export async function deleteForEveryone(roomId: string, m: Message, last: LastMessage | null) {
+  const b = writeBatch(db);
+  b.update(msgRef(roomId, m), {
+    deleted: true, text: '',
+    link: deleteField(), photo: deleteField(), dropId: deleteField(), replyTo: deleteField(),
+    reactions: deleteField(), phraseReactions: deleteField(), editedAt: deleteField(),
+  });
+  fixPreview(b, roomId, last, m, 'Message deleted');
+  await b.commit();
+}
+
+/** Toggle one of my quick reactions. */
+export const setReaction = (roomId: string, m: Message, uid: string, code: ReactionCode, on: boolean) =>
+  updateDoc(msgRef(roomId, m), new FieldPath('reactions', code), on ? arrayUnion(uid) : arrayRemove(uid));
+
+export const addPhraseReaction = (roomId: string, m: Message, p: PhraseReaction) =>
+  updateDoc(msgRef(roomId, m), { phraseReactions: arrayUnion({ uid: p.uid, start: p.start, end: p.end, reaction: p.reaction }) });
+
+export const removePhraseReaction = (roomId: string, m: Message, p: PhraseReaction) =>
+  updateDoc(msgRef(roomId, m), { phraseReactions: arrayRemove({ uid: p.uid, start: p.start, end: p.end, reaction: p.reaction }) });

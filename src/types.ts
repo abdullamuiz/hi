@@ -14,6 +14,19 @@ export interface Room {
   /** IANA zone for all "day" logic (streaks, On This Day). */
   timezone: string;
   createdAt: Timestamp | null;
+  /** Secret part of the share link while nobody has joined yet (owner only sees it). */
+  inviteCode: string | null;
+  /** Latest message, for the chat list. */
+  lastMessage: LastMessage | null;
+}
+
+export interface LastMessage {
+  id: string;
+  uid: string;
+  tabId: string;
+  /** Short preview text. Never a hidden Drop answer. */
+  text: string;
+  at: Timestamp | null;
 }
 
 /** rooms/{roomId}/members/{uid} — public profile inside the room. */
@@ -74,6 +87,34 @@ export interface Message {
   photo?: PhotoRef;
   dropId?: string;
   createdAt: Timestamp | null;
+  /** Reply-quote of an earlier message. */
+  replyTo?: ReplyRef;
+  /** Set when the sender edited the text (within 15 minutes). */
+  editedAt?: Timestamp | null;
+  /** uids who chose "Delete for me". */
+  hiddenFor?: string[];
+  /** "Delete for everyone": content is cleared. */
+  deleted?: boolean;
+  /** Quick reactions: reaction code → uids. */
+  reactions?: Partial<Record<ReactionCode, string[]>>;
+  /** Reactions to a span of the text. */
+  phraseReactions?: PhraseReaction[];
+}
+
+export type ReactionCode = 'heart' | 'laugh' | 'wow' | 'sad' | 'up' | 'fire';
+
+export interface ReplyRef {
+  msgId: string;
+  snippet: string;
+  senderId: string;
+}
+
+export interface PhraseReaction {
+  uid: string;
+  /** Character offsets into the message text, end exclusive. */
+  start: number;
+  end: number;
+  reaction: ReactionCode;
 }
 
 /** rooms/{roomId}/drops/{dropId} */

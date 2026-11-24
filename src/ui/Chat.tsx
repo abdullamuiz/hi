@@ -1,10 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { User } from 'firebase/auth';
-import { createDrop, sendPhoto, sendText, watchMessages } from '../data/messages';
+import {
+  addPhraseReaction, createDrop, deleteForEveryone, editMessage, hideMessage, removePhraseReaction, sendPhoto, sendText,
+  setReaction, watchMessages,
+} from '../data/messages';
 import { addPin, watchPins } from '../data/pins';
 import { GENERAL, createTab, ensureGeneralTab, markRead, updateTab, watchTabs } from '../data/tabs';
-import { changeInvite, ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
-import { InviteSheet } from './InviteSheet';
+import { ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
+import { AddContactSheet } from './AddContactSheet';
+import { ActionSheet, DeleteSheet, PhraseSheet, PhraseText, ReactionChips, ReplyQuote, useLongPress } from './MessageActions';
+import { canEdit, copyText, snippetOf, visibleTo } from '../lib/messages';
 import { usePullToRefresh } from './PullToRefresh';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
@@ -14,12 +19,12 @@ import { drops, getDrop } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
 import { firstName, initial } from '../lib/names';
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
-import type { Member, Message, MoodId, Pin, Room, Tab } from '../types';
+import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Tab } from '../types';
 import { DropCard } from './DropCard';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
 import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
-import { BookmarkIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
+import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
 
 type Sheet =
   | null
@@ -31,7 +36,25 @@ type Sheet =
   | { kind: 'tab-new' }
   | { kind: 'tab-edit'; tabId: string }
   | { kind: 'archived' }
-  | { kind: 'invite' };
+  | { kind: 'invite' }
+  | { kind: 'actions'; msgId: string }
+  | { kind: 'delete'; ids: string[] }
+  | { kind: 'phrase'; msgId: string };
+
+interface Toast { text: string; undo?: () => void }
+
+async function copyToClipboard(text: string) {
+  try { await navigator.clipboard.writeText(text); return; } catch { /* fall back below */ }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+}
 
 const BANNER_KEY = 'drops.pushBannerDismissed';
 const tabKey = (roomId: string) => `hi.tab.${roomId}`;
@@ -43,16 +66,23 @@ function initialTab(roomId: string): string {
   try { return localStorage.getItem(tabKey(roomId)) || GENERAL; } catch { return GENERAL; }
 }
 
-export function Chat({ user, room }: { user: User; room: Room }) {
+export function Chat({ user, room, onBack }: { user: User; room: Room; onBack(): void }) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTab, setActiveTab] = useState<string>(() => initialTab(room.id));
   const [members, setMembers] = useState<Record<string, Member>>({});
   const [pins, setPins] = useState<Pin[]>([]);
+  // dropId → Drop type, reported by each Drop card (for reply / pin / list previews).
+  const [dropTypes, setDropTypes] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewer, setViewer] = useState<string | null>(null);
-  const [toast, setToast] = useState('');
+  const [toast, setToastState] = useState<Toast | null>(null);
+  const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null);
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [highlight, setHighlight] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const [theme, setTheme] = useState<ThemePrefs>(currentPrefs);
   const [push, setPush] = useState<PushStatus>('unsupported');
   const [bannerHidden, setBannerHidden] = useState(() => { try { return !!localStorage.getItem(BANNER_KEY); } catch { return false; } });
@@ -121,18 +151,22 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   useEffect(() => { pushStatus().then(setPush); }, []);
   useEffect(() => onThemeChange((p) => setTheme(p)), []);
 
-  // Escape closes any open sheet.
+  // Escape closes any open sheet, else leaves select mode.
   useEffect(() => {
-    if (!sheet) return;
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setSheet(null); };
+    if (!sheet && !selected) return;
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (sheet) setSheet(null); else setSelected(null); } };
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
-  }, [!!sheet]);
+  }, [!!sheet, !!selected]);
 
-  function flash(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast((t) => (t === msg ? '' : t)), 4000);
+  const toastTimer = useRef<number | null>(null);
+  function showToast(t: Toast | null, ms = 4000) {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToastState(t);
+    if (t) toastTimer.current = window.setTimeout(() => setToastState(null), ms);
   }
+  const flash = (text: string) => showToast({ text });
+  const setToast = (text: string) => showToast(text ? { text } : null);
 
   // --- actions ---------------------------------------------------------------
   const onDraft = (v: string) => {
@@ -161,11 +195,20 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   const send = () => {
     const t = draft.trim();
     if (!t) return;
+    if (editing) {
+      const m = editing;
+      setEditing(null);
+      setDraft('');
+      editMessage(room.id, m, t, room.lastMessage).catch((e) => { flash(e?.code === 'permission-denied' ? 'Too late to edit — messages can be edited for 15 minutes.' : e.message); });
+      return;
+    }
     if (!tabReady) { queued.current = t; setDraft(''); return; }
+    const reply = replyTo;
     setDraft('');
+    setReplyTo(null);
     lastTypingWrite.current = 0;
     setTyping(room.id, user.uid, activeTab, false).catch(() => {});
-    sendText(room.id, activeTab, user.uid, t).catch((e) => { setDraft(t); flash(e.message); });
+    sendText(room.id, activeTab, user.uid, t, reply).catch((e) => { setDraft(t); setReplyTo(reply); flash(e.message); });
   };
 
   const pickPhoto = () => fileInput.current?.click();
@@ -196,7 +239,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
     setSheet(null);
     if (!tabReady) return notReady();
     try {
-      await createDrop(room.id, activeTab, user.uid, def.type, content, def.initialEntries?.(content) || []);
+      await createDrop(room.id, activeTab, user.uid, def.type, content, def.initialEntries?.(content) || [], `a ${def.title}`);
     } catch (e: any) {
       flash(e?.message || 'Could not drop that.');
     }
@@ -222,6 +265,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   const pinnedMsgs = useMemo(() => new Set(pins.map((p) => p.messageId).filter(Boolean)), [pins]);
   const viewed = viewer ? messages?.find((m) => m.id === viewer) : undefined;
   const nameOf = (uid: string) => (uid === user.uid ? me.name : partner.name);
+  const quoteName = (uid: string) => (uid === user.uid ? 'You' : partner.name);
   const tabName = (id: string | null) => tabs.find((t) => t.id === id)?.name || '';
   const currentTab = tabs.find((t) => t.id === activeTab);
 
@@ -230,6 +274,76 @@ export function Chat({ user, room }: { user: User; room: Room }) {
     const nav = navigator as any;
     if (n > 0) nav.setAppBadge?.(n).catch?.(() => {}); else nav.clearAppBadge?.().catch?.(() => {});
   };
+  // --- message actions ---------------------------------------------------------
+  const shown = useMemo(() => (messages ? visibleTo(messages, user.uid) : null), [messages, user.uid]);
+  const byId = (id: string) => messages?.find((m) => m.id === id);
+  const dropTitle = (m: Message) => `a ${(m.dropId && dropTypes[m.dropId] && getDrop(dropTypes[m.dropId])?.title) || 'Drop'}`;
+  const snip = (m: Message) => snippetOf(m, dropTitle(m));
+  const isEditable = (m: Message) => canEdit({ ...m, createdMs: toMillis(m.createdAt) }, user.uid);
+
+  const openActions = (m: Message) => { if (!selected) setSheet({ kind: 'actions', msgId: m.id }); };
+  const startReply = (m: Message) => {
+    setSheet(null);
+    setEditing(null);
+    setReplyTo({ msgId: m.id, snippet: snip(m), senderId: m.uid });
+    inputRef.current?.focus();
+  };
+  const startEdit = (m: Message) => {
+    setSheet(null);
+    setReplyTo(null);
+    setEditing(m);
+    setDraft(m.text);
+    inputRef.current?.focus();
+  };
+  const cancelCompose = () => { if (editing) setDraft(''); setEditing(null); setReplyTo(null); };
+  const copyMsgs = async (ms: Message[]) => {
+    const text = ms.map(copyText).filter(Boolean).join('\n');
+    if (!text) return flash('Nothing to copy');
+    await copyToClipboard(text);
+    flash('Copied');
+  };
+  const pinMsgs = async (ms: Message[]) => {
+    const todo = ms.filter((m) => !m.deleted && m.kind !== 'drop' && !pinnedMsgs.has(m.id));
+    try {
+      await Promise.all(todo.map((m) => addPin(room.id, user.uid, { title: nameOf(m.uid), detail: snip(m), messageId: m.id, tabId: activeTab })));
+      flash(todo.length ? 'Pinned to scrapbook' : 'Already pinned');
+    } catch (e: any) { flash(e.message); }
+  };
+  const react = (m: Message, code: ReactionCode, on: boolean) =>
+    setReaction(room.id, m, user.uid, code, on).catch((e) => flash(e.message));
+  const hideMsgs = async (ms: Message[]) => {
+    setSheet(null);
+    setSelected(null);
+    try {
+      await Promise.all(ms.map((m) => hideMessage(room.id, m, user.uid, true)));
+      showToast({
+        text: ms.length > 1 ? `${ms.length} messages deleted for you` : 'Deleted for you',
+        undo: () => { showToast(null); Promise.all(ms.map((m) => hideMessage(room.id, m, user.uid, false))).catch((e) => flash(e.message)); },
+      }, 5000);
+    } catch (e: any) { flash(e.message); }
+  };
+  const deleteForAll = async (ms: Message[]) => {
+    setSheet(null);
+    setSelected(null);
+    try {
+      for (const m of ms) await deleteForEveryone(room.id, m, room.lastMessage);
+      flash(ms.length > 1 ? 'Messages deleted' : 'Message deleted');
+    } catch (e: any) { flash(e.message); }
+  };
+  const jumpTo = (msgId: string) => {
+    const el = document.getElementById(`m-${msgId}`);
+    if (!el) return flash('The original message isn’t loaded here.');
+    el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    setHighlight(msgId);
+    setTimeout(() => setHighlight((h) => (h === msgId ? '' : h)), 1600);
+  };
+  const toggleSelect = (id: string) => setSelected((s0) => {
+    const s1 = new Set(s0 || []);
+    if (s1.has(id)) s1.delete(id); else s1.add(id);
+    return s1;
+  });
+  const selectedMsgs = selected ? (shown || []).filter((m) => selected.has(m.id)) : [];
+
   const saveNewTab = async (name: string, colour: string) => {
     setSheet(null);
     try {
@@ -241,6 +355,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   return (
     <div class="app">
       <header class="hdr">
+        <button type="button" class="back-btn" onClick={onBack} aria-label="Back to chats"><BackIcon /></button>
         <div class="avatar" aria-hidden="true">
           {partnerMember?.photoURL ? <img src={partnerMember.photoURL} alt="" referrerpolicy="no-referrer" /> : initial(partner.name)}
         </div>
@@ -285,7 +400,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
       />
 
       <Feed
-        messages={messages}
+        messages={shown}
         me={me}
         partner={partner}
         typing={<TypingIndicator member={partnerMember} name={partner.name} tabId={activeTab} />}
@@ -311,23 +426,29 @@ export function Chat({ user, room }: { user: User; room: Room }) {
         </>}
         renderMessage={(m) => {
           const mine = m.uid === user.uid;
-          if (m.kind === 'text') {
-            return <div class={`row${mine ? ' me' : ''}`}><div class={`bubble ${mine ? 'mine' : 'theirs'}`}>{m.text}</div></div>;
-          }
-          if (m.kind === 'link' && m.link) {
-            const fm = getDrop('feeling-map');
-            return (
-              <div class={`row${mine ? ' me' : ''}`}>
-                <LinkCard msg={m} onFeel={fm ? () => startDrop(fm, { subject: cleanTitle(m.link!.title) || fm.content.subject }) : undefined} />
+          let body: preact.ComponentChildren = null;
+          if (m.deleted) {
+            body = <div class={`bubble ${mine ? 'mine' : 'theirs'} deleted`}>Message deleted</div>;
+          } else if (m.kind === 'text') {
+            body = (
+              <div class={`bubble ${mine ? 'mine' : 'theirs'}`}>
+                {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={mine} onJump={() => jumpTo(m.replyTo!.msgId)} />}
+                <PhraseText text={m.text} phrases={m.phraseReactions} me={user.uid} nameOf={nameOf}
+                  onRemove={(p) => removePhraseReaction(room.id, m, p).catch((e) => flash(e.message))} />
+                {m.editedAt && <span class="edited"> · edited</span>}
               </div>
             );
-          }
-          if (m.kind === 'photo' && m.photo) {
-            return <div class={`row${mine ? ' me' : ''}`}><PhotoBubble msg={m} mine={mine} onView={() => setViewer(m.id)} /></div>;
-          }
-          if (m.kind === 'drop' && m.dropId) {
+          } else if (m.kind === 'link' && m.link) {
+            const fm = getDrop('feeling-map');
+            body = (<>
+              {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={false} onJump={() => jumpTo(m.replyTo!.msgId)} />}
+              <LinkCard msg={m} onFeel={fm ? () => startDrop(fm, { subject: cleanTitle(m.link!.title) || fm.content.subject }) : undefined} />
+            </>);
+          } else if (m.kind === 'photo' && m.photo) {
+            body = <PhotoBubble msg={m} mine={mine} onView={() => setViewer(m.id)} />;
+          } else if (m.kind === 'drop' && m.dropId) {
             const dropId = m.dropId;
-            return (
+            body = (
               <DropCard
                 roomId={room.id}
                 dropId={dropId}
@@ -335,19 +456,55 @@ export function Chat({ user, room }: { user: User; room: Room }) {
                 partner={partner}
                 pinned={pinnedDrops.has(dropId)}
                 onPin={(title, detail) => pin({ title, detail, dropId })}
+                onType={(type) => setDropTypes((t) => (t[dropId] === type ? t : { ...t, [dropId]: type }))}
               />
             );
           }
-          return null;
+          if (!body) return null;
+          return (
+            <MsgRow
+              msg={m}
+              mine={mine}
+              wide={m.kind === 'drop' && !m.deleted}
+              selecting={!!selected}
+              selected={!!selected?.has(m.id)}
+              highlight={highlight === m.id}
+              onActions={() => openActions(m)}
+              onToggle={() => toggleSelect(m.id)}
+            >
+              {body}
+              <ReactionChips msg={m} me={user.uid} onToggle={(code, on) => react(m, code, on)} />
+            </MsgRow>
+          );
         }}
       />
 
+      {selected ? (
+        <footer class="composer select-bar" aria-label="Selected messages">
+          <button type="button" class="round-btn" onClick={() => setSelected(null)} aria-label="Cancel selection"><XIcon /></button>
+          <span class="select-count" role="status">{selected.size} selected</span>
+          <button type="button" class="chip-btn" disabled={!selectedMsgs.length} onClick={() => copyMsgs(selectedMsgs)}>Copy</button>
+          <button type="button" class="chip-btn" disabled={!selectedMsgs.length} onClick={() => pinMsgs(selectedMsgs)}>Pin</button>
+          <button type="button" class="chip-btn danger-text" disabled={!selectedMsgs.length} onClick={() => setSheet({ kind: 'delete', ids: selectedMsgs.map((m) => m.id) })}>Delete</button>
+        </footer>
+      ) : (<>
+      {(replyTo || editing) && (
+        <div class="compose-strip" role="status">
+          <span class={`strip-bar${(editing || replyTo!.senderId === user.uid) ? ' me' : ''}`} aria-hidden="true" />
+          <span class="strip-text">
+            <span class="strip-title">{editing ? 'Editing message' : `Replying to ${replyTo!.senderId === user.uid ? 'yourself' : nameOf(replyTo!.senderId)}`}</span>
+            <span class="strip-snip">{editing ? snip(editing) : replyTo!.snippet}</span>
+          </span>
+          <button type="button" class="strip-x" onClick={cancelCompose} aria-label={editing ? 'Cancel editing' : 'Cancel reply'}><XIcon /></button>
+        </div>
+      )}
       <footer class="composer">
         <button type="button" class="fab" onClick={() => setSheet({ kind: 'tray' })} aria-label="Add a Drop"><PlusIcon /></button>
         <button type="button" class="round-btn" onClick={pickPhoto} aria-label="Send a photo"><PhotoIcon /></button>
         <input ref={fileInput} type="file" accept="image/*" hidden onChange={onFile} />
         <label for="chat-input" class="sr">Message</label>
         <input
+          ref={inputRef}
           id="chat-input"
           class="msg-input"
           value={draft}
@@ -357,8 +514,9 @@ export function Chat({ user, room }: { user: User; room: Room }) {
           autocomplete="off"
           enterKeyHint="send"
         />
-        <button type="button" class="send-btn" onClick={send} aria-label="Send"><SendIcon /></button>
+        <button type="button" class="send-btn" onClick={send} aria-label={editing ? 'Save edit' : 'Send'}><SendIcon /></button>
       </footer>
+      </>)}
 
       {viewed && viewed.photo && (
         <PhotoViewer
@@ -412,13 +570,54 @@ export function Chat({ user, room }: { user: User; room: Room }) {
               ) : null;
             })()}
             {sheet.kind === 'invite' && (
-              <InviteSheet
-                current={room.invites[0] || ''}
-                myEmail={(user.email || '').toLowerCase()}
-                onSave={(email) => changeInvite(room.id, email)}
-                onDone={() => setSheet(null)}
-              />
+              <AddContactSheet user={user} room={room} onToast={flash} onClose={() => setSheet(null)} />
             )}
+            {sheet.kind === 'actions' && (() => {
+              const m = byId(sheet.msgId);
+              if (!m) return null;
+              const mine = m.uid === user.uid;
+              const mineRx = (Object.entries(m.reactions || {}) as [ReactionCode, string[]][]).filter(([, u]) => u.includes(user.uid)).map(([c]) => c);
+              return (
+                <ActionSheet
+                  msg={m}
+                  preview={`${mine ? 'You' : nameOf(m.uid)}: ${snip(m)}`}
+                  canEdit={isEditable(m)}
+                  canCopy={!!copyText(m)}
+                  canPin={m.kind !== 'drop'}
+                  pinned={pinnedMsgs.has(m.id)}
+                  myReactions={mineRx}
+                  onReact={(code) => { setSheet(null); react(m, code, !mineRx.includes(code)); }}
+                  onPhrase={m.kind === 'text' && m.text.trim() ? () => setSheet({ kind: 'phrase', msgId: m.id }) : undefined}
+                  onReply={() => startReply(m)}
+                  onCopy={() => { setSheet(null); copyMsgs([m]); }}
+                  onPin={() => { setSheet(null); pinMsgs([m]); }}
+                  onEdit={() => startEdit(m)}
+                  onSelect={() => { setSheet(null); setSelected(new Set([m.id])); }}
+                  onDelete={() => setSheet({ kind: 'delete', ids: [m.id] })}
+                />
+              );
+            })()}
+            {sheet.kind === 'delete' && (() => {
+              const ms = sheet.ids.map(byId).filter(Boolean) as Message[];
+              return (
+                <DeleteSheet
+                  count={ms.length}
+                  allMine={ms.length > 0 && ms.every((m) => m.uid === user.uid && !m.deleted)}
+                  onForMe={() => hideMsgs(ms)}
+                  onForEveryone={() => deleteForAll(ms)}
+                  onCancel={() => setSheet(null)}
+                />
+              );
+            })()}
+            {sheet.kind === 'phrase' && (() => {
+              const m = byId(sheet.msgId);
+              return m ? (
+                <PhraseSheet text={m.text} onReact={(start, end, reaction) => {
+                  setSheet(null);
+                  addPhraseReaction(room.id, m, { uid: user.uid, start, end, reaction }).catch((e) => flash(e.message));
+                }} />
+              ) : null;
+            })()}
             {sheet.kind === 'archived' && (
               <ArchivedSheet
                 tabs={tabs}
@@ -430,7 +629,58 @@ export function Chat({ user, room }: { user: User; room: Room }) {
         </div>
       )}
 
-      {toast && <div class="toast" role="status">{toast}</div>}
+      {toast && (
+        <div class="toast" role="status">
+          <span>{toast.text}</span>
+          {toast.undo && <button type="button" class="toast-btn" onClick={toast.undo}>Undo</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------- one message
+
+interface RowProps {
+  msg: Message;
+  mine: boolean;
+  /** Drop cards use the full width. */
+  wide: boolean;
+  selecting: boolean;
+  selected: boolean;
+  highlight: boolean;
+  onActions(): void;
+  onToggle(): void;
+  children: preact.ComponentChildren;
+}
+
+/** A message with its long-press menu, tick circle in select mode, and a ⋯ button for mouse/keyboard. */
+function MsgRow({ msg, mine, wide, selecting, selected, highlight, onActions, onToggle, children }: RowProps) {
+  const lp = useLongPress(onActions, !selecting);
+  const pickInstead = (e: MouseEvent) => {
+    if (!selecting) return lp.onClickCapture(e);
+    e.preventDefault();
+    e.stopPropagation();
+    onToggle();
+  };
+  return (
+    <div
+      id={`m-${msg.id}`}
+      class={`msg${mine ? ' me' : ''}${wide ? ' wide' : ''}${selecting ? ' selecting' : ''}${selected ? ' sel' : ''}${highlight ? ' flash' : ''}`}
+      {...lp}
+      onClickCapture={pickInstead}
+    >
+      {selecting && (
+        <span class={`tick${selected ? ' on' : ''}`} role="checkbox" aria-checked={selected} tabIndex={0}
+          aria-label={selected ? 'Selected' : 'Select message'}
+          onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(); } }} />
+      )}
+      <div class="msg-body">{children}</div>
+      {!selecting && (
+        <button type="button" class="msg-more" onClick={onActions} aria-label="Message actions">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+        </button>
+      )}
     </div>
   );
 }

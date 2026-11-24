@@ -365,7 +365,8 @@ Profile · Quiet hours · Read receipts · Reduce motion override · Notificatio
 ## 11. Build phases (one PR each)
 
 1. **Foundation**: project setup, auth (Google + email link), invite flow for the second member, rooms, tabs, real-time text messaging, typing, presence, design tokens, PWA install + iPhone install guide in README.
-2. **Message actions**: long-press sheet, copy, select mode, reply-quote, edit (15 min), delete for me, delete for everyone (2-step), reactions, phrase reactions.
+2. **Message actions** ✅ done: long-press sheet, copy, select mode, reply-quote, edit (15 min), delete for me, delete for everyone (2-step), reactions, phrase reactions.
+   - Built together with **many contacts** (one private two-person chat per contact, a chat list, invite by share link or e-mail). Group chats (3+ people in one room) are deliberately left for later.
 3. **Media**: photos (compress + viewer), link previews (function), voice notes with waveform and timestamped reactions.
 4. **Tab features**: themes, disappearing tabs (TTL), mood weather, scrapbook, search, export (PDF/ZIP).
 5. **Effects & timing**: screen and bubble effects, keyword suggestions, scheduled messages, quiet hours, push notifications.

@@ -1,4 +1,5 @@
-// End-to-end: two people sign in (email link), pair up, chat and play every Drop.
+// End-to-end: people sign in (email link), add each other as contacts (share link and
+// e-mail invite), chat, use every message action and play every Drop.
 // Runs against the Emulator Suite:  npm run test:e2e
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
@@ -27,12 +28,12 @@ const phone = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, has
 
 const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
-async function person(email) {
-  const ctx = await browser.newContext(phone);
+async function person(email, startUrl = APP) {
+  const ctx = await browser.newContext({ ...phone, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error(`[${email}] pageerror`, e.message));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.error(`[${email}] console.${m.type()}`, m.text().slice(0, 300)); });
-  await page.goto(APP);
+  await page.goto(startUrl);
   if (email.startsWith('alice')) {
     // Opening screen: Hi is drawn, the dot bounces, then the app opens through the dot.
     assert.equal(await page.locator('#splash').getAttribute('class'), 'play');
@@ -52,45 +53,62 @@ async function person(email) {
   const code = oobCodes.filter((c) => c.email === email).pop();
   const link = new URL(code.oobLink);
   await page.goto(`${APP}?mode=signIn&oobCode=${link.searchParams.get('oobCode')}&apiKey=demo-key&lang=en`);
+  await page.locator('#splash').waitFor({ state: 'detached', timeout: 15000 });
   return page;
 }
 
 const step = (s) => console.log('•', s);
 
 try {
-  step('Alice starts alone, writes, and invites Bob later');
+  step('Alice adds a contact with a share link and writes before anyone joins');
   const alice = await person('alice@example.com');
-  await alice.getByRole('button', { name: 'Skip, invite later' }).click();
+  await alice.getByText('Start your first chat').waitFor();
+  await shot(alice, 'chats-empty');
+  await alice.getByRole('button', { name: 'Add contact' }).click();
+  await alice.getByLabel('Their e-mail (optional)').fill('alice@example.com');
+  await alice.getByRole('button', { name: 'Create invite link' }).click();
+  await alice.getByText('That’s your own address').waitFor();
+  await alice.getByLabel('Their e-mail (optional)').fill('');
+  await alice.getByRole('button', { name: 'Create invite link' }).click();
+  await alice.getByText('Invite ready').waitFor();
+  const bobLink = (await alice.getByLabel('Invite link', { exact: true }).textContent()).trim();
+  assert.match(bobLink, /\?join=[\w-]+&code=[\w-]{16,}&from=alice&u=/);
+  await alice.getByRole('button', { name: 'Copy link' }).click();
+  await alice.getByRole('status').filter({ hasText: 'Copied' }).waitFor();
+  assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), bobLink);
+  await shot(alice, 'invite-ready');
+  await alice.getByRole('button', { name: 'Open the chat' }).click();
   await alice.getByText('It’s just you here for now.').waitFor();
   await alice.locator('.hdr-name', { hasText: 'Just you' }).waitFor();
   await alice.getByRole('textbox', { name: 'Message' }).fill('Note to self: invite Bob');
   await alice.keyboard.press('Enter');
   await alice.getByText('Note to self: invite Bob').waitFor();
   await shot(alice, 'solo-room');
-  await alice.getByRole('button', { name: 'Invite someone' }).click();
-  await alice.getByLabel(/Their e-mail/).fill('alice@example.com');
-  await alice.getByRole('button', { name: 'Save invite' }).click();
-  await alice.getByText('That’s your own address').waitFor();
-  await alice.getByLabel(/Their e-mail/).fill('bob@example.com');
-  await alice.getByRole('button', { name: 'Save invite' }).click();
-  await alice.getByText('Invited bob@example.com').waitFor();
-  await shot(alice, 'invite-sheet');
-  await alice.getByRole('button', { name: 'Done' }).click();
-  await alice.getByText('Waiting for bob@example.com to join').waitFor();
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByText('Invite link not used yet').waitFor();
 
   step('Eve signs in and sees no invite');
   const eve = await person('eve@example.com');
-  await eve.getByText('Start your room').waitFor();
+  await eve.getByText('Start your first chat').waitFor();
   assert.equal(await eve.getByText(/invited you/).count(), 0);
 
-  step('Bob signs in and joins, and sees what Alice wrote before');
-  const bob = await person('bob@example.com');
-  await bob.getByRole('button', { name: /Join alice/i }).click();
+  step('Bob opens the link, signs in, joins, and sees what Alice wrote before');
+  const bob = await person('bob@example.com', bobLink);
+  await bob.getByRole('button', { name: 'Join alice' }).click();
   await bob.getByRole('textbox', { name: 'Message' }).waitFor();
   await bob.getByText('Note to self: invite Bob').waitFor();
   await bob.locator('.hdr-name', { hasText: 'alice' }).waitFor();
+  await alice.getByRole('button', { name: /^bob/ }).click();
   await alice.locator('.hdr-name', { hasText: 'bob' }).waitFor();
   assert.equal(await alice.getByText('It’s just you here for now.').count(), 0);
+
+  step('A used link can’t add anyone else');
+  await eve.goto(bobLink);
+  await eve.getByRole('button', { name: 'Join alice' }).click();
+  await eve.getByText('This invite link doesn’t work any more').waitFor();
+  await shot(eve, 'join-link-used');
+  await eve.getByRole('button', { name: 'Go to my chats' }).click();
+  await eve.getByText('Start your first chat').waitFor();
 
   step('Text messages sync both ways');
   await alice.getByRole('textbox', { name: 'Message' }).fill('Finally finished Interstellar last night');
@@ -99,6 +117,99 @@ try {
   await bob.getByRole('textbox', { name: 'Message' }).fill('Same! I have thoughts. Lots of them.');
   await bob.keyboard.press('Enter');
   await alice.getByText('Same! I have thoughts.').waitFor();
+
+  step('Message actions: reply-quote, react, phrase react, edit, copy, select');
+  // The message itself, not a reply that quotes it.
+  const msgWith = (page, text) => page.locator('.msg').filter({ hasText: text }).filter({ hasNot: page.locator('.quote', { hasText: text }) }).last();
+  const actionsOn = async (page, text) => {
+    await msgWith(page, text).locator('.msg-body').click({ button: 'right' });
+    await page.getByRole('button', { name: 'Reply', exact: true }).waitFor();
+  };
+  // A real touch long-press on Bob's phone opens the same menu.
+  {
+    const box = await bob.locator('.msg', { hasText: 'Finally finished Interstellar' }).locator('.bubble').boundingBox();
+    const cdp = await bob.context().newCDPSession(bob);
+    const pt = [{ x: box.x + 20, y: box.y + box.height / 2 }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt });
+    await bob.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  }
+  await bob.getByRole('button', { name: 'Reply', exact: true }).waitFor();
+  await shot(bob, 'message-actions');
+  await bob.getByRole('button', { name: 'Reply', exact: true }).click();
+  await bob.getByText('Replying to alice').waitFor();
+  await shot(bob, 'replying');
+  await bob.getByRole('textbox', { name: 'Message' }).fill('Which part got you?');
+  await bob.keyboard.press('Enter');
+  const quote = alice.getByRole('button', { name: /Reply to You: Finally finished Interstellar/ });
+  await quote.waitFor();
+  await quote.click();
+  await alice.locator('.msg.flash', { hasText: 'Finally finished Interstellar' }).waitFor();
+
+  await actionsOn(alice, 'Which part got you?');
+  await alice.getByRole('button', { name: 'React Love' }).click();
+  await bob.getByRole('button', { name: 'Love, 1. Tap to add yours' }).waitFor();
+  await bob.getByRole('button', { name: 'Love, 1. Tap to add yours' }).click();
+  await alice.getByRole('button', { name: 'Love, 2. Tap to remove yours' }).waitFor();
+
+  await actionsOn(bob, 'Finally finished Interstellar');
+  await bob.getByRole('button', { name: /Phrase react/ }).click();
+  await bob.getByRole('button', { name: 'finished', exact: true }).click();
+  await bob.getByRole('button', { name: 'Interstellar', exact: true }).click();
+  await shot(bob, 'phrase-picker');
+  await bob.getByRole('button', { name: 'Phrase reaction Fire' }).click();
+  await alice.getByRole('img', { name: '🔥 from bob on “finished Interstellar”' }).waitFor();
+  await alice.locator('.phrase', { hasText: 'finished Interstellar' }).waitFor();
+
+  await actionsOn(alice, 'Finally finished Interstellar');
+  await alice.getByRole('button', { name: /^Edit/ }).click();
+  await alice.getByText('Editing message').waitFor();
+  assert.equal(await alice.getByRole('textbox', { name: 'Message' }).inputValue(), 'Finally finished Interstellar last night');
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Finally finished Interstellar last night!!');
+  await alice.getByRole('button', { name: 'Save edit' }).click();
+  await bob.locator('.msg', { hasText: 'last night!!' }).getByText('· edited').waitFor();
+  assert.equal(await bob.getByText('last night!!').count(), 1);
+
+  await actionsOn(alice, 'Which part got you?');
+  await alice.getByRole('button', { name: 'Copy', exact: true }).click();
+  await alice.getByRole('status').filter({ hasText: 'Copied' }).waitFor();
+  assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), 'Which part got you?');
+
+  await actionsOn(alice, 'Same! I have thoughts.');
+  await alice.getByRole('button', { name: 'Select', exact: true }).click();
+  await msgWith(alice, 'Which part got you?').click();
+  await alice.getByText('2 selected').waitFor();
+  await shot(alice, 'select-mode');
+  await alice.locator('.select-bar').getByRole('button', { name: 'Copy' }).click();
+  await alice.getByRole('status').filter({ hasText: 'Copied' }).waitFor();
+  assert.equal(await alice.evaluate(() => navigator.clipboard.readText()), 'Same! I have thoughts. Lots of them.\nWhich part got you?');
+  await alice.locator('.select-bar').getByRole('button', { name: 'Delete' }).click();
+  assert.equal(await alice.getByRole('button', { name: 'Delete for everyone' }).isDisabled(), true, 'not all mine');
+  await alice.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await alice.getByRole('button', { name: 'Cancel selection' }).click();
+
+  step('Delete for me (with undo) and delete for everyone');
+  await actionsOn(bob, 'Note to self: invite Bob');
+  await bob.getByRole('button', { name: 'Delete', exact: true }).click();
+  await bob.getByRole('button', { name: 'Delete for me' }).click();
+  await bob.getByRole('button', { name: 'Undo' }).waitFor();
+  assert.equal(await bob.getByText('Note to self: invite Bob').count(), 0);
+  await alice.getByText('Note to self: invite Bob').waitFor();
+  await bob.getByRole('button', { name: 'Undo' }).click();
+  await bob.getByText('Note to self: invite Bob').waitFor();
+
+  await alice.getByRole('textbox', { name: 'Message' }).fill('oops, wrong chat');
+  await alice.keyboard.press('Enter');
+  await bob.getByText('oops, wrong chat').waitFor();
+  await actionsOn(alice, 'oops, wrong chat');
+  await alice.getByRole('button', { name: 'Delete', exact: true }).click();
+  await alice.getByRole('button', { name: 'Delete for everyone' }).click();
+  await alice.getByText('Delete for everyone?').waitFor();
+  await alice.getByText('This removes it from both chats and can’t be undone.').waitFor();
+  await shot(alice, 'delete-for-everyone');
+  await alice.getByRole('button', { name: 'Delete for everyone' }).click();
+  await bob.locator('.bubble.deleted', { hasText: 'Message deleted' }).waitFor();
+  assert.equal(await bob.getByText('oops, wrong chat').count(), 0);
 
   step('Tabs: create, unread count, open, rename, archive');
   await alice.getByRole('button', { name: 'New tab' }).click();
@@ -219,6 +330,11 @@ try {
   await alice.locator('.badge', { hasText: '1' }).waitFor();
   await aliceCard.getByText('Pinned').waitFor();
 
+  step('Pin a plain message');
+  await actionsOn(alice, 'Which part got you?');
+  await alice.getByRole('button', { name: 'Pin', exact: true }).click();
+  await bob.locator('.badge', { hasText: '2' }).waitFor();
+
   step('Mood weather');
   await alice.getByRole('button', { name: /Your mood weather/ }).click();
   await shot(alice, 'mood-sheet');
@@ -262,7 +378,14 @@ try {
   await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
 
   step('Pull down and hold 2 s at the top of the chat to refresh (a quick tug does nothing)');
-  await alice.evaluate(() => { document.querySelector('.feed').scrollTop = 0; });
+  // Scroll to the very top and make sure it stays there (late layout can nudge it).
+  await alice.waitForFunction(() => {
+    const f = document.querySelector('.feed');
+    f.scrollTop = 0;
+    const ok = window.__topSince && Date.now() - window.__topSince > 600;
+    if (f.scrollTop !== 0) window.__topSince = 0; else if (!window.__topSince) window.__topSince = Date.now();
+    return ok;
+  }, null, { polling: 100 });
   {
     const cdp = await alice.context().newCDPSession(alice);
     const box = await alice.locator('.feed').boundingBox();
@@ -294,9 +417,36 @@ try {
     await alice.getByRole('textbox', { name: 'Message' }).waitFor();
   }
 
+  step('A second contact by e-mail invite: Alice’s list shows two chats');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByRole('button', { name: 'Add contact' }).click();
+  await alice.getByLabel('Their e-mail (optional)').fill('carol@example.com');
+  await alice.getByRole('button', { name: 'Create invite link' }).click();
+  await alice.getByText('Invite ready').waitFor();
+  await alice.keyboard.press('Escape');
+  await alice.getByText('Waiting for carol@example.com to join').waitFor();
+  const carol = await person('carol@example.com');
+  await carol.getByText('alice invited you').waitFor();
+  await shot(carol, 'chats-invite');
+  await carol.getByRole('button', { name: 'Accept' }).click();
+  await carol.getByRole('textbox', { name: 'Message' }).fill('Hi Alice, it’s Carol!');
+  await carol.keyboard.press('Enter');
+  await alice.getByRole('button', { name: /^carol.*unread messages/ }).waitFor();
+  await alice.getByRole('button', { name: /^bob/ }).waitFor();
+  assert.equal(await alice.locator('.chat-row').count(), 2);
+  await shot(alice, 'chats-two');
+  await alice.getByRole('button', { name: /^carol/ }).click();
+  await alice.getByText('Hi Alice, it’s Carol!').waitFor();
+  assert.equal(await alice.getByText('Which part got you?').count(), 0, 'chats are separate');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByRole('button', { name: /^carol/ }).waitFor();
+  assert.equal(await alice.getByRole('button', { name: /^carol.*unread messages/ }).count(), 0, 'read once opened');
+
   step('Outsider cannot see anything');
   await eve.reload();
-  await eve.getByText('Start your room').waitFor();
+  await eve.getByText('Start your first chat').waitFor();
+  await alice.getByRole('button', { name: /^bob/ }).click();
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
 
   await bob.evaluate(() => document.querySelector('.feed').scrollTo(0, 0));
   await shot(bob, 'bob-top');
@@ -310,6 +460,7 @@ try {
   console.log('\nE2E PASSED — screenshots in', SHOTS);
 } catch (e) {
   console.error('\nE2E FAILED:', e);
+  for (const c of browser.contexts()) for (const p of c.pages()) console.error('rows:', await p.evaluate(() => [...document.querySelectorAll('.chat-open')].map((b) => b.getAttribute('aria-label'))).catch(() => ''));
   for (const [i, c] of browser.contexts().entries()) for (const p of c.pages()) await p.screenshot({ path: `${SHOTS}/failure-${i}.png` }).catch(() => {});
   process.exitCode = 1;
 } finally {
