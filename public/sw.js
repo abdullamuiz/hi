@@ -1,6 +1,6 @@
 /* Drops Chat service worker: offline app shell + Web Push (FCM).
  * Plain JS on purpose — no build step, no Firebase SDK, no config needed here. */
-const VERSION = 'drops-v1';
+const VERSION = 'hi-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -29,6 +29,9 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
+
+  // Update checks must always reach the server.
+  if (url.pathname.endsWith('/version.json')) return;
 
   // Own static files and Google Fonts: stale-while-revalidate.
   const sameOrigin = url.origin === self.location.origin;

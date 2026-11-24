@@ -7,8 +7,17 @@ import type { Room } from './types';
 import { SignIn } from './ui/SignIn';
 import { Lobby } from './ui/Lobby';
 import { Chat } from './ui/Chat';
+import { UpdateBar } from './ui/PullToRefresh';
+import { watchForUpdates } from './lib/updates';
 
 export function App() {
+  const [update, setUpdate] = useState(false);
+  useEffect(() => watchForUpdates(() => setUpdate(true)), []);
+  const bar = update ? <UpdateBar onDismiss={() => setUpdate(false)} /> : null;
+  return <>{bar}<Screen /></>;
+}
+
+function Screen() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [invites, setInvites] = useState<Room[]>([]);
