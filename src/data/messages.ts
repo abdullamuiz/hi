@@ -51,6 +51,16 @@ export async function sendText(roomId: string, tabId: string, uid: string, raw: 
   await b.commit();
 }
 
+/** A reply to someone's 24-hour note: a text message that quotes the note. */
+export async function sendNoteReply(roomId: string, tabId: string, uid: string, raw: string, note: { text: string; emoji: string }) {
+  const text = raw.trim().slice(0, 4000);
+  if (!text) return;
+  const b = writeBatch(db);
+  const replyToNote = { text: note.text.slice(0, 60), emoji: note.emoji.slice(0, 16) };
+  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, replyToNote }, snippetOf({ kind: 'text', text }));
+  await b.commit();
+}
+
 export async function sendPhoto(roomId: string, tabId: string, uid: string, file: File, caption: string) {
   const { blob, width, height } = await compressImage(file, 1600);
   const id = newId(roomId, tabId);
@@ -107,7 +117,7 @@ export async function deleteForEveryone(roomId: string, m: Message, last: LastMe
   const b = writeBatch(db);
   b.update(msgRef(roomId, m), {
     deleted: true, text: '',
-    link: deleteField(), photo: deleteField(), dropId: deleteField(), replyTo: deleteField(),
+    link: deleteField(), photo: deleteField(), dropId: deleteField(), replyTo: deleteField(), replyToNote: deleteField(),
     reactions: deleteField(), phraseReactions: deleteField(), editedAt: deleteField(),
   });
   fixPreview(b, roomId, last, m, 'Message deleted');

@@ -8,6 +8,7 @@ import {
   memoryLocalCache,
 } from 'firebase/firestore';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
+import { connectFunctionsEmulator, getFunctions } from 'firebase/functions';
 import { firebaseConfig } from './firebase-config';
 
 const placeholder = firebaseConfig.apiKey === 'REPLACE_ME';
@@ -41,10 +42,12 @@ function makeDb() {
 }
 export const db = makeDb();
 export const storage = getStorage(app);
+export const functions = getFunctions(app, 'us-central1');
 
 if (usingEmulators) {
   const host = location.hostname || 'localhost';
   connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
   connectFirestoreEmulator(db, host, 8080);
   connectStorageEmulator(storage, host, 9199);
+  connectFunctionsEmulator(functions, host, 5001);
 }

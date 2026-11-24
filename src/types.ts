@@ -18,6 +18,8 @@ export interface Room {
   inviteCode: string | null;
   /** Latest message, for the chat list. */
   lastMessage: LastMessage | null;
+  /** uid of the person who left (removed the contact). The chat is then read-only. */
+  left: string | null;
 }
 
 export interface LastMessage {
@@ -89,6 +91,8 @@ export interface Message {
   createdAt: Timestamp | null;
   /** Reply-quote of an earlier message. */
   replyTo?: ReplyRef;
+  /** A reply to the other person's 24-hour note. */
+  replyToNote?: { text: string; emoji: string };
   /** Set when the sender edited the text (within 15 minutes). */
   editedAt?: Timestamp | null;
   /** uids who chose "Delete for me". */

@@ -8,6 +8,8 @@ import type { MoodId, Pin } from '../types';
 import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 import { buildLabel, reloadApp } from '../lib/updates';
+import { BlockedList } from './Profile';
+import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
 
 export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void }) {
@@ -119,9 +121,14 @@ interface SettingsProps {
   onTheme(p: ThemePrefs): void;
   push: PushStatus;
   onPush(): void;
+  /** People I blocked, with Unblock. */
+  blocked?: Blocked[];
+  onUnblock?(uid: string): void;
+  onEditProfile?(): void;
+  onDeleteAccount?(): void;
 }
 
-export function SettingsSheet({ user, prefs, onTheme, push, onPush }: SettingsProps) {
+export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = [], onUnblock, onEditProfile, onDeleteAccount }: SettingsProps) {
   const pushLabel: Record<PushStatus, string> = {
     granted: 'On',
     denied: 'Blocked in browser settings',
@@ -168,11 +175,19 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush }: SettingsPr
 
       <SplashSetting />
 
+      {onUnblock && <BlockedList blocked={blocked} onUnblock={onUnblock} />}
+
       <div class="settings">
         <div class="settings-row">
           <span>Notifications</span>
           {push === 'default' ? <button type="button" class="link-btn" onClick={onPush}>Turn on</button> : <span>{pushLabel[push]}</span>}
         </div>
+        {onEditProfile && (
+          <div class="settings-row">
+            <span>Profile</span>
+            <button type="button" class="link-btn" onClick={onEditProfile}>Edit profile</button>
+          </div>
+        )}
         <div class="settings-row">
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</span>
           <button type="button" class="link-btn" onClick={async () => { await disablePush(user.uid); await signOut(); }}>Sign out</button>
@@ -181,6 +196,12 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush }: SettingsPr
           <span>App version · {buildLabel()}</span>
           <button type="button" class="link-btn" onClick={() => reloadApp()}>Reload app</button>
         </div>
+        {onDeleteAccount && (
+          <div class="settings-row">
+            <span>Account</span>
+            <button type="button" class="link-btn danger-text" onClick={onDeleteAccount}>Delete account</button>
+          </div>
+        )}
         <div class="fine">About: messages are protected by access rules but are not end-to-end encrypted.</div>
       </div>
     </div>
