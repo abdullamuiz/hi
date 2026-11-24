@@ -34,6 +34,11 @@ async function person(email) {
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.error(`[${email}] console.${m.type()}`, m.text().slice(0, 300)); });
   await page.goto(APP);
   if (email.startsWith('alice')) {
+    // Opening screen: Hi is drawn, the dot bounces, then the app opens through the dot.
+    assert.equal(await page.locator('#splash').getAttribute('class'), 'play');
+    await page.waitForTimeout(1200);
+    await shot(page, 'splash-drawing');
+    await page.locator('#splash').waitFor({ state: 'detached', timeout: 8000 });
     await shot(page, 'sign-in');
     await page.getByRole('button', { name: 'Switch to dark mode' }).click();
     await shot(page, 'sign-in-dark');
@@ -243,9 +248,12 @@ try {
   assert.equal((await state(alice)).theme, 'forest-dark');
   await shot(alice, 'settings-forest-dark');
   await alice.getByRole('radio', { name: /^Hi/ }).click();
+  // Opening screen set to Still: the next load shows the logo only until the app is ready.
+  await alice.getByRole('radio', { name: 'Still' }).click();
   await alice.keyboard.press('Escape');
   // The choice follows the account: alice reloads and is still dark; bob is unaffected.
   await alice.reload();
+  assert.notEqual(await alice.evaluate(() => document.getElementById('splash')?.className), 'play', 'still splash does not animate');
   await alice.getByRole('textbox', { name: 'Message' }).waitFor();
   assert.equal((await state(alice)).mode, 'dark');
   assert.equal((await state(bob)).mode, 'light', "bob's theme is his own");

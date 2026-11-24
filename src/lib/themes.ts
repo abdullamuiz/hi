@@ -202,7 +202,9 @@ export function applyTheme(prefs: ThemePrefs, persist = true) {
   root.dataset.mode = mode;
   root.style.colorScheme = mode;
   const surface = tokens['--surface'] || '#FFFFFF';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', surface);
+  // While the opening screen is up the status bar stays teal; the splash applies this when it leaves.
+  root.dataset.themeColor = surface;
+  if (!document.getElementById('splash')) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', surface);
   // Browser-tab icon follows the app's mode: teal bubble in light, navy in dark.
   document.querySelector('link[rel="icon"][type="image/svg+xml"]')
     ?.setAttribute('href', mode === 'dark' ? './icons/favicon-navy.svg' : './icons/favicon-teal.svg');

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Hi · Drops Chat</title>
     <meta name="description" content="A new way to share moods, thoughts and experiences through conversation. Just say “Hi”." />
-    <meta name="theme-color" content="#FFFFFF" />
+    <meta name="theme-color" content="#1E7F93" />
     <meta name="color-scheme" content="light dark" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -20,9 +20,90 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" />
+    <style>
+      /* Opening screen: same teal as the phone's own launch screen (manifest background_color). */
+      #splash { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: #1E7F93; touch-action: none; }
+      #splash svg { width: 216px; height: 216px; overflow: visible; }
+      #splash .s { stroke-dasharray: 1 2; }
+      #splash.play .s { animation: hi-draw var(--d) var(--t) cubic-bezier(.45,.05,.4,1) both; }
+      #splash.play .s1 { --t: .15s; --d: .5s; }
+      #splash.play .s2 { --t: .68s; --d: .24s; }
+      #splash.play .s3 { --t: .95s; --d: .62s; }
+      #splash.play .s4 { --t: 1.6s; --d: .36s; }
+      #splash-dot { transform-box: fill-box; transform-origin: 50% 100%; }
+      #splash.play #splash-dot { animation: hi-dot .62s 2s both; }
+      @keyframes hi-draw { 0% { stroke-dashoffset: 1; stroke-opacity: 0; } 1% { stroke-opacity: 1; } 100% { stroke-dashoffset: 0; stroke-opacity: 1; } }
+      @keyframes hi-dot {
+        0% { transform: translateY(-300px); opacity: 0; animation-timing-function: cubic-bezier(.5,0,1,.6); }
+        12% { opacity: 1; }
+        48% { transform: translateY(0) scale(1.25, .72); animation-timing-function: cubic-bezier(0,.5,.5,1); }
+        72% { transform: translateY(-70px) scale(.92, 1.08); animation-timing-function: cubic-bezier(.5,0,1,.5); }
+        88% { transform: translateY(0) scale(1.1, .9); animation-timing-function: ease-out; }
+        100% { transform: none; opacity: 1; }
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
+    <!-- Opening screen. Plain HTML so it shows before the app's code loads; the script below plays it. -->
+    <div id="splash" aria-hidden="true">
+      <svg viewBox="0 0 1024 1024">
+        <defs>
+          <mask id="hi-ink" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+            <g transform="translate(304.10,659.55) scale(0.33,-0.33)" fill="none" stroke="#fff" stroke-width="175" stroke-linecap="round" stroke-linejoin="round"><path class="s s1" pathLength="1" d="M15 615C70 720 160 790 250 790C330 790 330 700 322 620C312 470 270 230 215 40"/><path class="s s2" pathLength="1" d="M115 372C250 380 420 395 570 405"/><path class="s s3" pathLength="1" d="M600 360C610 520 660 720 760 800C840 860 905 820 910 740C905 600 800 470 690 430C640 410 615 300 640 170C665 70 740 45 800 55C880 70 930 130 975 195"/></g>
+            <g transform="translate(592.19,659.55) scale(0.33,-0.33)" fill="none" stroke="#fff" stroke-width="175" stroke-linecap="round"><path class="s s4" pathLength="1" d="M160 445C140 380 112 280 108 200C104 120 130 50 195 48C250 48 300 110 350 195"/></g>
+          </mask>
+        </defs>
+        <g mask="url(#hi-ink)" fill="#F2EFE6">
+          <path transform="translate(304.10,659.55) scale(0.33,-0.33)" d="M1002 178Q1002 139 983 116Q884 -5 772 -5Q675 -5 617.0 70.0Q559 145 559 285Q559 319 562 353Q496 341 418 335Q366 331 347 330Q327 228 291 80Q270 -7 211 -7Q147 -7 147 51Q147 64 152 87Q186 224 206 319L158 317Q125 317 110.0 328.5Q95 340 95 366Q95 399 114.0 414.5Q133 430 177 432L230 434Q256 575 256 649Q256 696 242.0 713.0Q228 730 205 730Q135 730 47 613Q34 596 18 596Q4 596 -6.0 609.0Q-16 622 -16 642Q-16 673 9 708Q53 769 120.0 808.5Q187 848 256 848Q321 848 356.5 803.5Q392 759 392 665Q392 582 368 440L466 445Q529 448 574 455Q592 565 629.0 661.0Q666 757 721.0 817.0Q776 877 844 877Q894 877 923.0 837.5Q952 798 952 734Q952 486 699 390Q696 350 696 307Q696 202 722.0 158.0Q748 114 795 114Q836 114 870.0 135.5Q904 157 947 209Q959 223 974 223Q987 223 994.5 211.0Q1002 199 1002 178ZM711 490Q791 523 829.0 584.0Q867 645 867 741Q867 764 859.0 777.0Q851 790 839 790Q817 790 792.5 750.0Q768 710 746.0 641.0Q724 572 711 490Z"/>
+          <path transform="translate(592.19,659.55) scale(0.33,-0.33)" d="M47 163Q47 208 58.5 278.5Q70 349 88 410Q97 442 112.0 454.0Q127 466 160 466Q211 466 211 432Q211 407 192 316Q168 206 168 167Q168 137 176.0 121.0Q184 105 203 105Q221 105 248.0 130.0Q275 155 320 209Q332 223 347 223Q360 223 367.5 211.0Q375 199 375 178Q375 138 356 116Q257 -5 171 -5Q106 -5 76.5 41.0Q47 87 47 163Z"/>
+        </g>
+        <circle id="splash-dot" cx="668.75" cy="438.45" r="27.06" fill="#252C48"/>
+      </svg>
+    </div>
+    <script>
+      // Plays the opening screen, then opens the app through the dot.
+      // "Still" (Settings) or reduced motion: shows the static logo only until the app is ready.
+      (function () {
+        var el = document.getElementById('splash'), pref = null;
+        try { pref = localStorage.getItem('hi.splash'); } catch (e) {}
+        var play = pref !== 'still' && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+        var ready = false, drawn = !play, done = false;
+        if (play) el.className = 'play';
+        function remove() {
+          if (el.parentNode) el.parentNode.removeChild(el);
+          var c = document.documentElement.getAttribute('data-theme-color');
+          if (c) document.querySelector('meta[name="theme-color"]').setAttribute('content', c);
+        }
+        function finish() {
+          if (done || !ready || !drawn) return;
+          done = true;
+          el.style.pointerEvents = 'none';
+          if (!play) { el.style.transition = 'opacity .18s'; el.style.opacity = '0'; setTimeout(remove, 200); return; }
+          var svg = el.firstElementChild;
+          var d = document.getElementById('splash-dot').getBoundingClientRect();
+          var cx = d.left + d.width / 2, cy = d.top + d.height / 2, r = d.width / 2;
+          var far = Math.sqrt(Math.pow(Math.max(cx, innerWidth - cx), 2) + Math.pow(Math.max(cy, innerHeight - cy), 2));
+          var end = far / r * 1.2, start = 0, dur = 720, dx = 668.75, dy = 438.45;
+          function frame(now) {
+            if (!start) start = now;
+            var t = Math.min(1, (now - start) / dur), e = t * t * (3 - 2 * t) * t;
+            var scale = Math.pow(end, e), hole = r * scale * Math.max(0, (t - 0.25) / 0.75);
+            // Zoom by shrinking the viewBox around the dot, so the letters stay sharp.
+            svg.setAttribute('viewBox', (dx - dx / scale) + ' ' + (dy - dy / scale) + ' ' + 1024 / scale + ' ' + 1024 / scale);
+            // The dot becomes a window onto the app, growing until it fills the screen.
+            var m = 'radial-gradient(circle at ' + cx + 'px ' + cy + 'px, transparent ' + hole + 'px, #000 ' + (hole + 0.5) + 'px)';
+            el.style.webkitMaskImage = m; el.style.maskImage = m;
+            if (t < 1) requestAnimationFrame(frame); else remove();
+          }
+          setTimeout(function () { requestAnimationFrame(frame); }, 120);
+        }
+        if (play) el.addEventListener('animationend', function (e) { if (e.target.id === 'splash-dot') { drawn = true; finish(); } });
+        window.__hiReady = function () { ready = true; finish(); };
+        // Never trap anyone behind the logo.
+        setTimeout(function () { ready = drawn = true; finish(); }, 10000);
+      })();
+    </script>
     <noscript>Drops Chat needs JavaScript.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>

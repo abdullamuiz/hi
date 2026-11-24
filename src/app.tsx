@@ -9,6 +9,7 @@ import { Lobby } from './ui/Lobby';
 import { Chat } from './ui/Chat';
 import { UpdateBar } from './ui/PullToRefresh';
 import { watchForUpdates } from './lib/updates';
+import { splashReady } from './lib/splash';
 
 export function App() {
   const [update, setUpdate] = useState(false);
@@ -37,7 +38,10 @@ function Screen() {
     return () => unsubs.forEach((u) => u());
   }, [user?.uid]);
 
-  if (user === undefined || (user && rooms === null && !err)) return <Splash />;
+  const loading = user === undefined || (!!user && rooms === null && !err);
+  useEffect(() => { if (!loading) splashReady(); }, [loading]);
+
+  if (loading) return <Splash />;
   if (!user) return <SignIn />;
   if (err && rooms === null) return <div class="app"><div class="screen"><div class="err">{err}</div></div></div>;
 
