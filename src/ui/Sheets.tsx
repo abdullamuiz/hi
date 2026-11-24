@@ -8,6 +8,7 @@ import type { MoodId, Pin } from '../types';
 import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 import { buildLabel, reloadApp } from '../lib/updates';
+import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
 
 export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void }) {
   return (
@@ -165,6 +166,8 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush }: SettingsPr
         </div>
       </div>
 
+      <SplashSetting />
+
       <div class="settings">
         <div class="settings-row">
           <span>Notifications</span>
@@ -201,6 +204,29 @@ export function ScrapSheet({ pins, nameOf, tabName }: { pins: Pin[]; nameOf(uid:
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SplashSetting() {
+  const [style, setStyle] = useState<SplashStyle>(splashStyle);
+  const choose = (s: SplashStyle) => { setSplashStyle(s); setStyle(s); };
+  return (
+    <div class="settings-group">
+      <div class="field-label" id="splash-label">Opening screen</div>
+      <div class="segmented" role="radiogroup" aria-labelledby="splash-label">
+        {([['animated', 'Animated'], ['still', 'Still']] as const).map(([id, label]) => (
+          <button type="button" key={id} role="radio" aria-checked={style === id}
+            class={style === id ? 'on' : ''} onClick={() => choose(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div class="fine">
+        {style === 'animated'
+          ? 'Hi is drawn each time the app opens or reloads.'
+          : 'The logo shows only while the app loads, then goes straight to your chat.'}
+      </div>
     </div>
   );
 }
