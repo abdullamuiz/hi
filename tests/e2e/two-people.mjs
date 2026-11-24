@@ -752,6 +752,106 @@ try {
   await shot(alice, 'settings-blocked');
   await alice.keyboard.press('Escape');
 
+  step('Search this chat across tabs (finds a message in the archived Trip tab and jumps to it)');
+  await alice.getByRole('button', { name: /^Bobby/ }).click();
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  await alice.getByRole('button', { name: 'Search this chat' }).click();
+  await alice.getByLabel('Search messages').fill('march FLIGHTS');
+  const hit = alice.locator('.result-row', { hasText: 'Flights are cheap in March' });
+  await hit.waitFor();
+  assert.equal(await hit.locator('mark').count() >= 2, true, 'both words highlighted');
+  await alice.locator('.result-head', { hasText: 'Trip' }).waitFor();
+  await shot(alice, 'search-chat');
+  await hit.click();
+  await alice.getByRole('tab', { name: /^Trip/, selected: true }).waitFor();
+  await alice.locator('.msg.flash', { hasText: 'Flights are cheap in March' }).waitFor();
+
+  step('Media filter: photos of this chat as a grid');
+  await alice.getByRole('button', { name: 'Search this chat' }).click();
+  await alice.getByRole('radio', { name: 'Photos' }).click();
+  await alice.locator('.photo-cell img').first().waitFor();
+  assert.ok(await alice.locator('.photo-cell').count() >= 2);
+  await shot(alice, 'search-photos');
+  await alice.getByRole('radio', { name: 'Voice' }).click();
+  await alice.locator('.result-row', { hasText: 'Voice note' }).first().waitFor();
+  await alice.keyboard.press('Escape');
+
+  step('Search all chats from the chat list, then open the result');
+  await alice.getByRole('tab', { name: /General/ }).click();
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByRole('button', { name: 'Search all chats' }).click();
+  await alice.getByLabel('Search messages').fill('thoughts');
+  await alice.locator('.result-head', { hasText: 'Bobby' }).waitFor();
+  await shot(alice, 'search-all');
+  await alice.locator('.result-row', { hasText: 'I have thoughts' }).click();
+  await alice.locator('.msg.flash', { hasText: 'Same! I have thoughts.' }).waitFor();
+
+  step('Disappearing tab: on for 7 days, announced, timer icon, messages carry an expiry and vanish when it passes');
+  await alice.getByRole('tab', { name: /General.*options/ }).click();
+  await alice.getByRole('radiogroup', { name: 'Disappearing messages' }).getByRole('radio', { name: '7 days' }).click();
+  await alice.getByText('You turned on disappearing messages (7 days)').waitFor();
+  await bob.getByText('alice turned on disappearing messages (7 days)').waitFor();
+  await alice.getByRole('tab', { name: /General, disappearing messages \(7 days\)/ }).waitFor();
+  assert.equal(await bob.locator('.tab-chip .tab-timer').count(), 1);
+  await alice.getByRole('textbox', { name: 'Message' }).fill('This one will vanish');
+  await alice.keyboard.press('Enter');
+  await bob.getByText('This one will vanish').waitFor();
+  await shot(bob, 'disappearing-on');
+  {
+    const roomId = await alice.evaluate(() => localStorage.getItem('hi.room'));
+    const base = `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents/rooms/${roomId}/tabs/general/messages`;
+    const H = { Authorization: 'Bearer owner', 'Content-Type': 'application/json' };
+    const list = await (await fetch(`${base}?pageSize=300`, { headers: H })).json();
+    const doc = list.documents.find((d) => d.fields.text?.stringValue === 'This one will vanish');
+    const exp = Date.parse(doc.fields.expiresAt.timestampValue);
+    assert.ok(Math.abs(exp - (Date.now() + 7 * 24 * 3_600_000)) < 10 * 60_000, 'expires in about 7 days');
+    // Time passes: move its expiry into the past (the TTL policy would delete it later).
+    const res = await fetch(`http://127.0.0.1:8080/v1/${doc.name}?updateMask.fieldPaths=expiresAt`, {
+      method: 'PATCH', headers: H, body: JSON.stringify({ fields: { expiresAt: { timestampValue: new Date(Date.now() - 1000).toISOString() } } }),
+    });
+    assert.equal(res.status, 200);
+  }
+  await bob.getByText('This one will vanish').waitFor({ state: 'detached', timeout: 25_000 });
+  await alice.getByText('This one will vanish').waitFor({ state: 'detached', timeout: 25_000 });
+  await alice.getByRole('tab', { name: /General.*options/ }).click();
+  await alice.getByRole('radiogroup', { name: 'Disappearing messages' }).getByRole('radio', { name: 'Off' }).click();
+  await alice.getByText('You turned off disappearing messages').waitFor();
+  await bob.locator('.tab-chip .tab-timer').waitFor({ state: 'detached' });
+
+  step('Export: ZIP (chat.txt, chat.json, media) and the PDF print view');
+  await alice.getByRole('button', { name: 'Bobby 🐻’s profile' }).click();
+  await alice.getByRole('button', { name: 'Export chat' }).click();
+  await shot(alice, 'export-sheet');
+  const [download] = await Promise.all([
+    alice.waitForEvent('download', { timeout: 60_000 }),
+    alice.getByRole('button', { name: /ZIP with photos/ }).click(),
+  ]);
+  assert.match(download.suggestedFilename(), /^Hi chat - Bobby.* - \d{4}-\d\d-\d\d\.zip$/);
+  {
+    const { unzipSync, strFromU8 } = require('fflate');
+    const files = unzipSync(new Uint8Array(await (await import('node:fs/promises')).readFile(await download.path())));
+    const txt = strFromU8(files['chat.txt']);
+    assert.ok(txt.includes('Flights are cheap in March'), 'other tabs included');
+    assert.ok(txt.includes('== Trip =='));
+    assert.ok(!txt.includes('This one will vanish'), 'expired messages left out');
+    assert.ok(!txt.includes('oops, wrong chat'), 'deleted messages left out');
+    assert.ok(JSON.parse(strFromU8(files['chat.json'])).messages.length > 5);
+    assert.ok(Object.keys(files).some((f) => f.startsWith('photos/')), 'photos included');
+  }
+  await alice.evaluate(() => { window.print = () => { window.__printed = (window.__printed || 0) + 1; }; });
+  await alice.getByRole('button', { name: 'Bobby 🐻’s profile' }).click();
+  await alice.getByRole('button', { name: 'Export chat' }).click();
+  await alice.getByRole('radio', { name: 'Only “General”' }).click();
+  await alice.getByRole('button', { name: 'PDF (print or save)' }).click();
+  await alice.waitForFunction(() => window.__printed === 1, null, { timeout: 30_000 });
+  assert.match(await alice.locator('#print-root h1').textContent(), /^Hi · alice & Bobby 🐻 · General$/);
+  assert.equal(await alice.locator('#print-root .print-tab').count(), 1, 'only the chosen tab');
+  await alice.emulateMedia({ media: 'print' });
+  await shot(alice, 'export-print');
+  await alice.emulateMedia({ media: 'screen' });
+  await alice.evaluate(() => dispatchEvent(new Event('afterprint')));
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+
   step('Delete account (Eve, who has no chats)');
   await eve.getByRole('button', { name: 'Settings' }).click();
   await eve.getByRole('button', { name: 'Delete account' }).click();

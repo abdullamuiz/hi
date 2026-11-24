@@ -132,5 +132,8 @@ describe('export', () => {
   it('has a sensible range and file name', () => {
     expect(dateRange([])).toBe('No messages');
     expect(exportName({ partner: { uid: 'b', name: 'Bob/Smith' }, exportedAt: NOW })).toMatch(/^Hi chat - BobSmith - 2026-11-2\d$/);
+    expect(exportName({ partner: { uid: 'b', name: 'Bobby 🐻' }, exportedAt: NOW })).toMatch(/^Hi chat - Bobby - 2026-11-2\d$/);
+    expect(exportName({ partner: { uid: 'b', name: 'Zoë 🌸' }, exportedAt: NOW })).toMatch(/^Hi chat - Zoë - /);
+    expect(exportName({ partner: { uid: 'b', name: '🐻' }, exportedAt: NOW })).toMatch(/^Hi chat - chat - /);
   });
 });

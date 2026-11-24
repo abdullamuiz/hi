@@ -109,6 +109,11 @@ export function toJson(data: ExportData, files: Record<string, string> = {}) {
   };
 }
 
-/** A safe file name: "Hi chat - Alice & Bob - 2026-11-24". */
-export const exportName = (data: Pick<ExportData, 'partner' | 'exportedAt'>) =>
-  `Hi chat - ${data.partner.name.replace(/[\\/:*?"<>|]+/g, '').slice(0, 40) || 'chat'} - ${dayOf(data.exportedAt)}`;
+/**
+ * A safe file name: "Hi chat - Bob - 2026-11-24". Letters, digits, spaces and a little
+ * punctuation only: some browsers drop the whole name if it has an emoji in it.
+ */
+export const exportName = (data: Pick<ExportData, 'partner' | 'exportedAt'>) => {
+  const who = data.partner.name.replace(/[^\p{L}\p{N} '&._-]+/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return `Hi chat - ${who || 'chat'} - ${dayOf(data.exportedAt)}`;
+};

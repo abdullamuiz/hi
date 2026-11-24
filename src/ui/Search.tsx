@@ -117,7 +117,7 @@ export function SearchSheet({ me, scope, global = false, initialFilter = 'all', 
                 <button type="button" class="result-row" onClick={() => open(it)}>
                   <span class="result-meta">
                     {global && it.tab && <span class="result-tab"><span class="tab-dot" style={{ background: it.tab.colour }} aria-hidden="true" />{it.tab.name}</span>}
-                    <span>{it.msg.uid === me ? 'You' : (hist?.find((h) => h.roomId === it.roomId)?.names[it.msg.uid] || 'Them').split(/\s+/)[0]}</span>
+                    <span>{it.msg.uid === me ? 'You' : it.roomName}</span>
                     <span>· {dayLabel(ms(it.msg))}</span>
                   </span>
                   <span class="result-text"><ResultText msg={it.msg} t={t} /></span>

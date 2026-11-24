@@ -344,6 +344,36 @@ When the message box is empty, the Send button becomes a microphone.
 - Notifications name the tab ("Sam · Trip plans"), and tapping one opens that chat and tab.
 - Drops, docs and sessions belong to a tab. Scrapbook, search and streak are room-wide (see `SPEC.md`).
 
+### Disappearing tabs
+
+- In a tab's options, **Disappearing messages** is **Off / 24 hours / 7 days / 90 days**. Either person can change it; a line in the chat says who did ("Alice turned on disappearing messages (7 days)"), and the tab shows a small timer.
+- Each new message in that tab gets `expiresAt` (sent time + the setting). The rules insist it matches the tab's setting (within an hour, for phone clocks), and that normal tabs have none.
+- The app hides a message the moment it expires. A Firestore **TTL policy** on `messages.expiresAt` then deletes it, usually within a day, and the `deleteRemovedFiles` function removes its photo or voice file. Pins are copies, so they stay in the scrapbook.
+- **One-time setup:** the TTL policy is in `firestore.indexes.json`. With `DEPLOY_BACKEND=true` the GitHub deploy applies it. Without that, run this once from a computer signed in to Firebase:
+
+  ```bash
+  npx firebase deploy --only firestore:indexes --project hi-dropchat
+  ```
+
+  (Or in the Google Cloud console: **Firestore → Time-to-live → Create policy**, collection group `messages`, field `expiresAt`.) Until it's set, expired messages are still hidden in the app but stay in the database.
+
+### Search
+
+- **In a chat:** the magnifier at the end of the tab bar searches every tab of that chat, archived ones too. Results are grouped by tab; tap one to jump to the message (older messages are loaded as needed) and it flashes.
+- **All chats:** the magnifier on the Chats screen searches every chat, grouped by person.
+- It matches all the words you type, in any order, ignoring case and accents, in messages, photo captions and link titles and descriptions. Matches are highlighted.
+- **Filters:** Photos (a grid), Links, Voice and Drops. With no words, a filter lists everything of that kind, so it doubles as the chat's media gallery (also under the contact's profile → **Photos, links & voice**).
+- Firestore has no full-text search, so the app reads the latest **2,000 messages of each chat** and searches them on the phone. Deleted, deleted-for-me and expired messages are never shown.
+
+### Export
+
+Open the contact's profile → **Export chat**, then choose the whole chat or just the open tab:
+
+- **PDF:** the app lays the chat out as a printable page (title, both names, date range, then each tab by day, with photo thumbnails and reactions) and opens the print screen, where you choose **Save as PDF**. No PDF library is shipped.
+- **ZIP:** `chat.txt` (readable), `chat.json` (data) and the photos and voice notes, fetched from Storage. Any file that can't be fetched is listed in `missing.txt`. On phones it opens the share sheet; on computers it downloads.
+
+Both are made on your phone from what you can see: deleted, deleted-for-me and expired messages are left out, and Drops appear only as "A Drop" (never hidden answers). Exports read up to the latest 5,000 messages.
+
 ## Icons and themes
 
 - **Icons:** the designer's sets live in `design/icons/`. **Teal** is for **light mode**: it's the Home Screen/install icon (light is the default) and the tab icon while the app is light. **Navy** is for **dark mode**. `npm run icons` copies them into `public/icons/` and generates:
