@@ -737,3 +737,78 @@ describe('delivery: read receipts, scheduled, urgent, mute', () => {
     await assertFails(getDoc(doc(bob(), 'users', 'alice', 'contacts', 'bob')));
   });
 });
+
+describe('disappearing tabs (Phase 4)', () => {
+  const H = 3_600_000;
+  const tabRef = (db: Firestore, tab = 'general') => doc(db, 'rooms', ROOM, 'tabs', tab);
+  const sys = (db: Firestore, hours: number, text = 'Disappearing messages: 7 days') => {
+    const b = writeBatch(db);
+    b.update(tabRef(db), hours > 0 ? { disappearing: true, ttlHours: hours } : { disappearing: false });
+    const exp = hours > 0 ? { expiresAt: new Date(Date.now() + hours * H) } : {};
+    b.set(doc(msgs(db)), { uid: 'alice', kind: 'system', system: 'disappearing', ttlHours: hours, text, ...exp, createdAt: serverTimestamp() });
+    return b.commit();
+  };
+  async function turnOn(hours = 168) {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'rooms', ROOM, 'tabs', 'general'), { disappearing: true, ttlHours: hours });
+    });
+  }
+
+  it('a member switches it on with an announcement; only real choices', async () => {
+    await seedRoom();
+    await assertSucceeds(sys(alice(), 168));
+    await assertSucceeds(sys(alice(), 24, 'Disappearing messages: 24 hours'));
+    await assertSucceeds(sys(alice(), 0, 'Disappearing messages off'));
+    await assertFails(updateDoc(tabRef(alice()), { disappearing: true, ttlHours: 5 }));
+    await assertFails(updateDoc(tabRef(eve()), { disappearing: true, ttlHours: 24 }));
+  });
+
+  it('an announcement needs a real change, with hours matching the new setting', async () => {
+    await seedRoom();
+    // No change to the tab: no announcement.
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'system', system: 'disappearing', ttlHours: 0, text: 'x', createdAt: serverTimestamp() }));
+    // Hours that don't match the new setting.
+    const db = alice();
+    const b = writeBatch(db);
+    b.update(tabRef(db), { disappearing: true, ttlHours: 168 });
+    b.set(doc(msgs(db)), { uid: 'alice', kind: 'system', system: 'disappearing', ttlHours: 24, text: 'x', expiresAt: new Date(Date.now() + 168 * H), createdAt: serverTimestamp() });
+    await assertFails(b.commit());
+  });
+
+  it('new messages in a disappearing tab must carry the right expiry', async () => {
+    await seedRoom();
+    await turnOn(168);
+    const base = { uid: 'alice', kind: 'text', text: 'poof', createdAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(msgs(alice())), { ...base, expiresAt: new Date(Date.now() + 168 * H) }));
+    await assertFails(setDoc(doc(msgs(alice())), base));
+    await assertFails(setDoc(doc(msgs(alice())), { ...base, expiresAt: new Date(Date.now() + 24 * H) }));
+    await assertFails(setDoc(doc(msgs(alice())), { ...base, expiresAt: new Date(Date.now() + 400 * H) }));
+    await assertFails(setDoc(doc(msgs(alice())), { ...base, expiresAt: 'later' }));
+  });
+
+  it('messages in a normal tab cannot carry an expiry', async () => {
+    await seedRoom();
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'hi', expiresAt: new Date(Date.now() + 24 * H), createdAt: serverTimestamp() }));
+  });
+
+  it('expiry can never be changed afterwards', async () => {
+    await seedRoom();
+    await turnOn(24);
+    const ref = doc(msgs(alice()), 'e1');
+    await setDoc(ref, { uid: 'alice', kind: 'text', text: 'hi', expiresAt: new Date(Date.now() + 24 * H), createdAt: serverTimestamp() });
+    await assertFails(updateDoc(ref, { expiresAt: new Date(Date.now() + 1000 * H) }));
+    await assertFails(updateDoc(ref, { expiresAt: deleteField() }));
+  });
+
+  it('a scheduled message delivered into a disappearing tab expires too', async () => {
+    await seedRoom();
+    await turnOn(24);
+    const SID2 = 's2345678901234567890';
+    await setDoc(doc(alice(), 'rooms', ROOM, 'scheduled', SID2), { senderId: 'alice', tabId: 'general', text: 'later', sendAt: new Date(Date.now() + 60_000), createdAt: serverTimestamp() });
+    const db = alice();
+    const b = writeBatch(db);
+    b.delete(doc(db, 'rooms', ROOM, 'scheduled', SID2));
+    b.set(doc(msgs(db), SID2), { uid: 'alice', kind: 'text', text: 'later', scheduled: true, expiresAt: new Date(Date.now() + 24 * H), createdAt: serverTimestamp() });
+    await assertSucceeds(b.commit());
+  });
+});

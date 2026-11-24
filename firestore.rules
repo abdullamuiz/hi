@@ -281,20 +281,22 @@ service cloud.firestore {
             && incoming().order is number
             && incoming().mode in ['casual', 'work']
             && incoming().disappearing is bool
+            && incoming().get('ttlHours', 24) in [24, 168, 2160]
             && (incoming().wallpaper == null || str(incoming().wallpaper, 1, 200));
         }
         allow read: if isMember(roomId);
         allow create: if isMemberAfter(roomId)
           && tabId.matches('^[A-Za-z0-9_-]{1,40}$')
-          && onlyKeys(['name', 'colour', 'wallpaper', 'mode', 'disappearing', 'archived', 'order', 'createdBy', 'createdAt', 'lastMessageAt'])
+          && onlyKeys(['name', 'colour', 'wallpaper', 'mode', 'disappearing', 'ttlHours', 'archived', 'order', 'createdBy', 'createdAt', 'lastMessageAt'])
           && incoming().createdBy == me()
           && incoming().createdAt == request.time
           && incoming().lastMessageAt == null
           && validTab();
-        // Either member can rename, recolour, reorder or archive. lastMessageAt is
-        // only ever "now" (written in the same batch as a message).
+        // Either member can rename, recolour, reorder, archive or switch disappearing
+        // messages (the app posts the announcement in the same batch).
+        // lastMessageAt is only ever "now" (written in the same batch as a message).
         allow update: if isMember(roomId)
-          && changedKeys().hasOnly(['name', 'colour', 'archived', 'order', 'lastMessageAt'])
+          && changedKeys().hasOnly(['name', 'colour', 'archived', 'order', 'lastMessageAt', 'disappearing', 'ttlHours'])
           && validTab()
           && (!changedKeys().hasAny(['lastMessageAt']) || incoming().lastMessageAt == request.time)
           && !(tabId == 'general' && incoming().archived == true);
@@ -339,13 +341,13 @@ service cloud.firestore {
           function validText() {
             return incoming().kind == 'text'
               && str(incoming().text, 1, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'urgent', 'scheduled', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'urgent', 'scheduled', 'expiresAt', 'createdAt'])
               && validNoteReply();
           }
           function validLink() {
             return incoming().kind == 'link'
               && str(incoming().text, 0, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'urgent', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'urgent', 'expiresAt', 'createdAt'])
               && incoming().link is map
               && incoming().link.status == 'pending'
               && str(incoming().link.url, 8, 2048)
@@ -354,7 +356,7 @@ service cloud.firestore {
           function validPhoto() {
             return incoming().kind == 'photo'
               && str(incoming().text, 0, 1000)
-              && onlyKeys(['uid', 'kind', 'text', 'photo', 'replyTo', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'photo', 'replyTo', 'expiresAt', 'createdAt'])
               && incoming().photo is map
               && incoming().photo.keys().hasOnly(['path', 'width', 'height'])
               && incoming().photo.path is string
@@ -365,7 +367,7 @@ service cloud.firestore {
           function validVoice() {
             return incoming().kind == 'voice'
               && incoming().text == ''
-              && onlyKeys(['uid', 'kind', 'text', 'voice', 'replyTo', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'voice', 'replyTo', 'expiresAt', 'createdAt'])
               && incoming().voice is map
               && incoming().voice.keys().hasOnly(['path', 'durationMs', 'peaks', 'mime'])
               && incoming().voice.path is string
@@ -379,9 +381,37 @@ service cloud.firestore {
           function validDrop() {
             return incoming().kind == 'drop'
               && str(incoming().text, 0, 200)
-              && onlyKeys(['uid', 'kind', 'text', 'dropId', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'dropId', 'expiresAt', 'createdAt'])
               && incoming().dropId is string
               && getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(incoming().dropId)).data.createdBy == me();
+          }
+
+          // Disappearing tab: a new message must carry its expiry, matching the tab's
+          // setting (as it is after this write) within an hour either way for clock drift.
+          // Otherwise it must not have one.
+          function tabPath() { return /databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId); }
+          function validExpiry() {
+            let t = getAfter(tabPath()).data;
+            let ttl = duration.value(t.get('ttlHours', 24), 'h');
+            return t.get('disappearing', false) == true
+              ? (incoming().get('expiresAt', null) is timestamp
+                  && incoming().expiresAt > request.time + ttl - duration.value(1, 'h')
+                  && incoming().expiresAt < request.time + ttl + duration.value(1, 'h'))
+              : !incoming().keys().hasAny(['expiresAt']);
+          }
+          // "Alice turned on disappearing messages (7 days)": only in the same write that
+          // actually changes the tab's setting, and its hours must match the new setting.
+          function validSystem() {
+            let before = get(tabPath()).data;
+            let after = getAfter(tabPath()).data;
+            return incoming().kind == 'system'
+              && onlyKeys(['uid', 'kind', 'text', 'system', 'ttlHours', 'expiresAt', 'createdAt'])
+              && incoming().system == 'disappearing'
+              && str(incoming().text, 1, 120)
+              && incoming().ttlHours is int
+              && incoming().ttlHours == (after.get('disappearing', false) == true ? after.get('ttlHours', 24) : 0)
+              && (after.get('disappearing', false) != before.get('disappearing', false)
+                  || after.get('ttlHours', 24) != before.get('ttlHours', 24));
           }
 
           function alive() { return resource.data.get('deleted', false) != true; }
@@ -498,7 +528,8 @@ service cloud.firestore {
             && incoming().createdAt == request.time
             && validReply()
             && validFlags()
-            && (validText() || validLink() || validPhoto() || validVoice() || validDrop());
+            && validExpiry()
+            && (validText() || validLink() || validPhoto() || validVoice() || validDrop() || validSystem());
           // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
           allow update: if isMember(roomId)
             && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase() || isPlayed() || isVoiceReact());
