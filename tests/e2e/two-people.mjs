@@ -141,6 +141,14 @@ try {
   await bob.keyboard.press('Enter');
   await alice.getByText('Same! I have thoughts.').waitFor();
 
+  step('Ticks: my message shows ✓ on the server, then "Read" once Bob has seen it');
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Did you see the ending coming?');
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.getByText('Did you see the ending coming?').waitFor();
+  await alice.locator('.msg', { hasText: 'Did you see the ending coming?' }).locator('.read-label').waitFor();
+  assert.equal(await alice.locator('.read-label').count(), 1, 'only the newest read message says "Read"');
+  await shot(alice, 'ticks-read');
+
   step('Message actions: reply-quote, react, phrase react, edit, copy, select');
   // The message itself, not a reply that quotes it.
   const msgWith = (page, text) => page.locator('.msg').filter({ hasText: text }).filter({ hasNot: page.locator('.quote', { hasText: text }) }).last();
@@ -534,6 +542,92 @@ try {
   await alice.keyboard.press('Escape');
   await alice.getByRole('button', { name: 'Back to chats' }).click();
   await alice.getByRole('button', { name: /^Bobby 🐻.*muted/ }).waitFor();
+
+  step('Read receipts off: nobody sees "Read" (both ways)');
+  await bob.getByRole('button', { name: 'Settings' }).click();
+  await bob.getByRole('radiogroup', { name: 'Read receipts' }).getByRole('radio', { name: 'Off' }).click();
+  await bob.getByText('Nobody sees when you’ve read their messages').waitFor();
+  await bob.keyboard.press('Escape');
+  await alice.getByRole('button', { name: /^Bobby 🐻/ }).click();
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Are you reading these?');
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.getByText('Are you reading these?').waitFor();
+  await alice.locator('.msg', { hasText: 'Are you reading these?' }).getByRole('img', { name: 'Sent' }).waitFor();
+  await alice.waitForTimeout(1500);
+  assert.equal(await alice.locator('.read-label').count(), 0, 'no "Read" while Bob has read receipts off');
+  await bob.getByRole('button', { name: 'Settings' }).click();
+  await bob.getByRole('radiogroup', { name: 'Read receipts' }).getByRole('radio', { name: 'On' }).click();
+  await bob.keyboard.press('Escape');
+  await alice.locator('.msg', { hasText: 'Are you reading these?' }).locator('.read-label').waitFor();
+
+  step('Urgent: Bob sends one from the long-press Send menu');
+  await bob.getByRole('textbox', { name: 'Message' }).fill('Call me when you can');
+  await bob.getByRole('button', { name: 'Send', exact: true }).click({ button: 'right' });
+  await bob.getByText('3 left today').waitFor();
+  await shot(bob, 'send-options');
+  await bob.getByRole('button', { name: /^Send as urgent/ }).click();
+  await alice.locator('.msg', { hasText: 'Call me when you can' }).getByText('Urgent').waitFor();
+
+  step('Scheduled messages: schedule, edit, send now, cancel, and one that sends itself');
+  const scheduleVia = async (text, pick) => {
+    await alice.getByRole('textbox', { name: 'Message' }).fill(text);
+    await alice.getByRole('button', { name: 'Send', exact: true }).click({ button: 'right' });
+    await alice.getByRole('button', { name: /^Schedule…/ }).click();
+    await alice.getByText('Schedule message').waitFor();
+    await pick();
+    await alice.getByRole('status').filter({ hasText: 'Scheduled for' }).waitFor();
+  };
+  // ~1–1.5 minutes ahead (the picker works in whole minutes).
+  const soon = await alice.evaluate(() => {
+    const d = new Date(Date.now() + 90_000);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  });
+  await scheduleVia('Good morning from the past', async () => {
+    await alice.getByLabel('Or pick a date and time').fill(soon);
+    await alice.getByRole('button', { name: 'Schedule', exact: true }).click();
+  });
+  await scheduleVia('Second thought, sent early', () => alice.getByRole('button', { name: /^Tomorrow 8 am/ }).click());
+  await scheduleVia('Never mind this one', () => alice.getByRole('button', { name: /^Next Monday 9 am/ }).click());
+  await alice.getByText('3 scheduled').waitFor();
+  assert.equal(await alice.getByRole('textbox', { name: 'Message' }).inputValue(), '', 'the composer is cleared');
+  await alice.getByRole('button', { name: '3 scheduled' }).click(); // more than two start folded
+  await shot(alice, 'scheduled-strip');
+  // Bob can't see any of them yet.
+  assert.equal(await bob.getByText('Good morning from the past').count(), 0);
+  await alice.getByRole('button', { name: 'Edit scheduled message: Good morning from the past' }).click();
+  await alice.getByLabel('Message', { exact: true }).last().fill('Good morning from the past!');
+  await alice.getByRole('button', { name: 'Save', exact: true }).click();
+  await alice.getByRole('button', { name: 'Send now: Second thought, sent early' }).click();
+  await bob.locator('.msg', { hasText: 'Second thought, sent early' }).getByText('· scheduled').waitFor();
+  await alice.getByRole('button', { name: 'Cancel scheduled message: Never mind this one' }).click();
+  await alice.getByText('1 scheduled').waitFor();
+  // The last one sends itself while Alice has the app open.
+  await bob.getByText('Good morning from the past!').waitFor({ timeout: 150_000 });
+  await alice.locator('.sched-strip').waitFor({ state: 'detached' });
+  assert.equal(await bob.getByText('Never mind this one').count(), 0);
+
+  step('Quiet hours in Settings');
+  await alice.getByRole('button', { name: 'Settings' }).click();
+  await alice.getByRole('radiogroup', { name: 'Quiet hours' }).getByRole('radio', { name: 'On' }).click();
+  await alice.getByLabel('Quiet hours start').waitFor();
+  await alice.getByText('Notifications wait until 07:00').waitFor();
+  await shot(alice, 'settings-quiet');
+  await alice.getByRole('radiogroup', { name: 'Quiet hours' }).getByRole('radio', { name: 'Off' }).click();
+  await alice.keyboard.press('Escape');
+
+  step('Mute a chat from the list: for 8 hours, then unmute');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByRole('button', { name: 'Muted. Change notifications for Bobby 🐻' }).click();
+  await alice.getByRole('button', { name: 'Unmute' }).click();
+  await alice.getByRole('button', { name: 'Mute notifications for Bobby 🐻' }).click();
+  await alice.getByRole('button', { name: 'For 8 hours' }).click();
+  await alice.getByRole('button', { name: /^Bobby 🐻.*muted/ }).waitFor();
+  await shot(alice, 'chats-muted');
+  await alice.getByRole('button', { name: 'Muted. Change notifications for Bobby 🐻' }).click();
+  await alice.getByText(/^Muted until/).waitFor();
+  await alice.getByRole('button', { name: 'Unmute' }).click();
+  await alice.getByRole('button', { name: 'Mute notifications for Bobby 🐻' }).waitFor();
 
   step('Remove contact: Carol leaves; Alice keeps a read-only copy and deletes it');
   await carol.getByRole('button', { name: 'alice’s profile' }).click();

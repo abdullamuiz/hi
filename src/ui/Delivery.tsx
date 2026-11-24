@@ -56,11 +56,13 @@ interface StripProps {
 
 /** "Scheduled" list above the composer: Edit · Send now · Cancel. */
 export function ScheduledStrip({ items, tabName, onEdit, onSendNow, onCancel }: StripProps) {
-  const [open, setOpen] = useState(items.length <= 2);
+  // Open by default for one or two; folded for more (the person can always toggle it).
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const open = choice ?? items.length <= 2;
   if (!items.length) return null;
   return (
     <section class="sched-strip" aria-label="Scheduled messages">
-      <button type="button" class="sched-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button type="button" class="sched-head" onClick={() => setChoice(!open)} aria-expanded={open}>
         <ClockIcon /> <span>{items.length} scheduled</span>
         <span class="sched-toggle" aria-hidden="true">{open ? 'Hide' : 'Show'}</span>
       </button>
@@ -73,9 +75,11 @@ export function ScheduledStrip({ items, tabName, onEdit, onSendNow, onCancel }: 
                 <span class="sched-snip">{s.text}</span>
               </span>
               <span class="sched-actions">
-                <button type="button" class="chip-btn" onClick={() => onEdit(s)} aria-label={`Edit scheduled message: ${s.text}`}>Edit</button>
-                <button type="button" class="chip-btn" onClick={() => onSendNow(s)} aria-label={`Send now: ${s.text}`}>Send now</button>
-                <button type="button" class="chip-btn danger-text" onClick={() => onCancel(s)} aria-label={`Cancel scheduled message: ${s.text}`}>Cancel</button>
+                <button type="button" class="mini-btn" onClick={() => onEdit(s)} aria-label={`Edit scheduled message: ${s.text}`}>Edit</button>
+                <button type="button" class="mini-btn" onClick={() => onSendNow(s)} aria-label={`Send now: ${s.text}`}>Send now</button>
+                <button type="button" class="mini-btn icon danger-text" onClick={() => onCancel(s)} aria-label={`Cancel scheduled message: ${s.text}`}>
+                  <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                </button>
               </span>
             </li>
           ))}

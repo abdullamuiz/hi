@@ -369,7 +369,7 @@ Profile · Quiet hours · Read receipts · Reduce motion override · Notificatio
    - Built together with **many contacts** (one private two-person chat per contact, a chat list, invite by share link or e-mail). Group chats (3+ people in one room) are deliberately left for later.
 3. **Media**: photos (compress + viewer), link previews (function), voice notes with waveform and timestamped reactions.
 4. **Tab features**: themes, disappearing tabs (TTL), mood weather, scrapbook, search, export (PDF/ZIP).
-5. **Effects & timing**: screen and bubble effects, keyword suggestions, scheduled messages, quiet hours, push notifications.
+5. **Effects & timing**: screen and bubble effects, keyword suggestions, scheduled messages ✅, quiet hours ✅ (with Urgent), push notifications ✅. Also done early: message ticks, read-receipts toggle, retry for refused messages, mute for a while.
 6. **Drop framework + first Drops**: registry, hidden-answer flow, Feeling Map, Blind Reveal, Gap Slider, Tag-team Story, `ADDING_A_DROP.md`, *Add from code*.
 7. **Remaining Drops**: 5–15 from the catalogue, thread tiles.
 8. **Streak & memories**: hot streak, milestones, On This Day, Rewind.
