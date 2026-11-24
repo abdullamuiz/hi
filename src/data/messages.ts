@@ -13,8 +13,11 @@ const msgsCol = (roomId: string, tabId: string) => collection(db, 'rooms', roomI
 
 export function watchMessages(roomId: string, tabId: string, cb: (m: Message[]) => void, onError?: (e: Error) => void) {
   const q = query(msgsCol(roomId, tabId), orderBy('createdAt'), limitToLast(300));
-  return onSnapshot(q, (s) => {
-    cb(s.docs.map((d) => ({ id: d.id, tabId, text: '', ...(d.data({ serverTimestamps: 'estimate' }) as any) })));
+  // Metadata changes too, so a message flips from "sending" to "sent" when the server has it.
+  return onSnapshot(q, { includeMetadataChanges: true }, (s) => {
+    cb(s.docs.map((d) => ({
+      id: d.id, tabId, text: '', ...(d.data({ serverTimestamps: 'estimate' }) as any), pending: d.metadata.hasPendingWrites,
+    })));
   }, onError);
 }
 
@@ -30,12 +33,15 @@ function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, da
   b.update(doc(db, 'rooms', roomId), { lastMessage: { id, uid: data.uid, tabId, text: preview.slice(0, 160), at: serverTimestamp() } });
 }
 
-export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null) {
+export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null, opts: { urgent?: boolean } = {}) {
   const text = raw.trim().slice(0, 4000);
   if (!text) return;
   const link = findLink(text);
   const b = writeBatch(db);
-  const reply = replyTo ? { replyTo: { msgId: replyTo.msgId, snippet: replyTo.snippet.slice(0, 160), senderId: replyTo.senderId } } : {};
+  const reply = {
+    ...(replyTo ? { replyTo: { msgId: replyTo.msgId, snippet: replyTo.snippet.slice(0, 160), senderId: replyTo.senderId } } : {}),
+    ...(opts.urgent ? { urgent: true } : {}),
+  };
   if (link) {
     const data = {
       uid, kind: 'link', text: link.rest, ...reply,

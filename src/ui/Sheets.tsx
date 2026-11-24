@@ -8,6 +8,7 @@ import type { MoodId, Pin } from '../types';
 import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 import { buildLabel, reloadApp } from '../lib/updates';
+import { DeliverySettings } from './Delivery';
 import { BlockedList } from './Profile';
 import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
@@ -126,9 +127,10 @@ interface SettingsProps {
   onUnblock?(uid: string): void;
   onEditProfile?(): void;
   onDeleteAccount?(): void;
+  onToast?(text: string): void;
 }
 
-export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = [], onUnblock, onEditProfile, onDeleteAccount }: SettingsProps) {
+export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = [], onUnblock, onEditProfile, onDeleteAccount, onToast }: SettingsProps) {
   const pushLabel: Record<PushStatus, string> = {
     granted: 'On',
     denied: 'Blocked in browser settings',
@@ -172,6 +174,8 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = []
           ))}
         </div>
       </div>
+
+      <DeliverySettings uid={user.uid} onToast={onToast || (() => {})} />
 
       <SplashSetting />
 
