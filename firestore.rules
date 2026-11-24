@@ -4,7 +4,10 @@ rules_version = '2';
 //
 // Data model (see docs/ARCHITECTURE.md):
 //   users/{uid}/tokens/{fcmToken}                 private: push tokens
-//   rooms/{roomId}                                 owner, members[<=2], invites[<=1], inviteCode?, lastMessage?
+//   users/{uid}/contacts/{uid}                     private: my nickname for a contact, mute
+//   users/{uid}/blocked/{uid}                      private: people I blocked
+//   profiles/{uid}                                 public profile: name, photo, about, 24h note
+//   rooms/{roomId}                                 owner, members[<=2], invites[<=1], inviteCode?, lastMessage?, left?
 //     members/{uid}                                public profile, mood weather, lastRead per tab
 //     tabs/{tabId}                                 parallel conversations ("General" + more)
 //       messages/{id}                              chat messages (append-only)
@@ -64,6 +67,61 @@ service cloud.firestore {
           && str(incoming().ua, 0, 300)
           && incoming().updatedAt == request.time;
       }
+
+      // My private name for a contact, and whether their chat is muted.
+      match /contacts/{cid} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid
+          && onlyKeys(['nickname', 'muted', 'updatedAt'])
+          && str(incoming().get('nickname', ''), 0, 40)
+          && incoming().get('muted', false) is bool
+          && incoming().updatedAt == request.time;
+      }
+
+      // People I blocked. They can't join my chats (checked on join below).
+      match /blocked/{bid} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid && bid != uid
+          && onlyKeys(['name', 'at'])
+          && str(incoming().name, 0, 80)
+          && incoming().at == request.time;
+      }
+    }
+
+    // ---------------------------------------------------------------- profiles
+    // Public profile. No e-mail here. Any signed-in person can read it, but they need
+    // the uid, which only people you share a chat with ever see.
+    match /profiles/{uid} {
+      function validNote(n) {
+        return n == null || (
+          n is map
+          && n.keys().hasOnly(['text', 'emoji', 'at'])
+          && str(n.text, 0, 60)
+          && str(n.emoji, 0, 16)
+          && (n.text.size() > 0 || n.emoji.size() > 0)
+          && n.at is timestamp
+        );
+      }
+      // A photo is a small JPEG stored inline (works without Cloud Storage) or an https URL.
+      function validPhoto(p) {
+        return p == null || (
+          p is string && p.size() <= 150000
+          && (p.matches('^data:image/jpeg;base64,[A-Za-z0-9+/=]+$') || p.matches('^https://[^\\s]+$'))
+        );
+      }
+      allow read: if signedIn();
+      allow create, update: if signedIn() && me() == uid
+        && onlyKeys(['name', 'photo', 'about', 'note', 'updatedAt'])
+        && str(incoming().name, 1, 40)
+        && validPhoto(incoming().get('photo', null))
+        && str(incoming().get('about', ''), 0, 80)
+        && validNote(incoming().get('note', null))
+        // A new or changed note is stamped with the server time (it expires after 24 h).
+        && (incoming().get('note', null) == null
+            || (resource != null && resource.data.get('note', null) == incoming().note)
+            || incoming().note.at == request.time)
+        && incoming().updatedAt == request.time;
+      allow delete: if signedIn() && me() == uid;
     }
 
     // ---------------------------------------------------------------- rooms
@@ -71,7 +129,7 @@ service cloud.firestore {
       function canSeeRoom() {
         return signedIn() && (
           me() in resource.data.members
-          || (verifiedEmail() && myEmail() in resource.data.invites)
+          || (verifiedEmail() && myEmail() in resource.data.invites && resource.data.get('left', null) == null)
         );
       }
       allow get, list: if canSeeRoom();
@@ -102,11 +160,18 @@ service cloud.firestore {
           );
       }
 
+      // Nobody can join a chat someone has left, or the chat of someone who blocked them.
+      function joinable() {
+        return resource.data.get('left', null) == null
+          && !exists(/databases/$(database)/documents/users/$(resource.data.owner)/blocked/$(me()));
+      }
+
       allow update: if signedIn() && (
         // The invited partner joins with their verified e-mail. Afterwards the room
         // holds two members and no branch below can ever add a third.
         (
           resource.data.members.size() == 1
+          && joinable()
           && verifiedEmail()
           && myEmail() in resource.data.invites
           && !(me() in resource.data.members)
@@ -119,6 +184,7 @@ service cloud.firestore {
         // used up: it's removed in the same write and any e-mail invite is cleared.
         (
           resource.data.members.size() == 1
+          && joinable()
           && !(me() in resource.data.members)
           && validCode(resource.data.get('inviteCode', null))
           && changedKeys().hasOnly(['members', 'invites', 'inviteCode', 'joinCode'])
@@ -142,10 +208,21 @@ service cloud.firestore {
         (
           resource.data.owner == me()
           && resource.data.members.size() == 1
+          && resource.data.get('left', null) == null
           && changedKeys().hasOnly(['invites', 'inviteCode'])
           && validInvites(incoming().invites)
           && (incoming().get('inviteCode', null) == null || validCode(incoming().inviteCode))
           && !(string(request.auth.token.get('email', '')).lower() in incoming().invites)
+        )
+        ||
+        // A member leaves (remove contact / block). Only their own uid goes, and the
+        // room remembers who left so it can never be re-joined.
+        (
+          me() in resource.data.members
+          && resource.data.members.size() == 2
+          && changedKeys().hasOnly(['members', 'left'])
+          && incoming().members == resource.data.members.removeAll([me()])
+          && incoming().left == me()
         )
         ||
         // A member records the latest message (for the chat list), in the same batch as the message.
@@ -155,8 +232,8 @@ service cloud.firestore {
           && validLastMessage()
         )
       );
-      // A room nobody else has joined yet can be removed by its owner.
-      allow delete: if signedIn() && resource.data.owner == me() && resource.data.members.size() == 1;
+      // The last person in a room can delete it: a chat nobody joined yet, or one the other person left.
+      allow delete: if signedIn() && me() in resource.data.members && resource.data.members.size() == 1;
 
       // -------------------------------------------------------- members
       match /members/{uid} {
@@ -217,10 +294,20 @@ service cloud.firestore {
               && str(incoming().replyTo.senderId, 1, 128)
             );
           }
+          // A reply to the other person's 24-hour note quotes it.
+          function validNoteReply() {
+            return incoming().get('replyToNote', null) == null || (
+              incoming().replyToNote is map
+              && incoming().replyToNote.keys().hasOnly(['text', 'emoji'])
+              && str(incoming().replyToNote.text, 0, 60)
+              && str(incoming().replyToNote.emoji, 0, 16)
+            );
+          }
           function validText() {
             return incoming().kind == 'text'
               && str(incoming().text, 1, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'createdAt']);
+              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'createdAt'])
+              && validNoteReply();
           }
           function validLink() {
             return incoming().kind == 'link'
@@ -272,10 +359,10 @@ service cloud.firestore {
           // Delete for everyone: the sender only; content cleared, deleted = true.
           function isDeleteForEveryone() {
             return mine() && alive()
-              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'dropId', 'replyTo', 'reactions', 'phraseReactions', 'editedAt'])
+              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'editedAt'])
               && incoming().deleted == true
               && incoming().text == ''
-              && !incoming().keys().hasAny(['link', 'photo', 'dropId', 'replyTo', 'reactions', 'phraseReactions', 'editedAt']);
+              && !incoming().keys().hasAny(['link', 'photo', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'editedAt']);
           }
           // Quick reactions: { code: [uid] }. Only my own uid may appear or disappear.
           function rxSame(k) {
@@ -321,6 +408,7 @@ service cloud.firestore {
 
           allow read: if isMember(roomId);
           allow create: if isMember(roomId)
+            && roomData(roomId).get('left', null) == null
             && exists(/databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId))
             && incoming().uid == me()
             && incoming().createdAt == request.time

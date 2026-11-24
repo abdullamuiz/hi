@@ -524,3 +524,83 @@ describe('push tokens', () => {
     await assertFails(setDoc(doc(bob(), 'users', 'alice', 'tokens', 'tok9'), { token: 'tok9', ua: '', updatedAt: serverTimestamp() }));
   });
 });
+
+describe('profiles, notes, nicknames', () => {
+  const profile = (extra: Record<string, unknown> = {}) => ({ name: 'Alice', photo: null, about: 'Tea first', note: null, updatedAt: serverTimestamp(), ...extra });
+
+  it('lets me write only my own profile, with sane fields', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'profiles', 'alice'), profile()));
+    await assertFails(setDoc(doc(eve(), 'profiles', 'alice'), profile({ name: 'Not Alice' })));
+    await assertFails(setDoc(doc(alice(), 'profiles', 'alice'), profile({ name: '' })));
+    await assertFails(setDoc(doc(alice(), 'profiles', 'alice'), profile({ about: 'x'.repeat(81) })));
+    await assertFails(setDoc(doc(alice(), 'profiles', 'alice'), profile({ email: 'alice@example.com' })));
+    await assertFails(setDoc(doc(alice(), 'profiles', 'alice'), profile({ photo: 'javascript:alert(1)' })));
+    await assertSucceeds(setDoc(doc(alice(), 'profiles', 'alice'), profile({ photo: 'data:image/jpeg;base64,/9j/4AAQSkZJRg==' })));
+    await assertSucceeds(setDoc(doc(alice(), 'profiles', 'alice'), profile({ photo: 'https://lh3.googleusercontent.com/a/x' })));
+    // Anyone signed in can read it (they need the uid); signed-out visitors can't.
+    await assertSucceeds(getDoc(doc(bob(), 'profiles', 'alice')));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore() as unknown as Firestore, 'profiles', 'alice')));
+  });
+
+  it('stamps a new note with the server time and keeps it short', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'profiles', 'alice'), profile()));
+    const ref = doc(alice(), 'profiles', 'alice');
+    await assertSucceeds(updateDoc(ref, { note: { text: 'exam tomorrow, send snacks', emoji: '📚', at: serverTimestamp() }, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { note: { text: 'backdated', emoji: '', at: new Date(2020, 1, 1) }, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { note: { text: 'x'.repeat(61), emoji: '', at: serverTimestamp() }, updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { note: { text: '', emoji: '', at: serverTimestamp() }, updatedAt: serverTimestamp() }));
+    // Editing my about line keeps the existing note as it is.
+    await assertSucceeds(updateDoc(ref, { about: 'Coffee now', updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref, { note: null, updatedAt: serverTimestamp() }));
+  });
+
+  it('keeps nicknames, mutes and blocks private', async () => {
+    const nick = doc(alice(), 'users', 'alice', 'contacts', 'bob');
+    await assertSucceeds(setDoc(nick, { nickname: 'Bobby 🐻', muted: false, updatedAt: serverTimestamp() }));
+    await assertFails(getDoc(doc(bob(), 'users', 'alice', 'contacts', 'bob')));
+    await assertFails(setDoc(doc(bob(), 'users', 'alice', 'contacts', 'bob'), { nickname: 'x', updatedAt: serverTimestamp() }));
+    await assertFails(setDoc(nick, { nickname: 'x'.repeat(41), updatedAt: serverTimestamp() }));
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice', 'blocked', 'eve'), { name: 'Eve', at: serverTimestamp() }));
+    await assertFails(getDoc(doc(eve(), 'users', 'alice', 'blocked', 'eve')));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice', 'blocked', 'alice'), { name: 'Me', at: serverTimestamp() }));
+  });
+
+  it('accepts a reply to a note as a quoted text message', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(doc(msgs(bob())), { uid: 'bob', kind: 'text', text: 'Good luck!', replyToNote: { text: 'exam tomorrow', emoji: '📚' }, createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(bob())), { uid: 'bob', kind: 'text', text: 'x', replyToNote: { text: 'y'.repeat(61), emoji: '' }, createdAt: serverTimestamp() }));
+  });
+});
+
+describe('leaving, blocking', () => {
+  it('lets a member leave; the chat then goes read-only and can never be re-joined', async () => {
+    await seedRoom();
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { members: ['alice'], left: 'eve' }));
+    // Bob can only remove himself.
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['bob'], left: 'bob' }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'alice' }));
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'bob' }));
+    // Bob can't read it any more; Alice can, but can't write in it.
+    await assertFails(getDoc(doc(bob(), 'rooms', ROOM)));
+    await assertSucceeds(getDoc(doc(alice(), 'rooms', ROOM)));
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'hello?', createdAt: serverTimestamp() }));
+    // Nobody can come back in: not Bob by e-mail, not with a new code.
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice', 'bob'] }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM), { inviteCode: 'abcdefghijklmnop1234' }));
+    // Alice, the last one in, can delete the chat.
+    await assertFails(deleteDoc(doc(eve(), 'rooms', ROOM)));
+    await assertSucceeds(deleteDoc(doc(alice(), 'rooms', ROOM)));
+  });
+
+  it("refuses a join from someone the owner blocked", async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'rooms', 'r9'), { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: ['eve@example.com'], inviteCode: 'abcdefghijklmnop1234', createdAt: new Date() });
+      await setDoc(doc(db, 'users', 'alice', 'blocked', 'eve'), { name: 'Eve', at: new Date() });
+    });
+    await assertFails(updateDoc(doc(eve(), 'rooms', 'r9'), { members: ['alice', 'eve'] }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', 'r9'), { members: ['alice', 'eve'], invites: [], inviteCode: deleteField(), joinCode: 'abcdefghijklmnop1234' }));
+    // Someone else with the code still can.
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', 'r9'), { members: ['alice', 'bob'], invites: [], inviteCode: deleteField(), joinCode: 'abcdefghijklmnop1234' }));
+  });
+});
