@@ -23,13 +23,14 @@ const APP = 'http://127.0.0.1:5174/';
 await fetch(`${AUTH}/emulator/v1/projects/${PROJECT}/accounts`, { method: 'DELETE' });
 await fetch(`http://127.0.0.1:8080/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: 'DELETE' });
 
-const browser = await chromium.launch();
+// A fake microphone (a steady tone) so voice notes can be recorded headless.
+const browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
 const phone = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true };
 
 const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
 async function person(email, startUrl = APP) {
-  const ctx = await browser.newContext({ ...phone, permissions: ['clipboard-read', 'clipboard-write'] });
+  const ctx = await browser.newContext({ ...phone, permissions: ['clipboard-read', 'clipboard-write', 'microphone'] });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error(`[${email}] pageerror`, e.message));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.error(`[${email}] console.${m.type()}`, m.text().slice(0, 300)); });
@@ -274,6 +275,8 @@ try {
   await alice.getByText('Rewatching this before we talk').waitFor();
   assert.equal(await bob.getByRole('textbox', { name: 'Message' }).inputValue(), '', 'composer clears after send');
   await alice.getByText('youtube.com').first().waitFor();
+  // The linkPreview function runs on the new message and settles it (ok, or failed with no internet here).
+  await alice.locator('.link-card:not([data-status="pending"])').first().waitFor({ timeout: 30_000 });
 
   step('Photo upload (compressed client-side) shows for the partner');
   const png = await alice.evaluate(async () => {
@@ -288,6 +291,89 @@ try {
   await img.waitFor();
   const natural = await img.evaluate((el) => new Promise((r) => (el.complete ? r([el.naturalWidth, el.naturalHeight]) : el.addEventListener('load', () => r([el.naturalWidth, el.naturalHeight])))));
   assert.deepEqual(natural, [1600, 1067], 'photo should be scaled to 1600px');
+
+  step('Photo viewer: double-tap zoom, swipe to the next photo, swipe down to close, back gesture');
+  const png2 = await alice.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 900; c.height = 1200;
+    const g = c.getContext('2d'); g.fillStyle = '#2F5BEA'; g.fillRect(0, 0, 900, 1200); g.fillStyle = '#FFFFFF'; g.font = 'bold 160px sans-serif'; g.fillText('Hi', 300, 650);
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await alice.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'hi.png', mimeType: 'image/png', buffer: Buffer.from(png2, 'base64') });
+  await bob.locator('.photo-btn img').nth(1).waitFor();
+  await bob.locator('.photo-btn').first().click();
+  const viewer = bob.getByRole('dialog', { name: /Photo from/ });
+  await viewer.waitFor();
+  await viewer.getByText('1 of 2').waitFor();
+  const stage = viewer.locator('.viewer-img');
+  await stage.locator('img').waitFor();
+  const sbox = await stage.boundingBox();
+  const cx = sbox.x + sbox.width / 2;
+  const cy = sbox.y + sbox.height / 2;
+  // Double-tap zooms in, double-tap again zooms back out.
+  for (let i = 0; i < 2; i++) { await bob.mouse.click(cx, cy); await bob.waitForTimeout(60); }
+  assert.equal(await stage.getAttribute('data-zoom'), '2.50', 'double-tap zooms in');
+  await shot(bob, 'photo-viewer-zoomed');
+  for (let i = 0; i < 2; i++) { await bob.mouse.click(cx, cy); await bob.waitForTimeout(60); }
+  assert.equal(await stage.getAttribute('data-zoom'), '1.00', 'double-tap again zooms out');
+  await bob.waitForTimeout(350);
+  // Swipe left: the next photo.
+  await bob.mouse.move(cx + 120, cy); await bob.mouse.down();
+  for (let i = 1; i <= 6; i++) await bob.mouse.move(cx + 120 - i * 40, cy);
+  await bob.mouse.up();
+  await viewer.getByText('2 of 2').waitFor();
+  await shot(bob, 'photo-viewer');
+  // Swipe down: closed, still in the chat.
+  await bob.mouse.move(cx, cy - 100); await bob.mouse.down();
+  for (let i = 1; i <= 8; i++) await bob.mouse.move(cx, cy - 100 + i * 30);
+  await bob.mouse.up();
+  await viewer.waitFor({ state: 'detached' });
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+  // The back gesture closes the viewer, not the chat.
+  await bob.locator('.photo-btn').nth(1).click();
+  await viewer.waitFor();
+  await bob.evaluate(() => history.back());
+  await viewer.waitFor({ state: 'detached' });
+  await bob.waitForTimeout(300);
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+  await bob.getByRole('button', { name: 'Back to chats' }).waitFor();
+
+  step('Voice note: hold to record, partner plays it and reacts at a moment');
+  const mic = alice.getByRole('button', { name: 'Record a voice note' });
+  await mic.waitFor();
+  const mbox = await mic.boundingBox();
+  await alice.mouse.move(mbox.x + mbox.width / 2, mbox.y + mbox.height / 2);
+  await alice.mouse.down();
+  await alice.locator('.rec-bar').waitFor();
+  await alice.waitForTimeout(1300);
+  await shot(alice, 'voice-recording');
+  await alice.waitForTimeout(1200);
+  await alice.mouse.up();
+  const bobVoice = bob.locator('.bubble.voice').last();
+  await bobVoice.waitFor({ timeout: 20_000 });
+  await bobVoice.locator('.voice-new').waitFor();
+  const bars = await bobVoice.locator('.voice-wave i').count();
+  assert.ok(bars >= 16, `waveform has bars (${bars})`);
+  const heights = await bobVoice.locator('.voice-wave i').evaluateAll((els) => els.map((e) => parseFloat(e.style.height)));
+  assert.ok(Math.max(...heights) > Math.min(...heights) || Math.max(...heights) > 3, 'waveform is not flat');
+  const playLabel = await bobVoice.locator('.voice-play').getAttribute('aria-label');
+  assert.match(playLabel, /Play voice note, 0:0[1-4]/, `duration shown (${playLabel})`);
+  await bobVoice.locator('.voice-play').click();
+  await bobVoice.getByRole('button', { name: 'Pause voice note' }).waitFor();
+  await bob.waitForTimeout(900);
+  const filled = await bobVoice.locator('.voice-wave i.on').count();
+  assert.ok(filled > 0, 'playback moves along the waveform');
+  // Played: the dot goes; Alice sees "Played".
+  await bobVoice.locator('.voice-new').waitFor({ state: 'detached' });
+  await alice.locator('.bubble.voice').last().getByText('Played').waitFor();
+  await bobVoice.getByRole('button', { name: /^React at / }).click();
+  await bobVoice.getByRole('button', { name: /^Love at / }).click();
+  await alice.locator('.bubble.voice').last().getByRole('button', { name: /reacted ❤️ at 0:0/ }).waitFor();
+  await bob.waitForTimeout(1500);
+  await shot(bob, 'voice-note');
+  await shot(alice, 'voice-note-sender');
+  // Speed toggle.
+  await bobVoice.getByRole('button', { name: /Playback speed 1x/ }).click();
+  await bobVoice.getByRole('button', { name: /Playback speed 1.5x/ }).waitFor();
 
   step('Blind Reveal: answers stay hidden until both lock in');
   await bob.getByRole('button', { name: 'Add a Drop' }).click();

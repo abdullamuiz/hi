@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { closeOverlay, forgetOverlay, openOverlay } from '../lib/overlay';
 import { photoURL } from '../data/photos';
 import type { Message } from '../types';
@@ -84,8 +84,9 @@ export function PhotoViewer({ photos, startId, nameOf, isPinned, onPin, onClose 
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
-  // The back gesture closes the viewer, not the chat.
-  useEffect(() => {
+  // The back gesture closes the viewer, not the chat. (Registered before paint, so even an
+  // instant back press closes the viewer.)
+  useLayoutEffect(() => {
     const close = () => closeRef.current();
     openOverlay(close);
     return () => forgetOverlay(close);
@@ -228,7 +229,8 @@ export function PhotoViewer({ photos, startId, nameOf, isPinned, onPin, onClose 
   const from = nameOf(msg.uid);
 
   return (
-    <div class="viewer" role="dialog" aria-modal="true" aria-label={`Photo from ${from}`} style={{ background: `rgba(10, 12, 18, ${0.96 * fade})` }}>
+    <div class="viewer" role="dialog" aria-modal="true" aria-label={`Photo from ${from}`}
+      style={drag.active ? { background: `rgba(10, 12, 18, ${fade})` } : undefined}>
       <div class="viewer-top">
         <div class="viewer-from">
           <span>{from}</span>
@@ -238,7 +240,7 @@ export function PhotoViewer({ photos, startId, nameOf, isPinned, onPin, onClose 
       </div>
       <div class="viewer-img" ref={stage} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onWheel={wheel}
         data-zoom={view.s.toFixed(2)}>
-        {url && <img src={url} alt={msg.text || 'Photo'} draggable={false} style={imgStyle} />}
+        {url && <img key={msg.id} src={url} alt={msg.text || 'Photo'} draggable={false} style={imgStyle} />}
         {photos.length > 1 && index > 0 && <button type="button" class="viewer-nav prev" onClick={() => go(-1)} aria-label="Previous photo">‹</button>}
         {photos.length > 1 && index < photos.length - 1 && <button type="button" class="viewer-nav next" onClick={() => go(1)} aria-label="Next photo">›</button>}
       </div>
