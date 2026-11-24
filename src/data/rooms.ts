@@ -1,17 +1,23 @@
 import {
-  collection, doc, onSnapshot, writeBatch, query, runTransaction, serverTimestamp,
+  collection, deleteDoc, deleteField, doc, onSnapshot, writeBatch, query, serverTimestamp,
   setDoc, Timestamp, updateDoc, where, arrayUnion,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import { db } from '../firebase';
 import type { Member, MoodId, Room } from '../types';
 import { GENERAL, generalTabDoc } from './tabs';
+import { makeInviteCode } from '../lib/invite';
 
 const roomsCol = collection(db, 'rooms');
 export const DEFAULT_TZ = 'Indian/Maldives';
 
 function toRoom(id: string, d: any): Room {
-  return { id, owner: d.owner, ownerName: d.ownerName || '', members: d.members || [], invites: d.invites || [], timezone: d.timezone || DEFAULT_TZ, createdAt: d.createdAt || null };
+  return {
+    id, owner: d.owner, ownerName: d.ownerName || '', members: d.members || [], invites: d.invites || [],
+    timezone: d.timezone || DEFAULT_TZ, createdAt: d.createdAt || null,
+    inviteCode: typeof d.inviteCode === 'string' ? d.inviteCode : null,
+    lastMessage: d.lastMessage && typeof d.lastMessage === 'object' ? d.lastMessage : null,
+  };
 }
 
 export function watchMyRooms(uid: string, cb: (rooms: Room[]) => void, onError?: (e: Error) => void) {
@@ -40,41 +46,74 @@ export function watchInvites(email: string, uid: string, cb: (rooms: Room[]) => 
 }
 
 /**
- * Creates my room, my profile in it and its General tab in ONE atomic write, so the
- * room never exists without its tab. The partner's e-mail is optional (invite later).
+ * Starts a chat with a new contact: the room, my profile in it and its General tab in
+ * ONE atomic write, so the room never exists without its tab. The e-mail is optional;
+ * the share-link code is always made, so the link can be sent right away.
  */
-export async function createRoom(user: User, partnerEmail = ''): Promise<string> {
+export async function createRoom(user: User, partnerEmail = ''): Promise<{ id: string; code: string }> {
   const ref = doc(roomsCol);
+  const code = makeInviteCode();
   const b = writeBatch(db);
   b.set(ref, {
     owner: user.uid,
     ownerName: user.displayName || user.email || '',
     members: [user.uid],
     invites: partnerEmail.trim() ? [partnerEmail.trim().toLowerCase()] : [],
+    inviteCode: code,
     timezone: DEFAULT_TZ,
     createdAt: serverTimestamp(),
   });
   b.set(doc(db, 'rooms', ref.id, 'members', user.uid), memberProfile(user));
   b.set(doc(db, 'rooms', ref.id, 'tabs', GENERAL), generalTabDoc(user.uid));
   await b.commit();
-  return ref.id;
+  return { id: ref.id, code };
 }
 
+/** Set (or clear) the e-mail invite of a room I'm still alone in. */
 export async function changeInvite(roomId: string, partnerEmail: string) {
-  await updateDoc(doc(db, 'rooms', roomId), { invites: [partnerEmail.trim().toLowerCase()] });
+  const v = partnerEmail.trim().toLowerCase();
+  await updateDoc(doc(db, 'rooms', roomId), { invites: v ? [v] : [] });
 }
 
-export async function joinRoom(roomId: string, user: User) {
-  const ref = doc(db, 'rooms', roomId);
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(ref);
-    const members: string[] = snap.data()?.members || [];
-    if (members.includes(user.uid)) return;
-    if (members.length >= 2) throw new Error('This room already has two people.');
-    tx.update(ref, { members: arrayUnion(user.uid) });
-  });
-  await ensureMember(roomId, user);
+/** Makes sure a room I'm alone in has a share-link code (older rooms don't). */
+export async function ensureInviteCode(room: Room): Promise<string> {
+  if (room.inviteCode) return room.inviteCode;
+  const code = makeInviteCode();
+  await updateDoc(doc(db, 'rooms', room.id), { inviteCode: code });
+  return code;
 }
+
+/** A new code: any link sent earlier stops working. */
+export async function newInviteCode(roomId: string): Promise<string> {
+  const code = makeInviteCode();
+  await updateDoc(doc(db, 'rooms', roomId), { inviteCode: code });
+  return code;
+}
+
+/** Join with an invited, verified e-mail. */
+export async function joinRoom(roomId: string, user: User) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'rooms', roomId), { members: arrayUnion(user.uid), inviteCode: deleteField() });
+  b.set(doc(db, 'rooms', roomId, 'members', user.uid), memberProfile(user), { merge: true });
+  await b.commit();
+}
+
+/**
+ * Join with a share-link code. Write-only (I can't read the room before I'm in it):
+ * the rules check the code and that only my uid is added; the code is used up.
+ */
+export async function joinByCode(roomId: string, code: string, user: User) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'rooms', roomId), { members: arrayUnion(user.uid), invites: [], inviteCode: deleteField(), joinCode: code });
+  b.set(doc(db, 'rooms', roomId, 'members', user.uid), memberProfile(user), { merge: true });
+  await b.commit();
+}
+
+/** Say no to an e-mail invite. */
+export const declineInvite = (roomId: string) => updateDoc(doc(db, 'rooms', roomId), { invites: [] });
+
+/** Remove a chat nobody has joined yet. */
+export const removeRoom = (roomId: string) => deleteDoc(doc(db, 'rooms', roomId));
 
 function memberProfile(user: User) {
   return {

@@ -14,7 +14,7 @@ const friendly = (e: any) => {
   return e?.message || 'Something went wrong.';
 };
 
-export function SignIn() {
+export function SignIn({ invitedBy }: { invitedBy?: string } = {}) {
   const [email, setEmail] = useState(rememberedEmail());
   const [sent, setSent] = useState(false);
   const [useEmail, setUseEmail] = useState(false);
@@ -59,6 +59,7 @@ export function SignIn() {
           <div class="brand-name">Drops Chat</div>
         </div>
         <p class="lede">A new way to share moods, thoughts and experiences through conversation. Just say “Hi”.</p>
+        {invitedBy != null && <div class="note" role="status">{invitedBy || 'Someone'} invited you to chat. Sign in to join.</div>}
         {usingEmulators && <div class="emu">Local test mode: using the Firebase Emulator Suite, so accounts and messages here are not real.</div>}
         {err && <div class="err" role="alert">{err}</div>}
 
