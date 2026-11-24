@@ -605,3 +605,91 @@ describe('leaving, blocking', () => {
     await assertSucceeds(updateDoc(doc(bob(), 'rooms', 'r9'), { members: ['alice', 'bob'], invites: [], inviteCode: deleteField(), joinCode: 'abcdefghijklmnop1234' }));
   });
 });
+
+describe('delivery: read receipts, scheduled, urgent, mute', () => {
+  const SID = 'abcdefghij0123456789';
+  const sched = (db: Firestore, id = SID) => doc(db, 'rooms', ROOM, 'scheduled', id);
+  const soon = () => new Date(Date.now() + 3_600_000);
+  const schedDoc = (extra: Record<string, unknown> = {}) => ({ senderId: 'alice', tabId: 'general', text: 'Happy birthday!', sendAt: soon(), createdAt: serverTimestamp(), ...extra });
+  async function deliver(db: Firestore, uid: string, id = SID, extra: Record<string, unknown> = {}) {
+    const b = writeBatch(db);
+    b.delete(sched(db, id));
+    b.set(doc(msgs(db), id), { uid, kind: 'text', text: 'Happy birthday!', scheduled: true, createdAt: serverTimestamp(), ...extra });
+    return b.commit();
+  }
+
+  it('my own "read up to" copy is private', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice', 'reads', ROOM), { lastRead: { general: serverTimestamp() } }));
+    await assertFails(getDoc(doc(bob(), 'users', 'alice', 'reads', ROOM)));
+    await assertFails(setDoc(doc(bob(), 'users', 'alice', 'reads', ROOM), { lastRead: {} }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice', 'reads', ROOM), { lastRead: {}, extra: 1 }));
+  });
+
+  it('read receipts off: I can clear the shared "read up to" times', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'members', 'alice'), { uid: 'alice', lastRead: { general: serverTimestamp() } }, { merge: true }));
+    await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM, 'members', 'alice'), { lastRead: {} }));
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice'), { readReceipts: false, quiet: { on: true, start: '21:00', end: '07:00', tz: 'UTC' } }, { merge: true }));
+  });
+
+  it('the urgent count belongs to the server', async () => {
+    await assertFails(setDoc(doc(alice(), 'users', 'alice'), { urgent: { day: '2026-11-24', count: 0 } }));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'users', 'alice'), { urgent: { day: '2026-11-24', count: 3 } }));
+    await assertFails(updateDoc(doc(alice(), 'users', 'alice'), { urgent: { day: '2026-11-24', count: 0 } }));
+    await assertSucceeds(updateDoc(doc(alice(), 'users', 'alice'), { theme: { palette: 'hi', mode: 'dark' } }));
+  });
+
+  it('scheduled messages: only the sender sees or changes them', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(sched(alice()), schedDoc()));
+    await assertSucceeds(getDoc(sched(alice())));
+    await assertFails(getDoc(sched(bob())));
+    await assertSucceeds(getDocs(query(collection(alice(), 'rooms', ROOM, 'scheduled'), where('senderId', '==', 'alice'))));
+    await assertFails(getDocs(collection(bob(), 'rooms', ROOM, 'scheduled')));
+    await assertFails(getDocs(collection(eve(), 'rooms', ROOM, 'scheduled')));
+    await assertSucceeds(updateDoc(sched(alice()), { text: 'Happy birthday!!', sendAt: soon() }));
+    await assertFails(updateDoc(sched(alice()), { senderId: 'bob' }));
+    await assertFails(updateDoc(sched(bob()), { text: 'mine now' }));
+    await assertFails(deleteDoc(sched(bob())));
+    await assertSucceeds(deleteDoc(sched(alice())));
+  });
+
+  it('scheduled messages need a future time, a real tab, and the sender as themselves', async () => {
+    await seedRoom();
+    await assertFails(setDoc(sched(alice()), schedDoc({ sendAt: new Date(Date.now() - 60_000) })));
+    await assertFails(setDoc(sched(alice()), schedDoc({ sendAt: new Date(Date.now() + 400 * 86_400_000) })));
+    await assertFails(setDoc(sched(alice()), schedDoc({ tabId: 'nope' })));
+    await assertFails(setDoc(sched(alice()), schedDoc({ senderId: 'bob' })));
+    await assertFails(setDoc(sched(eve()), schedDoc({ senderId: 'eve' })));
+    await assertFails(setDoc(sched(alice(), 'short'), schedDoc()));
+    await assertFails(setDoc(sched(alice()), schedDoc({ text: '' })));
+  });
+
+  it('delivery: once, as the sender, removing the scheduled message in the same write', async () => {
+    await seedRoom();
+    await setDoc(sched(alice()), schedDoc());
+    // Bob can't deliver Alice's message, nor fake a "scheduled" one.
+    await assertFails(deliver(bob(), 'bob'));
+    await assertFails(setDoc(doc(msgs(bob()), 'x1234567890123456789'), { uid: 'bob', kind: 'text', text: 'hi', scheduled: true, createdAt: serverTimestamp() }));
+    // Without removing the scheduled doc it isn't allowed.
+    await assertFails(setDoc(doc(msgs(alice()), SID), { uid: 'alice', kind: 'text', text: 'hi', scheduled: true, createdAt: serverTimestamp() }));
+    await assertSucceeds(deliver(alice(), 'alice'));
+    // A second delivery finds nothing to deliver.
+    await assertFails(deliver(alice(), 'alice'));
+  });
+
+  it('urgent is a true-only flag on new messages', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'call me', urgent: true, createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'call me', urgent: 'yes', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'call me', urgent: false, createdAt: serverTimestamp() }));
+  });
+
+  it('mute for a while is stored privately', async () => {
+    const ref = doc(alice(), 'users', 'alice', 'contacts', 'bob');
+    await assertSucceeds(setDoc(ref, { muted: false, mutedUntil: new Date(Date.now() + 8 * 3_600_000), updatedAt: serverTimestamp() }));
+    await assertSucceeds(setDoc(ref, { muted: false, mutedUntil: null, updatedAt: serverTimestamp() }, { merge: true }));
+    await assertFails(setDoc(ref, { mutedUntil: 'tomorrow', updatedAt: serverTimestamp() }, { merge: true }));
+    await assertFails(getDoc(doc(bob(), 'users', 'alice', 'contacts', 'bob')));
+  });
+});
