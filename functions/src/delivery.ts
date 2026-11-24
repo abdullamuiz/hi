@@ -74,3 +74,10 @@ export function scheduledToMessage(s: { senderId: string; text: string; replyTo?
 export function isMuted(contact: { muted?: unknown; mutedUntilMs?: number | null } | undefined, now: number): boolean {
   return !!contact && (contact.muted === true || (typeof contact.mutedUntilMs === 'number' && contact.mutedUntilMs > now));
 }
+
+/** Disappearing tab: when a message sent now expires (ms), or null when the tab keeps messages. */
+export function expiryMs(tab: { disappearing?: unknown; ttlHours?: unknown } | undefined, now: number): number | null {
+  if (!tab || tab.disappearing !== true) return null;
+  const h = [24, 168, 2160].includes(tab.ttlHours as number) ? (tab.ttlHours as number) : 24;
+  return now + h * 3_600_000;
+}

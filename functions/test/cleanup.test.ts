@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filesToDelete } from '../src/cleanup';
+import { filesOfRemoved, filesToDelete } from '../src/cleanup';
 import { openUrl } from '../src/notify';
 
 const photo = { path: 'rooms/r1/photos/alice/abc.jpg', width: 1, height: 1 };
@@ -35,5 +35,19 @@ describe('filesToDelete: voice notes', () => {
 describe('openUrl', () => {
   it('points at the chat and tab', () => {
     expect(openUrl('r1', 'trip plans')).toBe('./?room=r1&tab=trip%20plans');
+  });
+});
+
+describe('filesOfRemoved (disappearing tab TTL, deleted chat)', () => {
+  it('returns the photo or voice file of a message deleted outright', () => {
+    expect(filesOfRemoved({ photo }, 'r1')).toEqual(['rooms/r1/photos/alice/abc.jpg']);
+    expect(filesOfRemoved({ voice: { path: 'rooms/r1/voice/bob/v1.webm' } }, 'r1')).toEqual(['rooms/r1/voice/bob/v1.webm']);
+  });
+  it('skips messages that had no files, already-cleared ones, other rooms and odd paths', () => {
+    expect(filesOfRemoved({}, 'r1')).toEqual([]);
+    expect(filesOfRemoved(undefined, 'r1')).toEqual([]);
+    expect(filesOfRemoved({ photo, deleted: true }, 'r1')).toEqual([]);
+    expect(filesOfRemoved({ photo }, 'r2')).toEqual([]);
+    expect(filesOfRemoved({ photo: { path: 'rooms/r1/photos/a/../x.jpg' } }, 'r1')).toEqual([]);
   });
 });
