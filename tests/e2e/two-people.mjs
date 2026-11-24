@@ -654,6 +654,95 @@ try {
   await bob.getByRole('button', { name: /^Send as urgent/ }).click();
   await alice.locator('.msg', { hasText: 'Call me when you can' }).getByText('Urgent').waitFor();
 
+  step('Effects: keyword chip, confetti once on each phone (not again after a reload), sealed, whisper, shout');
+  const fxCount = (p) => p.evaluate(() => (window.__hiFx ? window.__hiFx.count : 0));
+  const [aliceFx0, bobFx0] = [await fxCount(alice), await fxCount(bob)];
+  // A suggestion can be dismissed…
+  await bob.getByRole('textbox', { name: 'Message' }).fill('thank you so much');
+  await bob.getByRole('button', { name: 'Send with ✨ Glow?' }).waitFor();
+  await bob.getByRole('button', { name: 'No effect' }).click();
+  assert.equal(await bob.getByRole('button', { name: /^Send with/ }).count(), 0);
+  await bob.getByRole('textbox', { name: 'Message' }).fill('');
+  // …or applied with one tap; it's never applied by itself.
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Congrats on the new job!');
+  await alice.getByRole('button', { name: 'Send with 🎉 Confetti?' }).click();
+  await alice.getByText('Sending with Confetti').waitFor();
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.locator('#fx-layer[data-effect="confetti"]').waitFor({ state: 'attached' });
+  await bob.waitForTimeout(500);
+  await shot(bob, 'effect-confetti');
+  await bob.locator('#fx-layer').waitFor({ state: 'detached', timeout: 10_000 });
+  assert.equal(await fxCount(bob), bobFx0 + 1, 'confetti played once for Bob');
+  assert.equal(await fxCount(alice), aliceFx0 + 1, 'and once for Alice as she sent it');
+  const congrats = bob.locator('.msg', { hasText: 'Congrats on the new job!' });
+  await congrats.getByRole('button', { name: 'Replay Confetti' }).waitFor();
+  await bob.reload();
+  await bob.getByText('Congrats on the new job!').waitFor();
+  await bob.waitForTimeout(1500);
+  assert.equal(await fxCount(bob), 0, 'no replay after a reload');
+  assert.equal(await bob.locator('#fx-layer').count(), 0);
+  // Tapping the label replays it.
+  await bob.locator('.msg', { hasText: 'Congrats on the new job!' }).getByRole('button', { name: 'Replay Confetti' }).click();
+  await bob.locator('#fx-layer[data-effect="confetti"]').waitFor({ state: 'attached' });
+  assert.equal(await fxCount(bob), 1);
+
+  // Sealed, from the long-press Send menu: Alice only sees an envelope until she opens it.
+  await bob.getByRole('textbox', { name: 'Message' }).fill('Meet me at the jetty at 7');
+  await bob.getByRole('button', { name: 'Send', exact: true }).click({ button: 'right' });
+  await bob.getByRole('button', { name: /^Effects…/ }).click();
+  await shot(bob, 'effects-sheet');
+  await bob.getByRole('button', { name: /^Sealed/ }).click();
+  await bob.getByText('Sending with Sealed').waitFor();
+  await bob.getByRole('button', { name: 'Send', exact: true }).click();
+  const sealed = alice.locator('.msg', { hasText: 'Sealed message' });
+  await sealed.getByRole('button', { name: /Tap to open/ }).waitFor();
+  assert.equal(await alice.getByText('Meet me at the jetty at 7').count(), 0, 'sealed text stays hidden');
+  await shot(alice, 'effect-sealed');
+  await sealed.getByRole('button', { name: /Tap to open/ }).click();
+  await alice.getByText('Meet me at the jetty at 7').waitFor();
+
+  // Whisper: blurred until tapped.
+  await alice.getByRole('textbox', { name: 'Message' }).fill('psst, I already booked it');
+  await alice.getByRole('button', { name: 'Send', exact: true }).click({ button: 'right' });
+  await alice.getByRole('button', { name: /^Effects…/ }).click();
+  await alice.getByRole('button', { name: /^Whisper/ }).click();
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.getByRole('button', { name: 'Whispered message. Tap to reveal' }).click();
+  await bob.locator('.fx-whisper-text', { hasText: 'psst, I already booked it' }).waitFor();
+
+  // Shout: big text that shakes on arrival.
+  await alice.getByRole('textbox', { name: 'Message' }).fill('WE ARE GOING');
+  await alice.getByRole('button', { name: 'Send', exact: true }).click({ button: 'right' });
+  await alice.getByRole('button', { name: /^Effects…/ }).click();
+  await alice.getByRole('button', { name: /^Shout/ }).click();
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.locator('.bubble.fx-shout.fx-go', { hasText: 'WE ARE GOING' }).waitFor();
+  await shot(bob, 'effect-shout');
+
+  step('Effects respect reduced motion and the Settings switch');
+  await bob.emulateMedia({ reducedMotion: 'reduce' });
+  const before = await fxCount(bob);
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Happy birthday Bob!');
+  await alice.getByRole('button', { name: 'Send with 🎈 Balloons?' }).click();
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.locator('.msg', { hasText: 'Happy birthday Bob!' }).getByText('Sent with Balloons').waitFor();
+  await bob.waitForTimeout(800);
+  assert.equal(await fxCount(bob), before, 'no animation with reduced motion');
+  assert.equal(await bob.locator('#fx-layer').count(), 0);
+  await bob.emulateMedia({ reducedMotion: 'no-preference' });
+  await bob.getByRole('button', { name: 'Settings' }).click();
+  await bob.getByRole('radiogroup', { name: 'Play effects' }).getByRole('radio', { name: 'Off' }).click();
+  await bob.keyboard.press('Escape');
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Happy new year!');
+  await alice.getByRole('button', { name: 'Send with 🎆 Fireworks?' }).click();
+  await alice.getByRole('button', { name: 'Send', exact: true }).click();
+  await bob.locator('.msg', { hasText: 'Happy new year!' }).getByText('Sent with Fireworks').waitFor();
+  await bob.waitForTimeout(800);
+  assert.equal(await fxCount(bob), before, 'no animation with effects turned off');
+  await bob.getByRole('button', { name: 'Settings' }).click();
+  await bob.getByRole('radiogroup', { name: 'Play effects' }).getByRole('radio', { name: 'On' }).click();
+  await bob.keyboard.press('Escape');
+
   step('Scheduled messages: schedule, edit, send now, cancel, and one that sends itself');
   const scheduleVia = async (text, pick) => {
     await alice.getByRole('textbox', { name: 'Message' }).fill(text);
