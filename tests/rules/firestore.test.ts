@@ -503,6 +503,50 @@ describe('message actions (Phase 2)', () => {
     await assertSucceeds(updateDoc(ref(bob()), { phraseReactions: arrayRemove(mine) }));
   });
 
+  it('voice notes: own file in this room, short waveform, sensible length', async () => {
+    await seedRoom();
+    const voice = (extra: Record<string, unknown> = {}) => ({
+      path: `rooms/${ROOM}/voice/bob/v1.webm`, durationMs: 2300, peaks: [0.1, 0.5, 1], mime: 'audio/webm', ...extra,
+    });
+    const msg = (v: Record<string, unknown>, more: Record<string, unknown> = {}) => ({ uid: 'bob', kind: 'voice', text: '', voice: v, createdAt: serverTimestamp(), ...more });
+    await assertSucceeds(setDoc(ref(bob(), 'v1'), msg(voice())));
+    await assertSucceeds(setDoc(ref(bob(), 'v2'), msg(voice({ path: `rooms/${ROOM}/voice/bob/v2.m4a`, mime: 'audio/mp4' }))));
+    await assertFails(setDoc(ref(bob(), 'v3'), msg(voice({ path: `rooms/${ROOM}/voice/alice/v3.webm` }))));
+    await assertFails(setDoc(ref(bob(), 'v4'), msg(voice({ path: `rooms/other/voice/bob/v4.webm` }))));
+    await assertFails(setDoc(ref(bob(), 'v5'), msg(voice({ durationMs: 0 }))));
+    await assertFails(setDoc(ref(bob(), 'v6'), msg(voice({ durationMs: 200000 }))));
+    await assertFails(setDoc(ref(bob(), 'v7'), msg(voice({ peaks: new Array(65).fill(0.5) }))));
+    await assertFails(setDoc(ref(bob(), 'v8'), msg(voice({ mime: 'text/html' }))));
+    await assertFails(setDoc(ref(bob(), 'v9'), msg(voice({ extra: 1 }))));
+    await assertFails(setDoc(ref(bob(), 'v10'), msg(voice(), { text: 'hidden words' })));
+    await assertFails(setDoc(ref(eve(), 'v11'), { ...msg(voice()), uid: 'eve' }));
+  });
+
+  it('voice notes: played marks and timed reactions are your own only', async () => {
+    await seedRoom();
+    await seedMsg({ kind: 'voice', text: '', voice: { path: `rooms/${ROOM}/voice/alice/v.webm`, durationMs: 4000, peaks: [0.2], mime: 'audio/webm' } }, 'vn');
+    await assertSucceeds(updateDoc(ref(bob(), 'vn'), { playedBy: arrayUnion('bob') }));
+    await assertFails(updateDoc(ref(bob(), 'vn'), { playedBy: arrayUnion('alice') }));
+    await assertFails(updateDoc(ref(eve(), 'vn'), { playedBy: arrayUnion('eve') }));
+    const mine = { uid: 'bob', atMs: 1500, reaction: 'laugh' };
+    await assertSucceeds(updateDoc(ref(bob(), 'vn'), { voiceReactions: arrayUnion(mine) }));
+    const hers = { uid: 'alice', atMs: 3000, reaction: 'heart' };
+    await assertSucceeds(updateDoc(ref(alice(), 'vn'), { voiceReactions: arrayUnion(hers) }));
+    await assertFails(updateDoc(ref(alice(), 'vn'), { voiceReactions: arrayRemove(mine) }));
+    await assertFails(updateDoc(ref(bob(), 'vn'), { voiceReactions: arrayUnion({ uid: 'alice', atMs: 1, reaction: 'fire' }) }));
+    await assertFails(updateDoc(ref(bob(), 'vn'), { voiceReactions: arrayUnion({ uid: 'bob', atMs: -1, reaction: 'fire' }) }));
+    await assertFails(updateDoc(ref(bob(), 'vn'), { voiceReactions: arrayUnion({ uid: 'bob', atMs: 1, reaction: 'nope' }) }));
+    await assertSucceeds(updateDoc(ref(bob(), 'vn'), { voiceReactions: arrayRemove(mine) }));
+    // Not on text messages.
+    await seedMsg();
+    await assertFails(updateDoc(ref(bob()), { playedBy: arrayUnion('bob') }));
+    await assertFails(updateDoc(ref(bob()), { voiceReactions: arrayUnion(mine) }));
+    // Delete for everyone clears the voice note and its reactions.
+    await assertFails(updateDoc(ref(alice(), 'vn'), { deleted: true, text: '' }));
+    await assertSucceeds(updateDoc(ref(alice(), 'vn'), { deleted: true, text: '', voice: deleteField(), voiceReactions: deleteField(), playedBy: deleteField() }));
+    await assertFails(updateDoc(ref(bob(), 'vn'), { playedBy: arrayUnion('bob') }));
+  });
+
   it('other changes stay forbidden', async () => {
     await seedRoom();
     await seedMsg();
