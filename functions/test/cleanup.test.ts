@@ -20,6 +20,18 @@ describe('filesToDelete', () => {
   });
 });
 
+describe('filesToDelete: voice notes', () => {
+  const voice = { path: 'rooms/r1/voice/bob/v1.webm' };
+  it('returns the voice file when a voice note is deleted for everyone', () => {
+    expect(filesToDelete({ voice }, { deleted: true }, 'r1')).toEqual(['rooms/r1/voice/bob/v1.webm']);
+    expect(filesToDelete({ voice: { path: 'rooms/r1/voice/bob/v2.m4a' } }, { deleted: true }, 'r1')).toEqual(['rooms/r1/voice/bob/v2.m4a']);
+  });
+  it('ignores other rooms and odd voice paths', () => {
+    expect(filesToDelete({ voice }, { deleted: true }, 'r2')).toEqual([]);
+    expect(filesToDelete({ voice: { path: 'rooms/r1/voice/bob/v1.exe' } }, { deleted: true }, 'r1')).toEqual([]);
+  });
+});
+
 describe('openUrl', () => {
   it('points at the chat and tab', () => {
     expect(openUrl('r1', 'trip plans')).toBe('./?room=r1&tab=trip%20plans');
