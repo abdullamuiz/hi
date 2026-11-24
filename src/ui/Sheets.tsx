@@ -7,6 +7,7 @@ import { disablePush } from '../data/push';
 import type { MoodId, Pin } from '../types';
 import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
+import { buildLabel, reloadApp } from '../lib/updates';
 
 export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void }) {
   return (
@@ -172,6 +173,10 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush }: SettingsPr
         <div class="settings-row">
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</span>
           <button type="button" class="link-btn" onClick={async () => { await disablePush(user.uid); await signOut(); }}>Sign out</button>
+        </div>
+        <div class="settings-row">
+          <span>App version · {buildLabel()}</span>
+          <button type="button" class="link-btn" onClick={() => reloadApp()}>Reload app</button>
         </div>
         <div class="fine">About: messages are protected by access rules but are not end-to-end encrypted.</div>
       </div>

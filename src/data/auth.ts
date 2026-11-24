@@ -10,6 +10,8 @@ const EMAIL_KEY = 'drops.emailForSignIn';
 export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
+  // Installed (Home Screen) apps can't open popups reliably: go straight to the redirect.
+  if (isStandalone()) { await signInWithRedirect(auth, provider); return; }
   try {
     await signInWithPopup(auth, provider);
   } catch (e: any) {

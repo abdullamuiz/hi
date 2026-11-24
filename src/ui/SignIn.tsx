@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { finishEmailLink, looksLikeSignInLink, rememberedEmail, sendEmailLink, signInWithGoogle } from '../data/auth';
 import { usingEmulators } from '../firebase';
+import { isIOS, isStandalone } from '../data/push';
 import { GoogleIcon, Logo } from './icons';
 import { ModeToggle } from './ModeToggle';
 
@@ -16,6 +17,7 @@ const friendly = (e: any) => {
 export function SignIn() {
   const [email, setEmail] = useState(rememberedEmail());
   const [sent, setSent] = useState(false);
+  const [useEmail, setUseEmail] = useState(false);
   const [paste, setPaste] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,19 +75,28 @@ export function SignIn() {
               <span style={{ background: '#fff', borderRadius: '9px', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><GoogleIcon /></span>
               Continue with Google
             </button>
-            <div class="or">or</div>
-            {!sent ? (
+            <div class="fine" style={{ textAlign: 'center' }}>One tap. You stay signed in on this device.</div>
+            {!useEmail && !sent ? (
+              <button type="button" class="link-btn" style={{ alignSelf: 'center' }} onClick={() => setUseEmail(true)}>No Google account? Use e-mail instead</button>
+            ) : !sent ? (
               <form class="stack-10" onSubmit={send}>
+                <div class="or">or</div>
                 <label class="field-label" for="email">E-mail me a sign-in link</label>
-                <input id="email" class="field" type="email" inputMode="email" autocomplete="email" placeholder="you@example.com" value={email} onInput={(e) => setEmail(e.currentTarget.value)} required />
+                <input id="email" class="field" type="email" inputMode="email" autocomplete="email" placeholder="you@example.com" value={email} onInput={(e) => setEmail(e.currentTarget.value)} required autoFocus />
                 <button class="btn-ghost" disabled={busy}>Send link</button>
               </form>
             ) : (
               <form class="stack-10" onSubmit={usePasted}>
-                <div class="ok">Link sent to {email}. Open it on this device.</div>
-                <label class="field-label" for="paste">Using the Home Screen app on iPhone? Links open in Safari — long-press the link in the e-mail, copy it, and paste it here:</label>
-                <input id="paste" class="field" value={paste} onInput={(e) => setPaste(e.currentTarget.value)} placeholder="https://…" autocomplete="off" />
-                <button class="btn-ghost" disabled={busy || !paste.trim()}>Sign in with pasted link</button>
+                <div class="ok">Link sent to {email}. Open it on this device to finish signing in.</div>
+                {isIOS() && isStandalone() && (
+                  <label class="field-label" for="paste">On iPhone, e-mail links open in Safari instead of this app. Long-press the link in the e-mail, copy it, and paste it here:</label>
+                )}
+                {isIOS() && isStandalone() && (
+                  <>
+                    <input id="paste" class="field" value={paste} onInput={(e) => setPaste(e.currentTarget.value)} placeholder="https://…" autocomplete="off" />
+                    <button class="btn-ghost" disabled={busy || !paste.trim()}>Sign in with pasted link</button>
+                  </>
+                )}
                 <button type="button" class="link-btn" onClick={() => setSent(false)}>Use a different e-mail</button>
               </form>
             )}

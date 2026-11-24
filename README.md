@@ -277,6 +277,13 @@ Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this als
 - **Light/dark:** the moon / half-circle button in the header switches the current theme between its light and dark version.
 - **Settings** (gear button): the theme palette (**Hi**, Classic, Blossom, Forest; each tile shows its light and dark halves), **Light / Dark / Match my phone**, notifications, sign out and the privacy note. The choice is saved on the device and on your account.
 
+## Updates and refreshing
+
+An installed (Home Screen) app has no address bar or reload button, so:
+- **Pull down** at the top of the chat to refresh.
+- When a new version is published, a bar says **"A new version of Hi is ready · Update"**. The app checks on start, whenever it comes back to the foreground, and every 15 minutes. It compares `version.json`, which each build writes, with the build it's running.
+- **Settings → Reload app** always works and shows the running version's build time.
+
 ## 9. Later: native apps with Capacitor
 
 The app is built to wrap cleanly: relative asset paths (`base: './'`), no server rendering, and no router. Roughly:

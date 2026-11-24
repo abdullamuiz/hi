@@ -39,6 +39,7 @@ async function person(email) {
     await shot(page, 'sign-in-dark');
     await page.getByRole('button', { name: 'Switch to light mode' }).click();
   }
+  await page.getByRole('button', { name: /Use e-mail instead/ }).click();
   await page.getByLabel('E-mail me a sign-in link').fill(email);
   await page.getByRole('button', { name: 'Send link' }).click();
   await page.getByText(`Link sent to ${email}`).waitFor();
@@ -251,6 +252,23 @@ try {
   await alice.getByRole('button', { name: 'Switch to light mode' }).click();
   assert.equal((await state(alice)).mode, 'light');
   await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
+
+  step('Pull down at the top of the chat to refresh');
+  await alice.evaluate(() => { document.querySelector('.feed').scrollTop = 0; });
+  {
+    const cdp = await alice.context().newCDPSession(alice);
+    const box = await alice.locator('.feed').boundingBox();
+    const x = box.x + box.width / 2;
+    const y0 = box.y + 20;
+    const reloaded = alice.waitForEvent('framenavigated');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
+    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + i * 25 }] });
+    await alice.locator('.ptr', { hasText: 'Release to refresh' }).waitFor();
+    await shot(alice, 'pull-to-refresh');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await reloaded;
+    await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  }
 
   step('Outsider cannot see anything');
   await eve.reload();

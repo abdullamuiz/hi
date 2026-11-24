@@ -5,6 +5,7 @@ import { addPin, watchPins } from '../data/pins';
 import { GENERAL, createTab, ensureGeneralTab, markRead, updateTab, watchTabs } from '../data/tabs';
 import { changeInvite, ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
 import { InviteSheet } from './InviteSheet';
+import { usePullToRefresh } from './PullToRefresh';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
 import { currentPrefs, onThemeChange, type ThemePrefs } from '../lib/themes';
@@ -445,6 +446,7 @@ function Feed({ messages, me, partner, typing, banner, tabName, renderMessage }:
   const inner = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const lastCount = useRef(0);
+  const pullIndicator = usePullToRefresh(scroller);
 
   // Keep the view pinned to the bottom while the user is there — including when
   // a Drop grows (new story line, reveal) without a new message arriving.
@@ -473,6 +475,7 @@ function Feed({ messages, me, partner, typing, banner, tabName, renderMessage }:
   let lastDay = '';
   return (
     <main class="feed" ref={scroller}>
+      {pullIndicator}
       <div class="feed-inner" ref={inner}>
         {banner}
         {messages === null && <div class="sys">Loading…</div>}
