@@ -54,10 +54,33 @@ async function person(email, startUrl = APP) {
   const link = new URL(code.oobLink);
   await page.goto(`${APP}?mode=signIn&oobCode=${link.searchParams.get('oobCode')}&apiKey=demo-key&lang=en`);
   await page.locator('#splash').waitFor({ state: 'detached', timeout: 15000 });
+  // First sign-in: profile setup. The name starts as the part of the e-mail before @.
+  await page.getByText('Set up your profile').waitFor();
+  assert.equal(await page.getByLabel('Your name').inputValue(), email.split('@')[0]);
+  if (email.startsWith('alice')) {
+    await page.locator('input[aria-label="Profile photo file"]').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: Buffer.from(AVATAR_PNG, 'base64') });
+    await page.getByRole('button', { name: 'Remove photo' }).waitFor();
+    await page.getByLabel('About').fill('Tea first, then talk');
+    await shot(page, 'profile-setup');
+  }
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByText('Set up your profile').waitFor({ state: 'detached' });
   return page;
 }
 
 const step = (s) => console.log('•', s);
+
+// A small, colourful square for the profile photo.
+const AVATAR_PNG = await (async () => {
+  const p = await (await browser.newContext()).newPage();
+  const b64 = await p.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = 600; c.height = 400;
+    const g = c.getContext('2d'); g.fillStyle = '#1E7F93'; g.fillRect(0, 0, 600, 400); g.fillStyle = '#F2EFE6'; g.beginPath(); g.arc(300, 200, 120, 0, 7); g.fill();
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await p.context().close();
+  return b64;
+})();
 
 try {
   step('Alice adds a contact with a share link and writes before anyone joins');
@@ -440,7 +463,8 @@ try {
   assert.equal(await alice.getByText('Which part got you?').count(), 0, 'chats are separate');
   await alice.getByRole('button', { name: 'Back to chats' }).click();
   await alice.getByRole('button', { name: /^carol/ }).waitFor();
-  assert.equal(await alice.getByRole('button', { name: /^carol.*unread messages/ }).count(), 0, 'read once opened');
+  // Read once opened (the read marker may take a moment to sync back).
+  await alice.getByRole('button', { name: /^carol(?!.*unread messages)/ }).waitFor();
 
   step('Outsider cannot see anything');
   await eve.reload();
@@ -457,6 +481,105 @@ try {
   await alice.keyboard.press('Escape');
   await alice.getByRole('button', { name: 'Open scrapbook' }).click();
   await shot(alice, 'scrapbook');
+  await alice.keyboard.press('Escape');
+
+  step('Profile photo shows to the other person; About in the contact profile');
+  await bob.locator('.hdr-who img[src^="data:image/jpeg"]').waitFor();
+  await bob.getByRole('button', { name: 'alice’s profile' }).click();
+  await bob.getByText('Tea first, then talk').waitFor();
+  await shot(bob, 'contact-profile');
+  await bob.keyboard.press('Escape');
+
+  step('Notes: Alice shares a 24 h note; Bob replies to it from his chat list');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByRole('button', { name: 'Add a note' }).click();
+  await alice.getByRole('radio', { name: '📚' }).click();
+  await alice.getByLabel('Note', { exact: true }).fill('exam tomorrow, send snacks');
+  await alice.getByRole('button', { name: 'Share note' }).click();
+  await alice.getByRole('status').filter({ hasText: 'Note shared for 24 hours' }).waitFor();
+  await alice.getByRole('button', { name: 'Your note: 📚 exam tomorrow, send snacks. Change it' }).waitFor();
+  await bob.getByRole('button', { name: 'Back to chats' }).click();
+  const aliceNote = bob.getByRole('button', { name: 'alice’s note: 📚 exam tomorrow, send snacks. Reply' });
+  await aliceNote.waitFor();
+  await shot(bob, 'chats-notes');
+  await aliceNote.click();
+  await bob.getByLabel('Reply to alice’s note').fill('Good luck!! Snacks incoming');
+  await bob.getByRole('button', { name: 'Send reply' }).click();
+  await bob.getByRole('status').filter({ hasText: 'Reply sent' }).waitFor();
+  await alice.getByRole('button', { name: /^bob.*unread messages/ }).click();
+  await alice.locator('.msg', { hasText: 'Good luck!! Snacks incoming' }).getByText('Replied to your note').waitFor();
+  await shot(alice, 'note-reply');
+
+  step('Typing shows in the chat list');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await bob.locator('.chat-open', { hasText: 'alice' }).click();
+  await bob.getByRole('textbox', { name: 'Message' }).fill('typing a long thought');
+  await alice.locator('.chat-sub.typing', { hasText: 'typing…' }).waitFor();
+  await shot(alice, 'chats-typing');
+  await bob.getByRole('textbox', { name: 'Message' }).fill('');
+  await alice.locator('.chat-sub.typing').waitFor({ state: 'detached' });
+
+  step('Nickname and mute (private to Alice)');
+  await alice.getByRole('button', { name: /^bob/ }).click();
+  await alice.getByRole('button', { name: 'bob’s profile' }).click();
+  await alice.getByRole('button', { name: 'Nickname' }).click();
+  await alice.getByLabel('Your name for them').fill('Bobby 🐻');
+  await alice.getByRole('button', { name: 'Save', exact: true }).click();
+  await alice.keyboard.press('Escape');
+  await alice.locator('.hdr-name', { hasText: 'Bobby 🐻' }).waitFor();
+  await bob.locator('.hdr-name', { hasText: 'alice' }).waitFor();
+  await alice.getByRole('button', { name: 'Bobby 🐻’s profile' }).click();
+  await alice.getByRole('switch', { name: 'Mute notifications' }).click();
+  await alice.getByRole('switch', { name: 'Unmute notifications' }).waitFor();
+  await alice.keyboard.press('Escape');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.getByRole('button', { name: /^Bobby 🐻.*muted/ }).waitFor();
+
+  step('Remove contact: Carol leaves; Alice keeps a read-only copy and deletes it');
+  await carol.getByRole('button', { name: 'alice’s profile' }).click();
+  await carol.getByRole('button', { name: 'Remove contact' }).click();
+  await carol.getByText('Remove alice?').waitFor();
+  await carol.getByRole('button', { name: 'Remove contact' }).click();
+  await carol.getByText('Start your first chat').waitFor();
+  await alice.getByRole('button', { name: /^carol.*carol left this chat/ }).click();
+  await alice.getByText('carol left this chat. You can read it').waitFor();
+  await alice.getByText('Hi Alice, it’s Carol!').waitFor();
+  assert.equal(await alice.getByRole('textbox', { name: 'Message' }).count(), 0, 'read-only');
+  await shot(alice, 'left-chat');
+  await alice.getByRole('button', { name: 'Delete chat' }).click();
+  await alice.getByRole('button', { name: /^Bobby/ }).waitFor();
+  assert.equal(await alice.locator('.chat-row').count(), 1);
+
+  step('Block: Dave joins with a link, Alice blocks him');
+  await alice.getByRole('button', { name: 'Add contact' }).click();
+  await alice.getByRole('button', { name: 'Create invite link' }).click();
+  await alice.getByText('Invite ready').waitFor();
+  const daveLink = (await alice.getByLabel('Invite link', { exact: true }).textContent()).trim();
+  await alice.keyboard.press('Escape');
+  const dave = await person('dave@example.com', daveLink);
+  await dave.getByRole('button', { name: 'Join alice' }).click();
+  await dave.getByRole('textbox', { name: 'Message' }).waitFor();
+  await alice.getByRole('button', { name: /^dave/ }).click();
+  await alice.getByRole('button', { name: 'dave’s profile' }).click();
+  await alice.getByRole('button', { name: 'Block' }).click();
+  await alice.getByText('Block dave?').waitFor();
+  await alice.getByRole('button', { name: 'Block' }).click();
+  await alice.getByRole('button', { name: 'Add contact' }).waitFor();
+  assert.equal(await alice.getByRole('button', { name: /^dave/ }).count(), 0);
+  await dave.getByText('alice left this chat.').waitFor();
+  await alice.getByRole('button', { name: 'Settings' }).click();
+  await alice.locator('.settings-row', { hasText: 'dave' }).getByRole('button', { name: 'Unblock' }).waitFor();
+  await shot(alice, 'settings-blocked');
+  await alice.keyboard.press('Escape');
+
+  step('Delete account (Eve, who has no chats)');
+  await eve.getByRole('button', { name: 'Settings' }).click();
+  await eve.getByRole('button', { name: 'Delete account' }).click();
+  await eve.getByText('Delete your account?').waitFor();
+  await eve.getByRole('button', { name: 'Continue' }).click();
+  await shot(eve, 'delete-account');
+  await eve.getByRole('button', { name: 'Delete my account forever' }).click();
+  await eve.getByRole('button', { name: /Use e-mail instead/ }).waitFor({ timeout: 20000 });
   console.log('\nE2E PASSED — screenshots in', SHOTS);
 } catch (e) {
   console.error('\nE2E FAILED:', e);

@@ -575,11 +575,12 @@ describe('profiles, notes, nicknames', () => {
 describe('leaving, blocking', () => {
   it('lets a member leave; the chat then goes read-only and can never be re-joined', async () => {
     await seedRoom();
-    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { members: ['alice'], left: 'eve' }));
-    // Bob can only remove himself.
-    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['bob'], left: 'bob' }));
-    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'alice' }));
-    await assertSucceeds(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'bob' }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { members: ['alice'], left: 'eve', invites: [] }));
+    // Bob can only remove himself, and the old e-mail invite must go with him.
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['bob'], left: 'bob', invites: [] }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'alice', invites: [] }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'bob' }));
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', ROOM), { members: ['alice'], left: 'bob', invites: [] }));
     // Bob can't read it any more; Alice can, but can't write in it.
     await assertFails(getDoc(doc(bob(), 'rooms', ROOM)));
     await assertSucceeds(getDoc(doc(alice(), 'rooms', ROOM)));

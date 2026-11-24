@@ -107,7 +107,7 @@ export const deleteAccount = onCall({ timeoutSeconds: 120 }, async (req) => {
   const rooms = await db.collection('rooms').where('members', 'array-contains', uid).get();
   const plan = accountPlan(uid, rooms.docs.map((d) => ({ id: d.id, members: d.data().members })));
   for (const id of plan.leave) {
-    await db.doc(`rooms/${id}`).update({ members: FieldValue.arrayRemove(uid), left: uid });
+    await db.doc(`rooms/${id}`).update({ members: FieldValue.arrayRemove(uid), left: uid, invites: [] });
   }
   for (const id of plan.remove) await db.recursiveDelete(db.doc(`rooms/${id}`));
   await db.recursiveDelete(db.doc(`users/${uid}`));

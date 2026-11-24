@@ -279,7 +279,7 @@ function ChatRow({ room, me, contacts, onOpen, onInvite }: { room: Room; me: str
   const unread = !room.left && !!last && last.uid !== me && lastMs > readMs + 500;
   const typingUntil = !room.left && partner?.typingUntil ? partner.typingUntil.toMillis() : 0;
   const now = useTick(typingUntil > Date.now());
-  const typing = typingUntil > now;
+  const typing = typingUntil > Math.max(now, Date.now());
   const sub = room.left
     ? `${name} left this chat`
     : alone

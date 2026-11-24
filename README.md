@@ -220,7 +220,7 @@ docs/ADDING_A_DROP.md    how to add a new Drop
 
 ```
 rooms/{roomId}                      one chat: owner, members (max 2), invites [e-mail], inviteCode (share link),
-                                    lastMessage (chat-list preview), timezone (Indian/Maldives)
+                                    lastMessage (chat-list preview), left (who left), timezone (Indian/Maldives)
   members/{uid}                     name, photo, mood weather, lastSeen, typing (+tab), lastRead {tabId: time}
   tabs/{tabId}                      name, colour, archived, order, lastMessageAt   ("general" always exists)
     messages/{id}                   text | link | photo | drop, + replyTo, editedAt, reactions {code: [uid]},
@@ -231,7 +231,11 @@ rooms/{roomId}                      one chat: owner, members (max 2), invites [e
     locks/{uid}_{key}               public "I've locked {key}" marker
     entries/{id}                    public, append-only lines
     users/{uid}                     public per-person progress
-users/{uid}/tokens/{fcmToken}       push tokens (private)
+profiles/{uid}                      public profile: name, photo (small inline JPEG), about, note {text, emoji, at}
+users/{uid}                         theme (private)
+  tokens/{fcmToken}                 push tokens (private)
+  contacts/{uid}                    my nickname for them, muted (private)
+  blocked/{uid}                     people I blocked (private)
 ```
 
 ### Why the hidden answers really are hidden
@@ -252,6 +256,18 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 - A link opened before signing in is remembered (for a day) through the sign-in, including Google's redirect. If you already have a chat with the person who sent it, Hi opens that one instead of making a second.
 - You can chat in a new room before anyone joins. The room, your profile and its General tab are created in one atomic write, so a room never exists half set-up.
 
+### Profiles, notes and safety
+
+- **Profile.** The first time you sign in, Hi asks for your name (filled in from Google, or from your e-mail), a photo and an optional *About* line. Photos are cropped square and saved as a small JPEG inside your profile document, so they work on the free plan without Cloud Storage. Change it any time: tap your picture on **Chats**, or **Settings → Edit profile**.
+- **Notes.** A 60-character status with an emoji, shown above your picture on everyone's **Chats** screen for 24 hours. Tap someone's note to reply. The reply lands in your chat with them, quoting the note.
+- **Contact profile.** Tap the picture at the top of a chat: their photo, About, mood and note, how long you've been chatting, and:
+  - **Nickname**: what *you* call them. Only you see it.
+  - **Mute notifications** for that chat (the push function skips it).
+  - **Remove contact**: you leave the chat. They keep a read-only copy ("X left this chat") with a **Delete chat** button. A chat someone left can never be re-joined.
+  - **Block**: also removes the contact, and they can't join any chat you invite them to (checked in the rules). Unblock in **Settings**.
+- **Delete account** (Settings, two steps): you leave every chat, chats only you are in are deleted, your profile, note, nicknames, blocks and push tokens are erased, then the sign-in account itself. It uses the `deleteAccount` Cloud Function; until functions are deployed (Blaze), the app does the same steps itself, and may ask you to sign in again first.
+- Profiles have no e-mail address in them. Any signed-in person can read a profile, but only if they know the uid, which only people you share a chat with ever see.
+
 ### Message actions
 
 Long-press a message (or right-click / the ⋯ button on a computer) for **Reply · React · Copy · Pin · Edit · Select · Delete**:
@@ -265,7 +281,8 @@ Long-press a message (or right-click / the ⋯ button on a computer) for **Reply
 ### Link previews and push
 
 - **`linkPreview`** runs when a link message is created. It fetches the page (public hosts only: private, loopback and metadata IPs are blocked and re-checked on every redirect; 6 s timeout; 600 KB cap), reads `og:` / `twitter:` / `<title>` tags, and fills them into the message.
-- **`notifyPartner`** sends a Web Push to the other person's devices. The text never contains Drop answers. Dead tokens are cleaned up automatically.
+- **`notifyPartner`** sends a Web Push to the other person's devices, unless they muted that chat. The text never contains Drop answers. Dead tokens are cleaned up automatically.
+- **`deleteAccount`** (callable) deletes your account and data, as described above.
 
 ### Photos
 

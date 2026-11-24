@@ -131,7 +131,7 @@ export const unblock = (me: string, uid: string) => deleteDoc(doc(db, 'users', m
 
 /** Remove contact: I leave the chat. It stays, read-only, for the other person. */
 export const leaveRoom = (roomId: string, me: string) =>
-  updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(me), left: me });
+  updateDoc(doc(db, 'rooms', roomId), { members: arrayRemove(me), left: me, invites: [] });
 
 /** The last one in a chat deletes it from their list. */
 export const deleteRoom = (roomId: string) => deleteDoc(doc(db, 'rooms', roomId));

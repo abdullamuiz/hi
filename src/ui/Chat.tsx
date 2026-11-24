@@ -229,12 +229,12 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
       editMessage(room.id, m, t, room.lastMessage).catch((e) => { flash(e?.code === 'permission-denied' ? 'Too late to edit — messages can be edited for 15 minutes.' : e.message); });
       return;
     }
+    lastTypingWrite.current = 0;
+    setTyping(room.id, user.uid, activeTab, false).catch(() => {});
     if (!tabReady) { queued.current = t; setDraft(''); return; }
     const reply = replyTo;
     setDraft('');
     setReplyTo(null);
-    lastTypingWrite.current = 0;
-    setTyping(room.id, user.uid, activeTab, false).catch(() => {});
     sendText(room.id, activeTab, user.uid, t, reply).catch((e) => { setDraft(t); setReplyTo(reply); flash(e.message); });
   };
 
@@ -396,7 +396,7 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
               </span>
             )}
           </div>
-          <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
+          {left ? <div class="hdr-sub">Left this chat</div> : <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />}
         </div>
         <div class="hdr-actions">
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
@@ -863,6 +863,6 @@ function TypingIndicator({ member, name, tabId }: { member?: Member; name: strin
   const here = !member?.typingTab || member.typingTab === tabId;
   const until = here && member?.typingUntil ? member.typingUntil.toMillis() : 0;
   const now = useNow(1000, until > Date.now());
-  if (until <= now) return null;
+  if (until <= Math.max(now, Date.now())) return null;
   return <div class="row"><div class="bubble theirs typing">{name} is typing…</div></div>;
 }

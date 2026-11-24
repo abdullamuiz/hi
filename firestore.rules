@@ -129,7 +129,7 @@ service cloud.firestore {
       function canSeeRoom() {
         return signedIn() && (
           me() in resource.data.members
-          || (verifiedEmail() && myEmail() in resource.data.invites && resource.data.get('left', null) == null)
+          || (verifiedEmail() && myEmail() in resource.data.invites)
         );
       }
       allow get, list: if canSeeRoom();
@@ -220,9 +220,11 @@ service cloud.firestore {
         (
           me() in resource.data.members
           && resource.data.members.size() == 2
-          && changedKeys().hasOnly(['members', 'left'])
+          && changedKeys().hasOnly(['members', 'left', 'invites'])
           && incoming().members == resource.data.members.removeAll([me()])
           && incoming().left == me()
+          // Any old e-mail invite goes too, so the chat never shows up as an invitation again.
+          && incoming().get('invites', []) == []
         )
         ||
         // A member records the latest message (for the chat list), in the same batch as the message.

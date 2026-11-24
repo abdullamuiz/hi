@@ -25,4 +25,7 @@ export default defineConfig({
   // Firebase is most of the bundle (~230 kB gzip); that's expected.
   build: { target: 'es2020', sourcemap: true, chunkSizeWarningLimit: 900 },
   server: { host: true, port: 5173 },
+  // Pre-bundle every Firebase entry up front, so the dev server never re-optimises
+  // (and reloads the page) halfway through a session.
+  optimizeDeps: { include: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage', 'firebase/functions', 'firebase/messaging'] },
 });
