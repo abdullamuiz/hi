@@ -24,3 +24,8 @@ export function notificationBody(m: MsgLike): string {
     default: return 'New message';
   }
 }
+
+/** Where a tapped notification opens: the right chat and tab. */
+export function openUrl(roomId: string, tabId: string): string {
+  return `./?room=${encodeURIComponent(roomId)}&tab=${encodeURIComponent(tabId)}`;
+}

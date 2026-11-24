@@ -1,11 +1,13 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
+import { getStorage } from 'firebase-admin/storage';
 import { setGlobalOptions } from 'firebase-functions/v2';
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { logger } from 'firebase-functions';
 import { fetchPreview } from './og.js';
-import { notificationBody } from './notify.js';
+import { notificationBody, openUrl } from './notify.js';
+import { filesToDelete } from './cleanup.js';
 
 initializeApp();
 // Small, capped instances keep a two-person app comfortably inside the free tier.
@@ -65,7 +67,7 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
       tokens,
       webpush: {
         headers: { Urgency: 'high', TTL: '86400' },
-        data: { title, body, tag: `room-${roomId}-${tabId}`, url: `./?tab=${encodeURIComponent(tabId)}` },
+        data: { title, body, tag: `room-${roomId}-${tabId}`, url: openUrl(roomId, tabId), room: roomId, tab: tabId },
       },
     });
     const dead = res.responses
@@ -76,3 +78,12 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   }
 });
 
+
+/** "Delete for everyone": removes the message's photo from Storage too. */
+export const deleteMessageFiles = onDocumentUpdated(MESSAGE, async (event) => {
+  const paths = filesToDelete(event.data?.before.data(), event.data?.after.data(), event.params.roomId);
+  if (!paths.length) return;
+  const bucket = getStorage().bucket();
+  await Promise.all(paths.map((p) => bucket.file(p).delete({ ignoreNotFound: true })));
+  logger.info('deleted message files', { roomId: event.params.roomId, count: paths.length });
+});
