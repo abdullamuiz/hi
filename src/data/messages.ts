@@ -7,7 +7,10 @@ import { db, storage } from '../firebase';
 import { findLink } from '../lib/links';
 import { compressImage } from '../lib/image';
 import { snippetOf } from '../lib/messages';
-import type { LastMessage, Message, PhraseReaction, ReactionCode, ReplyRef } from '../types';
+import type { LastMessage, Message, PhraseReaction, ReactionCode, ReplyRef, VoiceReaction } from '../types';
+import type { VoiceFormat } from '../lib/voice';
+import { friendlyStorageError } from '../lib/errors';
+
 
 const msgsCol = (roomId: string, tabId: string) => collection(db, 'rooms', roomId, 'tabs', tabId, 'messages');
 
@@ -71,10 +74,38 @@ export async function sendPhoto(roomId: string, tabId: string, uid: string, file
   const { blob, width, height } = await compressImage(file, 1600);
   const id = newId(roomId, tabId);
   const path = `rooms/${roomId}/photos/${uid}/${id}.jpg`;
-  await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg', cacheControl: 'private, max-age=31536000' });
+  try {
+    await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg', cacheControl: 'private, max-age=31536000' });
+  } catch (e) { throw friendlyStorageError(e, 'Photos'); }
   const b = writeBatch(db);
   const text = caption.trim().slice(0, 1000);
   addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text, photo: { path, width, height } }, snippetOf({ kind: 'photo', text }));
+  await b.commit();
+}
+
+export interface VoiceRecording {
+  blob: Blob;
+  durationMs: number;
+  peaks: number[];
+  format: VoiceFormat;
+}
+
+/** Uploads a voice note, then posts the message that plays it. */
+export async function sendVoice(roomId: string, tabId: string, uid: string, rec: VoiceRecording, replyTo?: ReplyRef | null) {
+  const id = newId(roomId, tabId);
+  const path = `rooms/${roomId}/voice/${uid}/${id}.${rec.format.ext}`;
+  try {
+    await uploadBytes(ref(storage, path), rec.blob, { contentType: rec.format.contentType, cacheControl: 'private, max-age=31536000' });
+  } catch (e) { throw friendlyStorageError(e, 'Voice notes'); }
+  const b = writeBatch(db);
+  const voice = {
+    path,
+    durationMs: Math.max(1, Math.min(180_000, Math.round(rec.durationMs))),
+    peaks: rec.peaks.slice(0, 64).map((p) => Math.round(Math.max(0, Math.min(1, p)) * 100) / 100),
+    mime: rec.format.contentType,
+  };
+  const reply = replyTo ? { replyTo: { msgId: replyTo.msgId, snippet: replyTo.snippet.slice(0, 160), senderId: replyTo.senderId } } : {};
+  addMessage(b, roomId, tabId, id, { uid, kind: 'voice', text: '', voice, ...reply }, snippetOf({ kind: 'voice', text: '' }));
   await b.commit();
 }
 
@@ -118,13 +149,14 @@ export async function editMessage(roomId: string, m: Message, raw: string, last:
 export const hideMessage = (roomId: string, m: Message, uid: string, hidden = true) =>
   updateDoc(msgRef(roomId, m), { hiddenFor: hidden ? arrayUnion(uid) : arrayRemove(uid) });
 
-/** "Delete for everyone": clears the content; a Cloud Function removes any photo file. */
+/** "Delete for everyone": clears the content; a Cloud Function removes any photo or voice file. */
 export async function deleteForEveryone(roomId: string, m: Message, last: LastMessage | null) {
   const b = writeBatch(db);
   b.update(msgRef(roomId, m), {
     deleted: true, text: '',
     link: deleteField(), photo: deleteField(), dropId: deleteField(), replyTo: deleteField(), replyToNote: deleteField(),
     reactions: deleteField(), phraseReactions: deleteField(), editedAt: deleteField(),
+    ...(m.kind === 'voice' ? { voice: deleteField(), voiceReactions: deleteField(), playedBy: deleteField() } : {}),
   });
   fixPreview(b, roomId, last, m, 'Message deleted');
   await b.commit();
@@ -139,3 +171,15 @@ export const addPhraseReaction = (roomId: string, m: Message, p: PhraseReaction)
 
 export const removePhraseReaction = (roomId: string, m: Message, p: PhraseReaction) =>
   updateDoc(msgRef(roomId, m), { phraseReactions: arrayRemove({ uid: p.uid, start: p.start, end: p.end, reaction: p.reaction }) });
+
+// ---------------------------------------------------------------------------- voice notes
+
+/** The partner has listened to my voice note. */
+export const markPlayed = (roomId: string, m: Message, uid: string) =>
+  updateDoc(msgRef(roomId, m), { playedBy: arrayUnion(uid) });
+
+export const addVoiceReaction = (roomId: string, m: Message, r: VoiceReaction) =>
+  updateDoc(msgRef(roomId, m), { voiceReactions: arrayUnion({ uid: r.uid, atMs: Math.max(0, Math.round(r.atMs)), reaction: r.reaction }) });
+
+export const removeVoiceReaction = (roomId: string, m: Message, r: VoiceReaction) =>
+  updateDoc(msgRef(roomId, m), { voiceReactions: arrayRemove({ uid: r.uid, atMs: r.atMs, reaction: r.reaction }) });

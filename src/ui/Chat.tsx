@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { User } from 'firebase/auth';
 import {
-  addPhraseReaction, createDrop, deleteForEveryone, editMessage, hideMessage, removePhraseReaction, sendPhoto, sendText,
-  setReaction, watchMessages,
+  addPhraseReaction, addVoiceReaction, createDrop, deleteForEveryone, editMessage, hideMessage, markPlayed, removePhraseReaction,
+  removeVoiceReaction, sendPhoto, sendText, sendVoice, setReaction, watchMessages, type VoiceRecording,
 } from '../data/messages';
 import { addPin, watchPins } from '../data/pins';
 import { GENERAL, createTab, ensureGeneralTab, updateTab, watchTabs } from '../data/tabs';
@@ -29,6 +29,7 @@ import { Avatar, ContactSheet, DeleteAccountSheet, ProfileForm, useProfile } fro
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
 import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab } from '../types';
 import { DropCard } from './DropCard';
+import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
 import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
@@ -310,6 +311,24 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     }
   };
 
+  // --- voice notes --------------------------------------------------------------
+  const sendRecording = async (rec: VoiceRecording) => {
+    if (!tabReady) return notReady();
+    const reply = replyTo;
+    setReplyTo(null);
+    const tab = activeTab;
+    flash('Sending voice note…');
+    try {
+      await sendVoice(room.id, tab, user.uid, rec, reply);
+      setToast('');
+    } catch (e: any) {
+      if (reply) setReplyTo(reply);
+      flash(e?.message || 'Voice note could not be sent.');
+    }
+  };
+  const voice = useVoiceRecorder({ onDone: sendRecording, onError: (m) => flash(m) });
+  const recording = voice.state !== 'idle';
+
   const startDrop = (def: DropDefinition<any>, prefill?: Record<string, unknown>) => {
     if (def.setup?.length) setSheet({ kind: 'setup', type: def.type, prefill });
     else dropIt(def, { ...def.content, ...(prefill || {}) });
@@ -343,7 +362,6 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const myMood: MoodId = meMember?.mood || 'sunny';
   const pinnedDrops = useMemo(() => new Set(pins.map((p) => p.dropId).filter(Boolean)), [pins]);
   const pinnedMsgs = useMemo(() => new Set(pins.map((p) => p.messageId).filter(Boolean)), [pins]);
-  const viewed = viewer ? messages?.find((m) => m.id === viewer) : undefined;
   // My unread counts use my private copy of "read up to" (it works with read receipts off).
   const myLastRead = useMemo(() => {
     const out: Record<string, Timestamp> = {};
@@ -365,6 +383,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   };
   // --- message actions ---------------------------------------------------------
   const shown = useMemo(() => (messages ? visibleTo(messages, user.uid) : null), [messages, user.uid]);
+  const photos = useMemo(() => (shown || []).filter((m) => m.kind === 'photo' && m.photo && !m.deleted), [shown]);
   // Ticks: read only when we both share read receipts.
   const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
   const ticks = useMemo(() => statuses(
@@ -561,6 +580,20 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
             </>);
           } else if (m.kind === 'photo' && m.photo) {
             body = <PhotoBubble msg={m} mine={mine} onView={() => setViewer(m.id)} />;
+          } else if (m.kind === 'voice' && m.voice) {
+            body = (<>
+              {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={mine} onJump={() => jumpTo(m.replyTo!.msgId)} />}
+              <VoiceBubble
+                msg={m}
+                mine={mine}
+                me={user.uid}
+                playedByPartner={(m.playedBy || []).some((u) => u !== user.uid)}
+                nameOf={(uid) => (uid === user.uid ? 'You' : partner.name)}
+                onFirstPlay={() => markPlayed(room.id, m, user.uid).catch(() => {})}
+                onReact={(r) => addVoiceReaction(room.id, m, r).catch((e) => flash(e.message))}
+                onUnreact={(r) => removeVoiceReaction(room.id, m, r).catch((e) => flash(e.message))}
+              />
+            </>);
           } else if (m.kind === 'drop' && m.dropId) {
             const dropId = m.dropId;
             body = (
@@ -631,7 +664,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           <button type="button" class="strip-x" onClick={cancelCompose} aria-label={editing ? 'Cancel editing' : 'Cancel reply'}><XIcon /></button>
         </div>
       )}
-      <footer class="composer">
+      <footer class={`composer${recording ? ' recording' : ''}`}>
+        {recording && (
+          <RecordBar state={voice.state} elapsed={voice.elapsed} level={voice.level} slide={voice.slide}
+            onCancel={voice.cancel} onSend={voice.finish} sendIcon={<SendIcon />} />
+        )}
         <button type="button" class="fab" onClick={() => setSheet({ kind: 'tray' })} aria-label="Add a Drop"><PlusIcon /></button>
         <button type="button" class="round-btn" onClick={pickPhoto} aria-label="Send a photo"><PhotoIcon /></button>
         <input ref={fileInput} type="file" accept="image/*" hidden onChange={onFile} />
@@ -648,17 +685,25 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           autocomplete="off"
           enterKeyHint="send"
         />
-        <button type="button" class="send-btn" {...sendLong} onClick={() => send()}
-          aria-label={editing ? 'Save edit' : 'Send'} aria-description={editing ? undefined : 'Press and hold for Schedule and Urgent'}><SendIcon /></button>
+        {!draft.trim() && !editing ? (
+          <button type="button" class={`send-btn mic${recording ? ' live' : ''}`} {...voice.micProps}
+            aria-label="Record a voice note" aria-description="Hold to record, slide left to cancel, slide up to lock. Tap for hands-free.">
+            <MicIcon />
+          </button>
+        ) : (
+          <button type="button" class="send-btn" {...sendLong} onClick={() => send()}
+            aria-label={editing ? 'Save edit' : 'Send'} aria-description={editing ? undefined : 'Press and hold for Schedule and Urgent'}><SendIcon /></button>
+        )}
       </footer>
       </>)}
 
-      {viewed && viewed.photo && (
+      {viewer && photos.some((p) => p.id === viewer) && (
         <PhotoViewer
-          msg={viewed}
-          from={viewed.uid === user.uid ? 'You' : partner.name}
-          pinned={pinnedMsgs.has(viewed.id)}
-          onPin={() => { pin({ title: `Photo from ${nameOf(viewed.uid)}`, detail: viewed.text || 'No caption', messageId: viewed.id }); setViewer(null); }}
+          photos={photos}
+          startId={viewer}
+          nameOf={(uid) => (uid === user.uid ? 'You' : partner.name)}
+          isPinned={(id) => pinnedMsgs.has(id)}
+          onPin={(m) => pin({ title: `Photo from ${nameOf(m.uid)}`, detail: m.text || 'No caption', messageId: m.id })}
           onClose={() => setViewer(null)}
         />
       )}

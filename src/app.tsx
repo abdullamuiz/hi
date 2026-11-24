@@ -16,6 +16,7 @@ import { firstName } from './lib/names';
 import { watchBlocked, watchContacts, type Blocked, type ContactPrefs } from './data/profile';
 import { ProfileSetup, useProfile } from './ui/Profile';
 import { useScheduledDelivery } from './ui/Delivery';
+import { handleOverlayPop } from './lib/overlay';
 
 export function App() {
   const [update, setUpdate] = useState(false);
@@ -87,6 +88,7 @@ function Screen() {
   };
   useEffect(() => {
     const onPop = (e: PopStateEvent) => {
+      if (handleOverlayPop()) return;
       const id = e.state?.hiChat || null;
       setOpenId(id);
       remember(id);
