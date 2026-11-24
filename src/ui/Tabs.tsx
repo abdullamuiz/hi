@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Timestamp } from 'firebase/firestore';
 import { GENERAL, TAB_COLOURS, watchUnread } from '../data/tabs';
 import type { Tab } from '../types';
+import { TTL_OPTIONS, tabTtl, ttlLabel } from '../lib/disappear';
+import { SearchIcon, TimerIcon } from './icons';
 
 interface BarProps {
   roomId: string;
@@ -14,10 +16,12 @@ interface BarProps {
   onAdd(): void;
   onArchived(): void;
   onUnreadTotal(n: number): void;
+  /** Search this chat (all tabs). */
+  onSearch?(): void;
 }
 
 /** Horizontal tab bar under the header: colour dot, name, unread count, "+". */
-export function TabBar({ roomId, me, tabs, active, lastRead, onSelect, onOptions, onAdd, onArchived, onUnreadTotal }: BarProps) {
+export function TabBar({ roomId, me, tabs, active, lastRead, onSelect, onOptions, onAdd, onArchived, onUnreadTotal, onSearch }: BarProps) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const activeRef = useRef<HTMLButtonElement>(null);
   const visible = tabs.filter((t) => !t.archived || t.id === active);
@@ -55,6 +59,11 @@ export function TabBar({ roomId, me, tabs, active, lastRead, onSelect, onOptions
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14" /></svg>
         </button>
       </div>
+      {onSearch && (
+        <button type="button" class="tab-search" onClick={onSearch} aria-label="Search this chat">
+          <SearchIcon />
+        </button>
+      )}
     </nav>
   );
 }
@@ -88,10 +97,11 @@ function TabChip({ tab, selected, refEl, roomId, me, since, onCount, onClick }: 
       aria-selected={selected}
       class={`tab-chip${selected ? ' on' : ''}`}
       onClick={onClick}
-      aria-label={`${tab.name}${unread ? `, ${unread} unread` : ''}${selected ? ' (tap for options)' : ''}`}
+      aria-label={`${tab.name}${tabTtl(tab) ? `, disappearing messages (${ttlLabel(tabTtl(tab))})` : ''}${unread ? `, ${unread} unread` : ''}${selected ? ' (tap for options)' : ''}`}
     >
       <span class="tab-dot" style={{ background: tab.colour }} aria-hidden="true" />
       <span class="tab-name">{tab.name}</span>
+      {tabTtl(tab) > 0 && <span class="tab-timer" aria-hidden="true" title={`Disappearing: ${ttlLabel(tabTtl(tab))}`}><TimerIcon /></span>}
       {unread > 0 && <span class="tab-unread" aria-hidden="true">{unread > 98 ? '99+' : unread}</span>}
       {selected && (
         <svg aria-hidden="true" class="tab-more" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6" /></svg>
@@ -106,10 +116,12 @@ interface TabSheetProps {
   tab?: Tab;
   onSave(name: string, colour: string): void;
   onArchive?(archived: boolean): void;
+  /** Change disappearing messages right away (0 = off). */
+  onDisappearing?(hours: number): void;
 }
 
 /** New tab, or options for an existing one: rename, colour, archive. */
-export function TabSheet({ tab, onSave, onArchive }: TabSheetProps) {
+export function TabSheet({ tab, onSave, onArchive, onDisappearing }: TabSheetProps) {
   const [name, setName] = useState(tab?.name ?? '');
   const [colour, setColour] = useState(tab?.colour ?? TAB_COLOURS[1]);
   const isGeneral = tab?.id === GENERAL;
@@ -140,6 +152,25 @@ export function TabSheet({ tab, onSave, onArchive }: TabSheetProps) {
           ))}
         </div>
       </div>
+      {tab && onDisappearing && (
+        <div class="stack" style={{ gap: '6px' }}>
+          <div class="field-label" id="tab-ttl-label">Disappearing messages</div>
+          <div class="segmented four" role="radiogroup" aria-labelledby="tab-ttl-label">
+            {[{ hours: 0, label: 'Off' }, ...TTL_OPTIONS].map((o) => (
+              <button type="button" key={o.hours} role="radio" aria-checked={tabTtl(tab) === o.hours}
+                class={tabTtl(tab) === o.hours ? 'on' : ''}
+                onClick={() => { if (tabTtl(tab) !== o.hours) onDisappearing(o.hours); }}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <div class="fine">
+            {tabTtl(tab)
+              ? `New messages in this tab disappear ${ttlLabel(tabTtl(tab))} after they’re sent, for both of you. Pins stay in the scrapbook.`
+              : 'Turn on to have new messages in this tab disappear after a while, for both of you.'}
+          </div>
+        </div>
+      )}
       <button class="btn-primary" disabled={!name.trim()}>{tab ? 'Save' : 'Create tab'}</button>
       {tab && onArchive && !isGeneral && (
         <button type="button" class="btn-ghost" onClick={() => onArchive(!tab.archived)}>

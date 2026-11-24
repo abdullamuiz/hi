@@ -209,6 +209,9 @@ interface ContactProps {
   onMute(muted: boolean): void;
   onRemove(): void;
   onBlock(): void;
+  /** Photos, links, voice notes and Drops in this chat. */
+  onMedia?(): void;
+  onExport?(): void;
 }
 
 /** Tap the header in a chat: who they are, plus nickname, mute, remove, block. */
@@ -265,6 +268,8 @@ export function ContactSheet(p: ContactProps) {
         </form>
       ) : (
         <div class="contact-actions">
+          {p.onMedia && <button type="button" class="act-btn" onClick={p.onMedia}>Photos, links &amp; voice</button>}
+          {p.onExport && <button type="button" class="act-btn" onClick={p.onExport}>Export chat</button>}
           <button type="button" class="act-btn" onClick={() => setStep('nick')}>{p.nickname ? 'Change nickname' : 'Nickname'}</button>
           <button type="button" class="act-btn" role="switch" aria-checked={p.muted} onClick={() => p.onMute(!p.muted)}>
             {p.muted ? 'Unmute notifications' : 'Mute notifications'}

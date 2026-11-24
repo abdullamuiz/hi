@@ -52,7 +52,10 @@ export interface Tab {
   colour: string;
   wallpaper: string | null;
   mode: 'casual' | 'work';
+  /** Disappearing messages: new messages are removed after `ttlHours`. */
   disappearing: boolean;
+  /** 24, 168 (7 days) or 2160 (90 days). Only meaningful while `disappearing` is on. */
+  ttlHours: number;
   archived: boolean;
   order: number;
   createdBy: string;
@@ -83,8 +86,14 @@ export interface Message {
   id: string;
   tabId: string;
   uid: string;
-  kind: 'text' | 'link' | 'photo' | 'voice' | 'drop';
+  kind: 'text' | 'link' | 'photo' | 'voice' | 'drop' | 'system';
   text: string;
+  /** kind 'system': what happened ("disappearing" = the tab's setting changed). */
+  system?: 'disappearing';
+  /** kind 'system' / disappearing: the new setting in hours (0 = turned off). */
+  ttlHours?: number;
+  /** Disappearing tabs: when the message goes (hidden at once, deleted by a TTL policy). */
+  expiresAt?: Timestamp | null;
   link?: LinkPreview;
   photo?: PhotoRef;
   voice?: VoiceRef;

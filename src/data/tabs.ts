@@ -1,9 +1,10 @@
 import {
-  collection, doc, getDoc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc,
+  collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc,
   Timestamp, updateDoc, where,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Tab } from '../types';
+import { tabTtl, validTtl } from '../lib/disappear';
 
 export const GENERAL = 'general';
 
@@ -20,6 +21,7 @@ function toTab(id: string, d: any): Tab {
     wallpaper: d.wallpaper ?? null,
     mode: d.mode === 'work' ? 'work' : 'casual',
     disappearing: !!d.disappearing,
+    ttlHours: validTtl(d.ttlHours),
     archived: !!d.archived,
     order: typeof d.order === 'number' ? d.order : 0,
     createdBy: d.createdBy || '',
@@ -28,13 +30,28 @@ function toTab(id: string, d: any): Tab {
   };
 }
 
+// Disappearing setting of every tab we're watching, so a new message gets its expiry.
+const ttlCache = new Map<string, number>();
+/** Hours a new message in this tab lives for (0 = kept). Known once the tab list has loaded. */
+export const ttlOf = (roomId: string, tabId: string) => ttlCache.get(`${roomId}/${tabId}`) || 0;
+
 export function watchTabs(roomId: string, cb: (tabs: Tab[], fromServer: boolean) => void, onError?: (e: Error) => void) {
   return onSnapshot(
     query(tabsCol(roomId), orderBy('order')),
     { includeMetadataChanges: true },
-    (s) => cb(s.docs.map((d) => toTab(d.id, d.data({ serverTimestamps: 'estimate' }))), !s.metadata.fromCache),
+    (s) => {
+      const tabs = s.docs.map((d) => toTab(d.id, d.data({ serverTimestamps: 'estimate' })));
+      tabs.forEach((t) => ttlCache.set(`${roomId}/${t.id}`, tabTtl(t)));
+      cb(tabs, !s.metadata.fromCache);
+    },
     onError,
   );
+}
+
+/** One-off read of a room's tabs (search, export). */
+export async function loadTabs(roomId: string): Promise<Tab[]> {
+  const s = await getDocs(query(tabsCol(roomId), orderBy('order')));
+  return s.docs.map((d) => toTab(d.id, d.data({ serverTimestamps: 'estimate' })));
 }
 
 function newTabDoc(uid: string, name: string, colour: string, order: number) {

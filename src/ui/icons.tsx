@@ -116,3 +116,11 @@ export const MOODS: { id: MoodId; label: string; desc: string }[] = [
   { id: 'foggy', label: 'Foggy', desc: 'Tired, replies will be slow' },
   { id: 'stormy', label: 'Stormy', desc: 'Rough day, be gentle' },
 ];
+
+export const SearchIcon = ({ size = 18 }: P) => (
+  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+);
+/** Disappearing messages. */
+export const TimerIcon = ({ size = 12 }: P) => (
+  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M9.5 2.5h5" /></svg>
+);

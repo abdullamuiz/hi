@@ -20,7 +20,9 @@ import { SettingsSheet } from './Sheets';
 import { SheetFrame } from './SheetFrame';
 import { usePullToRefresh } from './PullToRefresh';
 import { ModeToggle } from './ModeToggle';
-import { Logo, MoodIcon, MOODS, PlusIcon, SettingsIcon } from './icons';
+import { Logo, MoodIcon, MOODS, PlusIcon, SearchIcon, SettingsIcon } from './icons';
+import { SearchSheet } from './Search';
+import { requestJump } from '../lib/jump';
 
 interface Props {
   user: User;
@@ -42,7 +44,8 @@ type Sheet =
   | { kind: 'note' }
   | { kind: 'note-reply'; roomId: string; name: string; note: Note }
   | { kind: 'delete-account' }
-  | { kind: 'mute'; uid: string; name: string };
+  | { kind: 'mute'; uid: string; name: string }
+  | { kind: 'search' };
 
 const ms = (t: { toMillis(): number } | null | undefined) => (t ? t.toMillis() : 0);
 const sortKey = (r: Room) => ms(r.lastMessage?.at) || ms(r.createdAt) || Date.now();
@@ -108,6 +111,9 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
             <Avatar profile={profile} name={profile?.name || user.displayName || user.email || '?'} size={34} />
           </button>
           <ModeToggle uid={user.uid} />
+          {rooms.length > 0 && (
+            <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'search' })} aria-label="Search all chats"><SearchIcon size={20} /></button>
+          )}
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'settings' })} aria-label="Settings"><SettingsIcon /></button>
         </div>
       </header>
@@ -181,6 +187,17 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
             <NoteReplySheet name={sheet.name} note={sheet.note} onSend={(t) => replyToNote(sheet.roomId, sheet.note, t)} />
           )}
           {sheet.kind === 'delete-account' && <DeleteAccountSheet user={user} onCancel={() => setSheet(null)} />}
+          {sheet.kind === 'search' && (
+            <SearchSheet
+              me={user.uid}
+              global
+              scope={rooms.filter((r) => r.members.length === 2 || r.left).map((r) => {
+                const uid = r.members.find((u) => u !== user.uid) || (r.left && r.left !== user.uid ? r.left : '');
+                return { roomId: r.id, name: (uid && contacts[uid]?.nickname) || '' };
+              })}
+              onOpen={(j) => { setSheet(null); requestJump(j); onOpen(j.roomId); }}
+            />
+          )}
           {sheet.kind === 'mute' && (
             <MuteSheet name={sheet.name} state={contacts[sheet.uid] || {}} onPick={(c) => {
               const uid = sheet.uid;
@@ -226,7 +243,7 @@ function timeLabel(ms: number, now = Date.now()) {
 
 const SHEET_LABEL: Record<NonNullable<Sheet>['kind'], string> = {
   add: 'Add contact', invite: 'Invite', settings: 'Settings', profile: 'Your profile',
-  note: 'Your note', 'note-reply': 'Reply to note', 'delete-account': 'Delete account', mute: 'Mute',
+  note: 'Your note', 'note-reply': 'Reply to note', 'delete-account': 'Delete account', mute: 'Mute', search: 'Search',
 };
 
 // ---------------------------------------------------------------------------- notes strip

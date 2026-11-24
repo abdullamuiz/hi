@@ -6,6 +6,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { db } from '../firebase';
 import { normaliseQuiet, type QuietHours } from '../lib/schedule';
 import { snippetOf } from '../lib/messages';
+import { expiryFor, tabTtl } from '../lib/disappear';
 import type { ReplyRef, Scheduled } from '../types';
 
 // ---------------------------------------------------------------- my settings (users/{me})
@@ -156,12 +157,16 @@ export async function deliverScheduled(s: Scheduled): Promise<boolean> {
   return runTransaction(db, async (tx) => {
     const cur = await tx.get(sref);
     if (!cur.exists()) return false;
+    const tab = await tx.get(doc(db, 'rooms', s.roomId, 'tabs', s.tabId));
     const x = cur.data();
     const text = String(x.text || '');
+    // A disappearing tab: the message expires like any other sent there.
+    const exp = expiryFor(tabTtl(tab.data() as any));
     tx.delete(sref);
     tx.set(mref, {
       uid: s.senderId, kind: 'text', text, scheduled: true,
       ...(x.replyTo ? { replyTo: x.replyTo } : {}),
+      ...(exp ? { expiresAt: Timestamp.fromMillis(exp) } : {}),
       createdAt: serverTimestamp(),
     });
     tx.update(doc(db, 'rooms', s.roomId, 'tabs', s.tabId), { lastMessageAt: serverTimestamp() });
