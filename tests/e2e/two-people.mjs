@@ -214,9 +214,13 @@ try {
   await aliceCard.getByText('Pinned').waitFor();
 
   step('Mood weather');
-  await alice.getByRole('button', { name: 'Set your mood weather' }).click();
+  await alice.getByRole('button', { name: /Your mood weather/ }).click();
+  await shot(alice, 'mood-sheet');
   await alice.getByRole('button', { name: /Stormy/ }).click();
-  await bob.getByText(/Stormy today/).waitFor();
+  await bob.getByText(/Stormy · online/).waitFor();
+  await bob.getByRole('img', { name: "alice's mood: Stormy" }).waitFor();
+  await alice.getByRole('button', { name: 'Your mood weather: Stormy. Change it' }).waitFor();
+  await shot(bob, 'header-their-mood');
 
   step('Light/dark toggle, themes and icons');
   const state = (p) => p.evaluate(() => ({
@@ -224,14 +228,20 @@ try {
     mode: document.documentElement.dataset.mode,
     favicon: document.querySelector('link[rel="icon"][type="image/svg+xml"]').getAttribute('href'),
   }));
-  assert.deepEqual(await state(alice), { theme: 'hi', mode: 'light', favicon: './icons/favicon-teal.svg' });
+  assert.deepEqual(await state(alice), { theme: 'hi-light', mode: 'light', favicon: './icons/favicon-teal.svg' });
   await shot(alice, 'theme-hi');
   await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
-  assert.deepEqual(await state(alice), { theme: 'dark', mode: 'dark', favicon: './icons/favicon-navy.svg' });
+  assert.deepEqual(await state(alice), { theme: 'hi-dark', mode: 'dark', favicon: './icons/favicon-navy.svg' });
   await shot(alice, 'theme-dark');
-  await alice.getByRole('button', { name: 'Set your mood weather' }).click();
-  await alice.getByRole('radio', { name: /Hi Dark/, checked: true }).waitFor();
-  await shot(alice, 'theme-sheet-dark');
+  await alice.getByRole('button', { name: 'Settings' }).click();
+  await alice.getByRole('radio', { name: /^Hi/, checked: true }).waitFor();
+  await alice.getByRole('radio', { name: 'Dark', checked: true }).waitFor();
+  await shot(alice, 'settings-dark');
+  // Another palette keeps the chosen mode: Forest dark.
+  await alice.getByRole('radio', { name: /Forest/ }).click();
+  assert.equal((await state(alice)).theme, 'forest-dark');
+  await shot(alice, 'settings-forest-dark');
+  await alice.getByRole('radio', { name: /^Hi/ }).click();
   await alice.keyboard.press('Escape');
   // The choice follows the account: alice reloads and is still dark; bob is unaffected.
   await alice.reload();

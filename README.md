@@ -273,8 +273,9 @@ Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this als
   - `badge-96.png`: the notification badge.
 
   A Home Screen icon can't change with light/dark mode on iPhone or Android, so the installed icon is always teal. To use navy instead, change `SRC` in `scripts/make-icons.mjs` and run `npm run icons`. Lettering is Pacifico (OFL).
-- **Light/dark:** the moon / half-circle button in the header (and on the sign-in screen) switches between **Hi Light** (alabaster `#F2EFE6`) and **Hi Dark** (navy `#252C48`).
-- **Themes:** each person picks one under **mood weather button → Theme**. It's saved on the device and in `users/{uid}`, so it follows them to other devices, and it only changes their own view. To add a theme, add a palette to `src/lib/themes.ts`. The token names are the CSS variables at the top of `src/styles.css`.
+- **Mood weather:** each person picks Sunny 🙂 / Cloudy 😐 / Foggy 😴 / Stormy 😠 (drawn as faces) with the face button in the header. The other person's face shows right next to their name.
+- **Light/dark:** the moon / half-circle button in the header switches the current theme between its light and dark version.
+- **Settings** (gear button): the theme palette (**Hi**, Classic, Blossom, Forest; each tile shows its light and dark halves), **Light / Dark / Match my phone**, notifications, sign out and the privacy note. The choice is saved on the device and on your account.
 
 ## 9. Later: native apps with Capacitor
 
