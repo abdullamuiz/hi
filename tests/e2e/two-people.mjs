@@ -253,20 +253,36 @@ try {
   assert.equal((await state(alice)).mode, 'light');
   await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
 
-  step('Pull down at the top of the chat to refresh');
+  step('Pull down and hold 2 s at the top of the chat to refresh (a quick tug does nothing)');
   await alice.evaluate(() => { document.querySelector('.feed').scrollTop = 0; });
   {
     const cdp = await alice.context().newCDPSession(alice);
     const box = await alice.locator('.feed').boundingBox();
     const x = box.x + box.width / 2;
     const y0 = box.y + 20;
-    const reloaded = alice.waitForEvent('framenavigated');
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
-    for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + i * 25 }] });
-    await alice.locator('.ptr', { hasText: 'Release to refresh' }).waitFor();
-    await shot(alice, 'pull-to-refresh');
+    const drag = async () => {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
+      for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y0 + i * 25 }] });
+    };
+    let navigated = false;
+    alice.on('framenavigated', () => { navigated = true; });
+    // 1) Pull past the line but let go after half a second: nothing happens.
+    await drag();
+    await alice.locator('.ptr', { hasText: 'Keep holding to refresh' }).waitFor();
+    await alice.waitForTimeout(500);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await alice.waitForTimeout(2500);
+    assert.equal(navigated, false, 'a short pull must not reload');
+    assert.equal(await alice.locator('.ptr').count(), 0);
+    // 2) Pull and keep holding: reloads after ~2 s, without letting go.
+    const reloaded = alice.waitForEvent('framenavigated');
+    const t0 = Date.now();
+    await drag();
+    await alice.waitForTimeout(1000);
+    await shot(alice, 'pull-to-refresh');
     await reloaded;
+    const held = Date.now() - t0;
+    assert.ok(held >= 1900, `reloaded after ${held} ms, expected about 2000`);
     await alice.getByRole('textbox', { name: 'Message' }).waitFor();
   }
 

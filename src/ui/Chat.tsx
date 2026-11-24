@@ -148,10 +148,20 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   const tabReady = tabs.some((t) => t.id === activeTab);
   const notReady = () => { flash('One moment — setting up your room…'); };
 
+  // If you hit send before a brand-new tab has loaded, keep the message and send it
+  // the moment the tab is ready instead of refusing it.
+  const queued = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tabReady || queued.current == null) return;
+    const t = queued.current;
+    queued.current = null;
+    sendText(room.id, activeTab, user.uid, t).catch((e) => { setDraft(t); flash(e.message); });
+  }, [tabReady, activeTab]);
+
   const send = () => {
     const t = draft.trim();
     if (!t) return;
-    if (!tabReady) return notReady();
+    if (!tabReady) { queued.current = t; setDraft(''); return; }
     setDraft('');
     lastTypingWrite.current = 0;
     setTyping(room.id, user.uid, activeTab, false).catch(() => {});

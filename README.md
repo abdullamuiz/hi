@@ -280,7 +280,7 @@ Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this als
 ## Updates and refreshing
 
 An installed (Home Screen) app has no address bar or reload button, so:
-- **Pull down** at the top of the chat to refresh.
+- **Pull down and hold for 2 seconds** at the top of the chat to refresh. A ring fills while you hold; letting go early cancels, so accidental touches do nothing.
 - When a new version is published, a bar says **"A new version of Hi is ready · Update"**. The app checks on start, whenever it comes back to the foreground, and every 15 minutes. It compares `version.json`, which each build writes, with the build it's running.
 - **Settings → Reload app** always works and shows the running version's build time.
 
