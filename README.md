@@ -2,14 +2,14 @@
 
 # Hi · Drops Chat
 
-A private chat for exactly two people, with **Tabs** (several parallel conversations, each with its own unread count) and **Drops**: interactive cards you play together in the conversation.
+Private one-to-one chats: add as many contacts as you like, and each chat is just the two of you. Every chat has **Tabs** (several parallel conversations, each with its own unread count) and **Drops**: interactive cards you play together in the conversation.
 
 - **Feeling Map**: each of you plots how every scene felt on an intense/calm × heavy/uplifting grid. Dots stay hidden until you both lock in.
 - **Blind Reveal**: answer a question privately, then flip together.
 - **Gap Slider**: slide your take, then see how many points apart you are.
 - **Tag-team Story**: write a story one line each.
 
-It also has text, link previews, photos, a shared scrapbook of pinned moments, "mood weather" next to your name, push notifications, and a **light/dark switch** in the header (Hi Light on alabaster, Hi Dark on navy) plus more colour themes (Classic, Blossom, Forest, or match your phone).
+It also has text, link previews, photos, **message actions** (long-press a message: reply-quote, reactions, phrase reactions, copy, pin, edit within 15 minutes, select several, delete for me or for everyone), a shared scrapbook of pinned moments, "mood weather" next to your name, push notifications, and a **light/dark switch** in the header (Hi Light on alabaster, Hi Dark on navy) plus more colour themes (Classic, Blossom, Forest, or match your phone).
 
 It's an installable PWA (iPhone and Android) built with Vite + Preact + TypeScript on Firebase, and it's ready to wrap with Capacitor later.
 The UI follows the design prototype in `design/`, with the "Hi" navy, teal and alabaster palette as the default theme (the prototype's original colours are the **Classic** theme). `Chat-with-Drops-standalone.html` opens directly in any browser (fonts included); `Chat-prototype.html` is the same design as source markup.
@@ -62,7 +62,7 @@ http://127.0.0.1:4000), and starts the app at **http://localhost:5173**.
 **Signing in locally:** use "E-mail me a sign-in link". The emulator doesn't send e-mail. Open
 **Emulator UI → Authentication** (or look in the terminal) and click the sign-in link. "Continue with Google" also works and shows a fake account picker.
 
-**Two people:** use a normal window and a private window (or two browsers). Sign in as `a@example.com`, invite `b@example.com`, then sign in as `b@example.com` in the other window and tap **Join**.
+**Two people:** use a normal window and a private window (or two browsers). Sign in as `a@example.com`, tap **Add contact → Create invite link → Copy link**, open that link in the other window, sign in as `b@example.com` and tap **Join**.
 
 **On your phone (same Wi-Fi):** the emulators listen on `127.0.0.1` only. To test from a phone, change every `"host": "127.0.0.1"` in `firebase.json` to `"0.0.0.0"`, then open `http://<your-computer's-LAN-IP>:5173`. The app looks for the emulators on the same host it was loaded from.
 
@@ -159,7 +159,7 @@ That builds the app and the functions, then deploys **Hosting, Firestore rules a
 Your app is live at `https://your-project-id.web.app`. Then:
 
 - **Authentication → Settings → Authorized domains:** `your-project-id.web.app` and `firebaseapp.com` are already there. Add any custom domain you use.
-- Open the app, sign in, and invite the other person by their e-mail (the one they'll sign in with). Send them the link with **Share invite**.
+- Open the app, sign in, tap **Add contact** and **Share invite link**. Whoever opens the link first (after signing in) joins that chat.
 
 To deploy only one part later: `npx firebase deploy --only hosting`, `--only firestore:rules,storage`, or `--only functions`.
 
@@ -201,15 +201,15 @@ src/
   firebase-config.ts     the hi-dropchat web config (+ vapidKey to add)
   lib/themes.ts          colour themes (add one by adding a palette)
   firebase.ts            init + emulator wiring + offline cache
-  app.tsx                auth → lobby (invite/join) → chat
-  ui/                    Chat, DropCard (host for plugins), sheets, bubbles, sign-in, lobby
+  app.tsx                auth → chat list (or a share-link join) → chat
+  ui/                    Chats (list), Chat, MessageActions, AddContactSheet, JoinScreen, DropCard (host for plugins), sheets, bubbles, sign-in
   drops/
     types.ts             the Drop plugin contract (defineDrop, DropApi)
     registry.ts          auto-discovers *.drop.tsx
     feeling-map.drop.tsx, blind-reveal.drop.tsx, gap-slider.drop.tsx, tag-team-story.drop.tsx
   data/                  Firestore/Storage/FCM access, one file per concern
 public/sw.js             service worker: offline shell + push display
-functions/src/           linkPreview (Open Graph) + notifyPartner (FCM)
+functions/src/           linkPreview (Open Graph), notifyPartner (FCM), deleteMessageFiles (photo cleanup)
 firestore.rules          the security model, documented inline
 storage.rules
 tests/                   unit, rules, e2e
@@ -219,10 +219,12 @@ docs/ADDING_A_DROP.md    how to add a new Drop
 ### Data model
 
 ```
-rooms/{roomId}                      owner, members (max 2), invites [e-mail], timezone (Indian/Maldives)
+rooms/{roomId}                      one chat: owner, members (max 2), invites [e-mail], inviteCode (share link),
+                                    lastMessage (chat-list preview), timezone (Indian/Maldives)
   members/{uid}                     name, photo, mood weather, lastSeen, typing (+tab), lastRead {tabId: time}
   tabs/{tabId}                      name, colour, archived, order, lastMessageAt   ("general" always exists)
-    messages/{id}                   text | link | photo | drop      (append-only)
+    messages/{id}                   text | link | photo | drop, + replyTo, editedAt, reactions {code: [uid]},
+                                    phraseReactions, hiddenFor [uid], deleted
   pins/{id}                         scrapbook
   drops/{dropId}                    type + content (the Drop's JSON definition snapshot)
     sealed/{uid}_{key}              a PRIVATE answer
@@ -241,12 +243,24 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 - Once locked, an answer can never be changed.
 - Queries on `sealed` are only allowed when filtered to your own uid, so nobody can list the other person's answers.
 
-### Rooms and invites
+### Contacts, chats and invites
 
-- You can start a room **on your own**. Tap "Skip, invite later" and chat, drop cards and pin things straight away. While you're alone, a banner in the chat has an **Invite someone** button.
-- An invite is one e-mail address. Only a signed-in user whose **verified** e-mail matches it can join, and only while the room has one member. After that the room is full for good.
-- Until someone joins, the owner can add, change or clear the invite. When they join, they see everything already in the room.
-- The room, your profile and its General tab are created in one atomic write, so a room never exists half set-up.
+- Every chat is a room of exactly two people. You can have as many as you like: the **Chats** screen lists them (newest first, with the other person's mood face, a preview and an unread dot). Opening the app goes back to the chat you last had open, or straight in when you only have one. The back arrow (or the phone's back gesture) returns to the list.
+- **Add contact** makes a new chat with a secret **invite link** (`?join=<room>&code=<22 random characters>`). Share it any way you like. Whoever opens it first, signs in and taps **Join** becomes the other person. The code is used up in the same write, so the link can't add anyone else. You can make a new link (the old one stops working) or remove an invite nobody has used.
+- You can also add their **e-mail**. **Hi doesn't send any e-mail**: adding it only lets that address (once signed in with it, verified) see the invite in their chat list and tap **Accept**. Send the link too.
+- Strangers can't read a room or its messages. Joining by code is a write-only check in `firestore.rules`: only your own uid can be added, only while the room has one member, and only with the matching code. All of it is covered by `tests/rules/firestore.test.ts`.
+- A link opened before signing in is remembered (for a day) through the sign-in, including Google's redirect. If you already have a chat with the person who sent it, Hi opens that one instead of making a second.
+- You can chat in a new room before anyone joins. The room, your profile and its General tab are created in one atomic write, so a room never exists half set-up.
+
+### Message actions
+
+Long-press a message (or right-click / the ⋯ button on a computer) for **Reply · React · Copy · Pin · Edit · Select · Delete**:
+
+- **Reply** quotes the message above the composer and in the sent bubble. Tap the quote to jump to the original.
+- **React** with ❤️ 😂 😮 😢 👍 🔥. Chips under the bubble show counts; tap one to add or remove yours. **Phrase react**: tap the first and last word, then a reaction. The phrase is underlined with a small chip.
+- **Edit** your own text for 15 minutes ("edited" shows on the bubble). **Copy** and **Pin** (to the scrapbook) work on single messages or a selection.
+- **Delete for me** hides it on your devices (5-second Undo). **Delete for everyone** (your own messages, after a second confirmation) clears the content for both of you and leaves "Message deleted"; a Cloud Function also deletes the photo file.
+- The rules enforce each of these: only the sender edits (within 15 minutes) or deletes for everyone, and reactions, phrase reactions and "delete for me" can only add or remove your own uid.
 
 ### Link previews and push
 
@@ -261,7 +275,7 @@ Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this als
 
 - Every room has a **General** tab. The **+** at the end of the tab bar adds another (name and colour). Tap the open tab for options: rename, recolour, archive. General can't be archived.
 - Unread counts come from `members/{uid}.lastRead[tabId]`, so they sync across your devices. The total also shows on the app icon where the browser supports badges.
-- Notifications name the tab ("Sam · Trip plans"), and tapping one opens that tab.
+- Notifications name the tab ("Sam · Trip plans"), and tapping one opens that chat and tab.
 - Drops, docs and sessions belong to a tab. Scrapbook, search and streak are room-wide (see `SPEC.md`).
 
 ## Icons and themes
