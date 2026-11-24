@@ -7,8 +7,13 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
+  deleteDoc,
+  deleteField,
   doc,
+  FieldPath,
   getDoc,
   getDocs,
   query,
@@ -308,6 +313,207 @@ describe('drops, entries & pins', () => {
     await seedRoom();
     await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'pins', 'p1'), { by: 'alice', title: 'T', detail: 'D', dropId: 'd1', messageId: null, createdAt: serverTimestamp() }));
     await assertFails(setDoc(doc(alice(), 'rooms', ROOM, 'pins', 'p2'), { by: 'bob', title: 'T', detail: 'D', dropId: null, messageId: null, createdAt: serverTimestamp() }));
+  });
+});
+
+const CODE = 'a1B2c3D4e5F6g7H8i9J0';
+const carol = () => env.authenticatedContext('carol', { email: 'carol@example.com', email_verified: false }).firestore() as unknown as Firestore;
+
+/** Joins a room with a share-link code: the same batch the app sends. */
+function joinWithCode(db: Firestore, uid: string, code: string, room = ROOM) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'rooms', room), { members: arrayUnion(uid), invites: [], inviteCode: deleteField(), joinCode: code });
+  b.set(doc(db, 'rooms', room, 'members', uid), { uid, name: uid, photoURL: null, lastSeen: serverTimestamp() });
+  return b.commit();
+}
+
+async function seedSolo(extra: Record<string, unknown> = {}) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await setDoc(doc(db, 'rooms', ROOM), { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: [], inviteCode: CODE, createdAt: new Date(), ...extra });
+    await setDoc(doc(db, 'rooms', ROOM, 'tabs', 'general'), tabDoc('alice', 'General'));
+  });
+}
+
+describe('many contacts & share links', () => {
+  it('a room can be created with a share-link code, but not a weak one', async () => {
+    const base = { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: [], timezone: 'Indian/Maldives', createdAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(alice(), 'rooms', 'c1'), { ...base, inviteCode: CODE }));
+    await assertFails(setDoc(doc(alice(), 'rooms', 'c2'), { ...base, inviteCode: 'short' }));
+    await assertFails(setDoc(doc(alice(), 'rooms', 'c3'), { ...base, inviteCode: 'has spaces and is long enough' }));
+  });
+
+  it('a person can have several rooms', async () => {
+    const base = { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: [], timezone: 'Indian/Maldives', createdAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(alice(), 'rooms', 'x1'), base));
+    await assertSucceeds(setDoc(doc(alice(), 'rooms', 'x2'), { ...base, invites: ['bob@example.com'] }));
+    await assertSucceeds(getDocs(query(collection(alice(), 'rooms'), where('members', 'array-contains', 'alice'))));
+  });
+
+  it('anyone with the right code joins (even an unverified account); the code is then used up', async () => {
+    await seedSolo();
+    await assertFails(joinWithCode(carol(), 'carol', 'wrongwrongwrongwrong'));
+    await assertSucceeds(joinWithCode(carol(), 'carol', CODE));
+    await assertSucceeds(getDoc(doc(carol(), 'rooms', ROOM)));
+    // Full now: the same link can't add anyone else.
+    await assertFails(joinWithCode(eve(), 'eve', CODE));
+    await assertFails(getDoc(doc(eve(), 'rooms', ROOM)));
+  });
+
+  it('strangers can neither read a room nor join it without the code', async () => {
+    await seedSolo();
+    await assertFails(getDoc(doc(eve(), 'rooms', ROOM)));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { members: ['alice', 'eve'] }));
+    // Joining must use up the code and add only yourself.
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { members: ['alice', 'eve'], joinCode: CODE }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { members: ['alice', 'eve', 'mallory'], invites: [], inviteCode: deleteField(), joinCode: CODE }));
+    // ...and a room without a code can't be joined by code.
+    await env.withSecurityRulesDisabled((ctx) => updateDoc(doc(ctx.firestore(), 'rooms', ROOM), { inviteCode: deleteField() }));
+    await assertFails(joinWithCode(eve(), 'eve', CODE));
+  });
+
+  it('you cannot join your own room by code', async () => {
+    await seedSolo();
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM), { members: ['alice', 'alice'], invites: [], inviteCode: deleteField(), joinCode: CODE }));
+  });
+
+  it('the owner can regenerate or revoke the code while alone, nobody else can', async () => {
+    await seedSolo();
+    await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM), { inviteCode: 'Z'.repeat(20) }));
+    await assertFails(joinWithCode(carol(), 'carol', CODE));
+    await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM), { inviteCode: deleteField() }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { inviteCode: 'E'.repeat(20) }));
+  });
+
+  it('an e-mail invitee can decline; the owner can remove a room nobody joined', async () => {
+    await seedSolo({ invites: ['bob@example.com'] });
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { invites: [] }));
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', ROOM), { invites: [] }));
+    await assertFails(deleteDoc(doc(bob(), 'rooms', ROOM)));
+    await assertSucceeds(deleteDoc(doc(alice(), 'rooms', ROOM)));
+  });
+
+  it('a full room cannot be deleted', async () => {
+    await seedRoom();
+    await assertFails(deleteDoc(doc(alice(), 'rooms', ROOM)));
+  });
+
+  it('an e-mail invitee joining also uses up the share code', async () => {
+    await seedSolo({ invites: ['bob@example.com'] });
+    const db = bob();
+    const b = writeBatch(db);
+    b.update(doc(db, 'rooms', ROOM), { members: arrayUnion('bob'), inviteCode: deleteField() });
+    await assertSucceeds(b.commit());
+  });
+
+  it('members keep the chat-list summary up to date, as themselves', async () => {
+    await seedRoom();
+    const db = alice();
+    const b = writeBatch(db);
+    b.set(doc(msgs(db), 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() });
+    b.update(doc(db, 'rooms', ROOM), { lastMessage: { id: 'm1', uid: 'alice', tabId: 'general', text: 'hi', at: serverTimestamp() } });
+    await assertSucceeds(b.commit());
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { lastMessage: { id: 'm2', uid: 'alice', tabId: 'general', text: 'forged', at: serverTimestamp() } }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', ROOM), { lastMessage: { id: 'm2', uid: 'alice', tabId: 'general', text: 'old', at: new Date(2020, 1, 1) } }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { lastMessage: { id: 'm3', uid: 'eve', tabId: 'general', text: 'x', at: serverTimestamp() } }));
+  });
+});
+
+describe('message actions (Phase 2)', () => {
+  const ref = (db: Firestore, id = 'm1') => doc(msgs(db), id);
+  async function seedMsg(extra: Record<string, unknown> = {}, id = 'm1') {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'rooms', ROOM, 'tabs', 'general', 'messages', id), {
+      uid: 'alice', kind: 'text', text: 'Hello there friend', createdAt: new Date(), ...extra,
+    }));
+  }
+
+  it('a new message can quote another', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(ref(bob(), 'r1'), { uid: 'bob', kind: 'text', text: 'yes!', replyTo: { msgId: 'm1', snippet: 'Hello', senderId: 'alice' }, createdAt: serverTimestamp() }));
+    await assertFails(setDoc(ref(bob(), 'r2'), { uid: 'bob', kind: 'text', text: 'yes!', replyTo: { msgId: 'm1', snippet: 'Hello', senderId: 'alice', extra: 1 }, createdAt: serverTimestamp() }));
+  });
+
+  it('the sender can edit text within 15 minutes', async () => {
+    await seedRoom();
+    await seedMsg();
+    await assertSucceeds(updateDoc(ref(alice()), { text: 'Hello there, friend', editedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref(alice()), { text: 'x', editedAt: new Date(2020, 1, 1) }));
+    await assertFails(updateDoc(ref(alice()), { text: 'x', editedAt: serverTimestamp(), uid: 'bob' }));
+    await assertFails(updateDoc(ref(bob()), { text: 'Bob was here', editedAt: serverTimestamp() }));
+  });
+
+  it('no edits after 15 minutes', async () => {
+    await seedRoom();
+    await seedMsg({ createdAt: new Date(Date.now() - 16 * 60_000) });
+    await assertFails(updateDoc(ref(alice()), { text: 'too late', editedAt: serverTimestamp() }));
+  });
+
+  it('delete for me only adds or removes your own uid', async () => {
+    await seedRoom();
+    await seedMsg();
+    await assertSucceeds(updateDoc(ref(bob()), { hiddenFor: arrayUnion('bob') }));
+    await assertSucceeds(updateDoc(ref(bob()), { hiddenFor: arrayRemove('bob') }));
+    await assertFails(updateDoc(ref(bob()), { hiddenFor: arrayUnion('alice') }));
+    await assertFails(updateDoc(ref(bob()), { hiddenFor: arrayUnion('bob'), text: 'x' }));
+    await assertFails(updateDoc(ref(eve()), { hiddenFor: arrayUnion('eve') }));
+  });
+
+  it('delete for everyone: sender only, content cleared', async () => {
+    await seedRoom();
+    await seedMsg({ reactions: { heart: ['bob'] }, replyTo: { msgId: 'x', snippet: 's', senderId: 'bob' } });
+    const clear = { deleted: true, text: '', link: deleteField(), photo: deleteField(), dropId: deleteField(), replyTo: deleteField(), reactions: deleteField(), phraseReactions: deleteField(), editedAt: deleteField() };
+    await assertFails(updateDoc(ref(bob()), clear));
+    await assertFails(updateDoc(ref(alice()), { deleted: true }));
+    await assertFails(updateDoc(ref(alice()), { ...clear, text: 'still here' }));
+    await assertSucceeds(updateDoc(ref(alice()), clear));
+    // A deleted message can't be edited or reacted to.
+    await assertFails(updateDoc(ref(alice()), { text: 'back', editedAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref(bob()), { [`reactions.heart`]: arrayUnion('bob') }));
+  });
+
+  it('photo messages can be deleted for everyone', async () => {
+    await seedRoom();
+    await seedMsg({ kind: 'photo', text: 'cap', photo: { path: `rooms/${ROOM}/photos/alice/p.jpg`, width: 1, height: 1 } }, 'p1');
+    await assertSucceeds(updateDoc(ref(alice(), 'p1'), { deleted: true, text: '', photo: deleteField() }));
+  });
+
+  it('reactions: only your own uid, only the six codes', async () => {
+    await seedRoom();
+    await seedMsg();
+    await assertSucceeds(updateDoc(ref(bob()), new FieldPath('reactions', 'heart'), arrayUnion('bob')));
+    await assertSucceeds(updateDoc(ref(alice()), new FieldPath('reactions', 'heart'), arrayUnion('alice')));
+    await assertSucceeds(updateDoc(ref(bob()), new FieldPath('reactions', 'heart'), arrayRemove('bob')));
+    await assertFails(updateDoc(ref(bob()), new FieldPath('reactions', 'heart'), arrayRemove('alice')));
+    await assertFails(updateDoc(ref(bob()), new FieldPath('reactions', 'fire'), arrayUnion('alice')));
+    await assertFails(updateDoc(ref(bob()), new FieldPath('reactions', 'poop'), arrayUnion('bob')));
+    await assertFails(updateDoc(ref(eve()), new FieldPath('reactions', 'fire'), arrayUnion('eve')));
+  });
+
+  it('phrase reactions: append or remove your own', async () => {
+    await seedRoom();
+    await seedMsg();
+    const mine = { uid: 'bob', start: 0, end: 5, reaction: 'laugh' };
+    await assertSucceeds(updateDoc(ref(bob()), { phraseReactions: arrayUnion(mine) }));
+    const hers = { uid: 'alice', start: 6, end: 11, reaction: 'heart' };
+    await assertSucceeds(updateDoc(ref(alice()), { phraseReactions: arrayUnion(hers) }));
+    await assertFails(updateDoc(ref(alice()), { phraseReactions: arrayRemove(mine) }));
+    await assertFails(updateDoc(ref(bob()), { phraseReactions: arrayUnion({ uid: 'alice', start: 0, end: 2, reaction: 'fire' }) }));
+    await assertFails(updateDoc(ref(bob()), { phraseReactions: arrayUnion({ uid: 'bob', start: 5, end: 2, reaction: 'fire' }) }));
+    await assertFails(updateDoc(ref(bob()), { phraseReactions: arrayUnion({ uid: 'bob', start: 0, end: 2, reaction: 'nope' }) }));
+    await assertSucceeds(updateDoc(ref(bob()), { phraseReactions: arrayRemove(mine) }));
+  });
+
+  it('other changes stay forbidden', async () => {
+    await seedRoom();
+    await seedMsg();
+    await assertFails(updateDoc(ref(alice()), { kind: 'photo' }));
+    await assertFails(updateDoc(ref(bob()), { text: 'rewritten' }));
+    await assertFails(deleteDoc(ref(alice())));
+  });
+
+  it('plain messages can be pinned', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(doc(bob(), 'rooms', ROOM, 'pins', 'pm'), { by: 'bob', title: 'alice', detail: 'Hello there', dropId: null, messageId: 'm1', tabId: 'general', createdAt: serverTimestamp() }));
   });
 });
 

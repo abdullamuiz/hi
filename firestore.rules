@@ -4,7 +4,7 @@ rules_version = '2';
 //
 // Data model (see docs/ARCHITECTURE.md):
 //   users/{uid}/tokens/{fcmToken}                 private: push tokens
-//   rooms/{roomId}                                 owner, members[<=2], invites[1]
+//   rooms/{roomId}                                 owner, members[<=2], invites[<=1], inviteCode?, lastMessage?
 //     members/{uid}                                public profile, mood weather, lastRead per tab
 //     tabs/{tabId}                                 parallel conversations ("General" + more)
 //       messages/{id}                              chat messages (append-only)
@@ -19,6 +19,10 @@ rules_version = '2';
 // other member only once (a) the owner has locked it and (b) the reader has a
 // lock marker for the same key, which itself can only exist if the reader's own
 // sealed doc is locked. A locked sealed doc can never be changed again.
+//
+// Every room is exactly two people. A person can be in many rooms (one per contact).
+// Someone joins a room either with an invited, verified e-mail, or with the room's
+// secret invite code from a share link. Non-members can never read a room.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -43,6 +47,10 @@ service cloud.firestore {
     function isKey(k) { return k is string && k.matches('^[A-Za-z0-9-]{1,40}$'); }
     function validInvites(l) { return l is list && (l.size() == 0 || (l.size() == 1 && lowerEmail(l[0]))); }
     function lowerEmail(e) { return str(e, 3, 254) && e == e.lower() && e.matches('^[^@\\s]+@[^@\\s]+$'); }
+    // Secret part of a share link: 16–64 URL-safe characters.
+    function validCode(c) { return c is string && c.matches('^[A-Za-z0-9_-]{16,64}$'); }
+    // Reaction codes (the six quick reactions). Codes, not emoji, so rules can name them.
+    function reactionCodes() { return ['heart', 'laugh', 'wow', 'sad', 'up', 'fire']; }
 
     // ---------------------------------------------------------------- users
     match /users/{uid} {
@@ -69,37 +77,86 @@ service cloud.firestore {
       allow get, list: if canSeeRoom();
 
       allow create: if signedIn()
-        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'timezone', 'createdAt'])
+        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'inviteCode', 'timezone', 'createdAt'])
         && (incoming().get('timezone', 'Indian/Maldives') is string && incoming().get('timezone', 'Indian/Maldives').size() <= 64)
         && incoming().owner == me()
         && incoming().members == [me()]
         // Invite now (one e-mail) or later (empty list).
         && validInvites(incoming().invites)
+        && (incoming().get('inviteCode', null) == null || validCode(incoming().inviteCode))
         && str(incoming().ownerName, 0, 80)
         && incoming().createdAt == request.time;
 
+      function validLastMessage() {
+        let m = incoming().lastMessage;
+        return m is map
+          && m.keys().hasOnly(['id', 'uid', 'tabId', 'text', 'at'])
+          && str(m.id, 1, 64) && str(m.tabId, 1, 40) && str(m.text, 0, 160)
+          && m.uid == me()
+          && (
+            m.at == request.time
+            // A correction (edit / delete of the latest message) keeps its time.
+            || (resource.data.get('lastMessage', null) != null
+                && resource.data.lastMessage.id == m.id
+                && resource.data.lastMessage.at == m.at)
+          );
+      }
+
       allow update: if signedIn() && (
-        // The invited partner joins. Afterwards the room holds two members and
-        // neither branch below can ever add a third.
+        // The invited partner joins with their verified e-mail. Afterwards the room
+        // holds two members and no branch below can ever add a third.
         (
           resource.data.members.size() == 1
           && verifiedEmail()
           && myEmail() in resource.data.invites
           && !(me() in resource.data.members)
-          && changedKeys().hasOnly(['members'])
+          && changedKeys().hasOnly(['members', 'inviteCode'])
+          && !incoming().keys().hasAny(['inviteCode'])
           && incoming().members == resource.data.members.concat([me()])
         )
         ||
-        // The owner invites someone (or changes/clears the invite) while still alone.
+        // Anyone signed in with the secret invite code joins (share link). The code is
+        // used up: it's removed in the same write and any e-mail invite is cleared.
+        (
+          resource.data.members.size() == 1
+          && !(me() in resource.data.members)
+          && validCode(resource.data.get('inviteCode', null))
+          && changedKeys().hasOnly(['members', 'invites', 'inviteCode', 'joinCode'])
+          && incoming().members == resource.data.members.concat([me()])
+          && incoming().get('joinCode', '') == resource.data.inviteCode
+          && !incoming().keys().hasAny(['inviteCode'])
+          && incoming().invites == []
+        )
+        ||
+        // The invitee declines an e-mail invite.
+        (
+          resource.data.members.size() == 1
+          && verifiedEmail()
+          && myEmail() in resource.data.invites
+          && changedKeys().hasOnly(['invites'])
+          && incoming().invites == []
+        )
+        ||
+        // The owner invites someone (or changes/clears the invite, or makes/revokes
+        // the share-link code) while still alone.
         (
           resource.data.owner == me()
           && resource.data.members.size() == 1
-          && changedKeys().hasOnly(['invites'])
+          && changedKeys().hasOnly(['invites', 'inviteCode'])
           && validInvites(incoming().invites)
+          && (incoming().get('inviteCode', null) == null || validCode(incoming().inviteCode))
           && !(string(request.auth.token.get('email', '')).lower() in incoming().invites)
         )
+        ||
+        // A member records the latest message (for the chat list), in the same batch as the message.
+        (
+          me() in resource.data.members
+          && changedKeys().hasOnly(['lastMessage'])
+          && validLastMessage()
+        )
       );
-      allow delete: if false;
+      // A room nobody else has joined yet can be removed by its owner.
+      allow delete: if signedIn() && resource.data.owner == me() && resource.data.members.size() == 1;
 
       // -------------------------------------------------------- members
       match /members/{uid} {
@@ -150,15 +207,25 @@ service cloud.firestore {
 
         // -------------------------------------------------------- messages
         match /messages/{msgId} {
+          // Optional reply-quote on a new message.
+          function validReply() {
+            return incoming().get('replyTo', null) == null || (
+              incoming().replyTo is map
+              && incoming().replyTo.keys().hasOnly(['msgId', 'snippet', 'senderId'])
+              && str(incoming().replyTo.msgId, 1, 64)
+              && str(incoming().replyTo.snippet, 0, 160)
+              && str(incoming().replyTo.senderId, 1, 128)
+            );
+          }
           function validText() {
             return incoming().kind == 'text'
               && str(incoming().text, 1, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'createdAt']);
+              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'createdAt']);
           }
           function validLink() {
             return incoming().kind == 'link'
               && str(incoming().text, 0, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'link', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'createdAt'])
               && incoming().link is map
               && incoming().link.status == 'pending'
               && str(incoming().link.url, 8, 2048)
@@ -167,7 +234,7 @@ service cloud.firestore {
           function validPhoto() {
             return incoming().kind == 'photo'
               && str(incoming().text, 0, 1000)
-              && onlyKeys(['uid', 'kind', 'text', 'photo', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'photo', 'replyTo', 'createdAt'])
               && incoming().photo is map
               && incoming().photo.keys().hasOnly(['path', 'width', 'height'])
               && incoming().photo.path is string
@@ -182,14 +249,87 @@ service cloud.firestore {
               && getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(incoming().dropId)).data.createdBy == me();
           }
 
+          function alive() { return resource.data.get('deleted', false) != true; }
+          function mine() { return resource.data.uid == me(); }
+
+          // Edit: the sender, text messages only, within 15 minutes; only text + editedAt change.
+          function isEdit() {
+            return mine() && alive()
+              && resource.data.kind == 'text'
+              && changedKeys().hasOnly(['text', 'editedAt'])
+              && str(incoming().text, 1, 4000)
+              && incoming().editedAt == request.time
+              && request.time < resource.data.createdAt + duration.value(15, 'm');
+          }
+          // Delete for me: add or remove ONLY my own uid in hiddenFor.
+          function isHide() {
+            let before = resource.data.get('hiddenFor', []);
+            let after = incoming().get('hiddenFor', []);
+            return changedKeys().hasOnly(['hiddenFor'])
+              && after is list && after.size() <= 2
+              && after.removeAll([me()]) == before.removeAll([me()]);
+          }
+          // Delete for everyone: the sender only; content cleared, deleted = true.
+          function isDeleteForEveryone() {
+            return mine() && alive()
+              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'dropId', 'replyTo', 'reactions', 'phraseReactions', 'editedAt'])
+              && incoming().deleted == true
+              && incoming().text == ''
+              && !incoming().keys().hasAny(['link', 'photo', 'dropId', 'replyTo', 'reactions', 'phraseReactions', 'editedAt']);
+          }
+          // Quick reactions: { code: [uid] }. Only my own uid may appear or disappear.
+          function rxSame(k) {
+            let before = resource.data.get('reactions', {}).get(k, []);
+            let after = incoming().get('reactions', {}).get(k, []);
+            return after is list && after.size() <= 2 && after.removeAll([me()]) == before.removeAll([me()]);
+          }
+          function isReact() {
+            return alive()
+              && changedKeys().hasOnly(['reactions'])
+              && incoming().reactions is map
+              && incoming().reactions.keys().hasOnly(reactionCodes())
+              && rxSame('heart') && rxSame('laugh') && rxSame('wow')
+              && rxSame('sad') && rxSame('up') && rxSame('fire');
+          }
+          // Phrase reactions: append one of mine, or remove one of mine.
+          function validPhrase(p) {
+            return p is map
+              && p.keys().hasOnly(['uid', 'start', 'end', 'reaction'])
+              && p.uid == me()
+              && p.start is int && p.end is int
+              && p.start >= 0 && p.end > p.start && p.end <= 4000
+              && p.reaction in reactionCodes();
+          }
+          function isPhrase() {
+            let before = resource.data.get('phraseReactions', []);
+            let after = incoming().get('phraseReactions', []);
+            return alive()
+              && resource.data.kind == 'text'
+              && changedKeys().hasOnly(['phraseReactions'])
+              && after is list && after.size() <= 50
+              && (
+                (after.size() == before.size() + 1
+                  && (before.size() == 0 || after[0:before.size()] == before)
+                  && validPhrase(after[before.size()]))
+                ||
+                (after.size() == before.size() - 1
+                  && after.removeAll(before).size() == 0
+                  && before.removeAll(after).size() == 1
+                  && before.removeAll(after)[0].uid == me())
+              );
+          }
+
           allow read: if isMember(roomId);
           allow create: if isMember(roomId)
             && exists(/databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId))
             && incoming().uid == me()
             && incoming().createdAt == request.time
+            && validReply()
             && (validText() || validLink() || validPhoto() || validDrop());
           // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
-          allow update, delete: if false;
+          allow update: if isMember(roomId)
+            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase());
+          allow delete: if false;
         }
       }
 
