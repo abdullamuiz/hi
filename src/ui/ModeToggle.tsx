@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'preact/hooks';
-import { applyTheme, currentMode, onThemeChange, toggledTheme, type Mode } from '../lib/themes';
+import { applyTheme, currentMode, onThemeChange, toggledPrefs, type Mode } from '../lib/themes';
 import { chooseTheme } from '../data/prefs';
 
-/** Sun/moon button: switches between Hi Light (alabaster) and Hi Dark (navy). */
+/** Moon / half-circle button: switches the current palette between its light and dark version. */
 export function ModeToggle({ uid, class: cls = 'icon-btn' }: { uid?: string; class?: string }) {
   const [mode, setMode] = useState<Mode>(currentMode);
   useEffect(() => onThemeChange((_id, m) => setMode(m)), []);
   const dark = mode === 'dark';
 
   const toggle = () => {
-    const next = toggledTheme();
+    const next = toggledPrefs();
     if (uid) chooseTheme(uid, next); else applyTheme(next);
   };
 

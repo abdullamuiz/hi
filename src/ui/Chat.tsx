@@ -7,7 +7,7 @@ import { changeInvite, ensureMember, heartbeat, setMood, setTyping, watchMembers
 import { InviteSheet } from './InviteSheet';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
-import { currentTheme, onThemeChange, type ThemeId } from '../lib/themes';
+import { currentPrefs, onThemeChange, type ThemePrefs } from '../lib/themes';
 import { ModeToggle } from './ModeToggle';
 import { drops, getDrop } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
@@ -16,14 +16,15 @@ import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
 import type { Member, Message, MoodId, Pin, Room, Tab } from '../types';
 import { DropCard } from './DropCard';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
-import { MoodSheet, ScrapSheet, SetupSheet, TraySheet } from './Sheets';
+import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
-import { BookmarkIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon } from './icons';
+import { BookmarkIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
 
 type Sheet =
   | null
   | { kind: 'tray' }
   | { kind: 'mood' }
+  | { kind: 'settings' }
   | { kind: 'scrap' }
   | { kind: 'setup'; type: string; prefill?: Record<string, unknown> }
   | { kind: 'tab-new' }
@@ -51,7 +52,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const [toast, setToast] = useState('');
-  const [theme, setTheme] = useState<ThemeId>(currentTheme);
+  const [theme, setTheme] = useState<ThemePrefs>(currentPrefs);
   const [push, setPush] = useState<PushStatus>('unsupported');
   const [bannerHidden, setBannerHidden] = useState(() => { try { return !!localStorage.getItem(BANNER_KEY); } catch { return false; } });
   const lastTypingWrite = useRef(0);
@@ -117,7 +118,7 @@ export function Chat({ user, room }: { user: User; room: Room }) {
   }, [room.id, user.uid]);
 
   useEffect(() => { pushStatus().then(setPush); }, []);
-  useEffect(() => onThemeChange((id) => setTheme(id)), []);
+  useEffect(() => onThemeChange((p) => setTheme(p)), []);
 
   // Escape closes any open sheet.
   useEffect(() => {
@@ -233,17 +234,30 @@ export function Chat({ user, room }: { user: User; room: Room }) {
           {partnerMember?.photoURL ? <img src={partnerMember.photoURL} alt="" referrerpolicy="no-referrer" /> : initial(partner.name)}
         </div>
         <div class="hdr-text">
-          <div class="hdr-name">{partner.name}</div>
+          <div class="hdr-name-row">
+            <span class="hdr-name">{partner.name}</span>
+            {partnerUid && partnerMember?.mood && (
+              <span class="their-mood" role="img" aria-label={`${partner.name}'s mood: ${MOODS.find((m) => m.id === partnerMember.mood)?.label}`}>
+                <MoodIcon mood={partnerMember.mood} size={22} />
+              </span>
+            )}
+          </div>
           <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
         </div>
-        <ModeToggle uid={user.uid} />
-        <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })} aria-label="Set your mood weather">
-          <MoodIcon mood={myMood} />
-        </button>
+        <div class="hdr-actions">
+          <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
+            aria-label={`Your mood weather: ${MOODS.find((m) => m.id === myMood)?.label}. Change it`}>
+            <MoodIcon mood={myMood} size={24} />
+          </button>
+          <ModeToggle uid={user.uid} />
+          <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'settings' })} aria-label="Settings">
+            <SettingsIcon />
+          </button>
         <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'scrap' })} aria-label="Open scrapbook">
           <BookmarkIcon />
           {pins.length > 0 && <span class="badge">{pins.length}</span>}
-        </button>
+          </button>
+        </div>
       </header>
 
       <TabBar
@@ -358,11 +372,15 @@ export function Chat({ user, room }: { user: User; room: Room }) {
               <MoodSheet
                 current={myMood}
                 onPick={(m) => { setSheet(null); setMood(room.id, user.uid, m).catch((e) => flash(e.message)); }}
+              />
+            )}
+            {sheet.kind === 'settings' && (
+              <SettingsSheet
+                user={user}
+                prefs={theme}
+                onTheme={(t) => { setTheme(t); chooseTheme(user.uid, t); }}
                 push={push}
                 onPush={turnOnPush}
-                user={user}
-                theme={theme}
-                onTheme={(t) => { setTheme(t); chooseTheme(user.uid, t); }}
               />
             )}
             {sheet.kind === 'scrap' && <ScrapSheet pins={pins} nameOf={nameOf} tabName={tabName} />}
@@ -498,12 +516,7 @@ function PartnerStatus({ member, joined, invited }: { member?: Member; joined: b
   if (!joined) return <div class="hdr-sub">{invited ? 'Invite sent · not joined yet' : 'No one invited yet'}</div>;
   const mood = member?.mood ? MOODS.find((m) => m.id === member.mood) : undefined;
   const seen = lastSeenLabel(member?.lastSeen ? member.lastSeen.toMillis() : null, now);
-  return (
-    <div class="hdr-sub">
-      {mood && <MoodIcon mood={mood.id} size={15} />}
-      {mood ? `${mood.label} today · ${seen}` : seen}
-    </div>
-  );
+  return <div class="hdr-sub">{mood ? `${mood.label} · ${seen}` : seen}</div>;
 }
 
 function TypingIndicator({ member, name, tabId }: { member?: Member; name: string; tabId: string }) {

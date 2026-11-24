@@ -6,7 +6,7 @@ import { signOut } from '../data/auth';
 import { disablePush } from '../data/push';
 import type { MoodId, Pin } from '../types';
 import { MoodIcon, MOODS } from './icons';
-import { THEMES, type ThemeId } from '../lib/themes';
+import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 
 export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void }) {
   return (
@@ -89,12 +89,37 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
   );
 }
 
-interface MoodProps {
-  current: MoodId; onPick(m: MoodId): void; push: PushStatus; onPush(): void; user: User;
-  theme: ThemeId; onTheme(t: ThemeId): void;
+interface MoodProps { current: MoodId; onPick(m: MoodId): void }
+
+export function MoodSheet({ current, onPick }: MoodProps) {
+  return (
+    <div class="stack">
+      <div>
+        <div class="sheet-title">Your mood weather</div>
+        <div class="sheet-sub">Shows next to your name on the other person's screen</div>
+      </div>
+      {MOODS.map((w) => (
+        <button type="button" key={w.id} class={`mood-row${current === w.id ? ' on' : ''}`} onClick={() => onPick(w.id)} aria-pressed={current === w.id}>
+          <span class="mood-icon"><MoodIcon mood={w.id} size={28} /></span>
+          <span class="mood-text">
+            <span class="mood-label">{w.label}</span>
+            <span class="mood-desc">{w.desc}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
-export function MoodSheet({ current, onPick, push, onPush, user, theme, onTheme }: MoodProps) {
+interface SettingsProps {
+  user: User;
+  prefs: ThemePrefs;
+  onTheme(p: ThemePrefs): void;
+  push: PushStatus;
+  onPush(): void;
+}
+
+export function SettingsSheet({ user, prefs, onTheme, push, onPush }: SettingsProps) {
   const pushLabel: Record<PushStatus, string> = {
     granted: 'On',
     denied: 'Blocked in browser settings',
@@ -104,41 +129,42 @@ export function MoodSheet({ current, onPick, push, onPush, user, theme, onTheme 
   };
   return (
     <div class="stack">
-      <div>
-        <div class="sheet-title">Your mood weather</div>
-        <div class="sheet-sub">Shows next to your name instead of "online"</div>
-      </div>
-      {MOODS.map((w) => (
-        <button type="button" key={w.id} class={`mood-row${current === w.id ? ' on' : ''}`} onClick={() => onPick(w.id)} aria-pressed={current === w.id}>
-          <span class="mood-icon"><MoodIcon mood={w.id} /></span>
-          <span class="mood-text">
-            <span class="mood-label">{w.label}</span>
-            <span class="mood-desc">{w.desc}</span>
-          </span>
-        </button>
-      ))}
-      <div class="settings">
+      <div class="sheet-title">Settings</div>
+
+      <div class="settings-group">
         <div class="field-label" id="theme-label">Theme</div>
         <div class="theme-grid" role="radiogroup" aria-labelledby="theme-label">
-          {THEMES.map((t) => (
+          {PALETTES.map((t) => (
             <button
               type="button"
               key={t.id}
               role="radio"
-              aria-checked={theme === t.id}
-              class={`theme-opt${theme === t.id ? ' on' : ''}`}
-              onClick={() => onTheme(t.id)}
+              aria-checked={prefs.palette === t.id}
+              class={`theme-opt${prefs.palette === t.id ? ' on' : ''}`}
+              onClick={() => onTheme({ ...prefs, palette: t.id })}
               title={t.desc}
             >
-              <span class="swatch" aria-hidden="true">
-                <span style={{ background: t.swatch[0] }} />
-                <span style={{ background: t.swatch[1] }} />
-                <span style={{ background: t.swatch[2] }} />
+              {/* Split swatch: the palette's light version on the left, its dark version on the right. */}
+              <span class="split-swatch" aria-hidden="true">
+                <span style={{ background: t.light[0] }}><i style={{ background: t.light[1] }} /></span>
+                <span style={{ background: t.dark[0] }}><i style={{ background: t.dark[1] }} /></span>
               </span>
               <span class="theme-name">{t.label}</span>
+              <span class="theme-desc">{t.desc}</span>
             </button>
           ))}
         </div>
+        <div class="segmented" role="radiogroup" aria-label="Light or dark">
+          {MODES.map((m) => (
+            <button type="button" key={m.id} role="radio" aria-checked={prefs.mode === m.id}
+              class={prefs.mode === m.id ? 'on' : ''} onClick={() => onTheme({ ...prefs, mode: m.id })}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="settings">
         <div class="settings-row">
           <span>Notifications</span>
           {push === 'default' ? <button type="button" class="link-btn" onClick={onPush}>Turn on</button> : <span>{pushLabel[push]}</span>}
