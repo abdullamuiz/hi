@@ -29,6 +29,8 @@ export interface Failed {
   tabId: string;
   text: string;
   replyTo: { msgId: string; snippet: string; senderId: string } | null;
+  /** The effect it was sent with, if any. */
+  effect?: string | null;
   at: number;
   error: string;
 }

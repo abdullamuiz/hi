@@ -101,15 +101,19 @@ interface SendOptionsProps {
   partnerName: string;
   onSchedule(): void;
   onUrgent(): void;
+  onEffects(): void;
 }
 
-/** Long-press Send: Schedule… · Send as urgent. */
-export function SendOptionsSheet({ hasText, urgentLeft, partnerName, onSchedule, onUrgent }: SendOptionsProps) {
+/** Long-press Send: Effects… · Schedule… · Send as urgent. */
+export function SendOptionsSheet({ hasText, urgentLeft, partnerName, onSchedule, onUrgent, onEffects }: SendOptionsProps) {
   return (
     <div class="stack">
       <div class="sheet-title">Send options</div>
       {!hasText && <div class="fine">Type your message first.</div>}
       <div class="act-list">
+        <button type="button" class="act-btn" disabled={!hasText} onClick={onEffects}>
+          Effects…<span class="act-hint">Confetti, balloons, a sealed envelope…</span>
+        </button>
         <button type="button" class="act-btn" disabled={!hasText} onClick={onSchedule}>
           Schedule…<span class="act-hint">Pick a time and it sends itself</span>
         </button>

@@ -9,6 +9,7 @@ import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 import { buildLabel, reloadApp } from '../lib/updates';
 import { DeliverySettings } from './Delivery';
+import { EffectsSetting } from './Effects';
 import { BlockedList } from './Profile';
 import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
@@ -178,6 +179,8 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = []
       <DeliverySettings uid={user.uid} onToast={onToast || (() => {})} />
 
       <SplashSetting />
+
+      <EffectsSetting />
 
       {onUnblock && <BlockedList blocked={blocked} onUnblock={onUnblock} />}
 
