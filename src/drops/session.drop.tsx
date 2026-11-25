@@ -22,6 +22,12 @@ export default defineDrop<Content>({
   content: { testId: '', sessionId: '' },
   cardTitle: (c) => getTest(c.testId)?.title || 'Session',
   subtitle: (c) => getTest(c.testId)?.subtitle || 'Full-screen session',
+  // The card mirrors "finished" into Drop progress (see the Renderer), so this needs no session listener.
+  waitingOn(_c, api) {
+    const a = api.myProgress.done === true;
+    const b = api.theirProgress.done === true;
+    return a && !b ? 'partner' : b && !a ? 'me' : null;
+  },
   pinDetail(_c, api) {
     const a = api.myProgress.code as string | undefined;
     const b = api.theirProgress.code as string | undefined;
@@ -45,6 +51,11 @@ export default defineDrop<Content>({
     const mine = prog[api.me.uid];
     const theirs = api.partner.uid ? prog[api.partner.uid] : undefined;
     const bothDone = !!mine?.done && !!theirs?.done;
+
+    // Mirror "I finished" into the Drop's public progress, for "Your move" on the chat list.
+    useEffect(() => {
+      if (mine?.done && !mine.pending && api.myProgress.done !== true) api.setMyProgress({ done: true }).catch(() => {});
+    }, [mine?.done, mine?.pending]);
 
     // Once both have finished, record my result code (for this card and the scrapbook).
     useEffect(() => {

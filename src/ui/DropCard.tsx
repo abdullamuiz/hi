@@ -5,6 +5,8 @@ import { photoURL } from '../data/photos';
 import { getDrop, withDefaults } from '../drops/registry';
 import type { DropApi, Person } from '../drops/types';
 import { BookmarkIcon, DropIcon } from './icons';
+import { setDropMoves } from '../data/rooms';
+import { moveChanges, waitingFromLocks, type Waiting } from '../lib/moves';
 
 interface Props {
   roomId: string;
@@ -15,9 +17,11 @@ interface Props {
   onPin(title: string, detail: string): void;
   /** Tells the chat which kind of Drop this is (for previews). */
   onType?(type: string): void;
+  /** room.moves: when given, this card keeps the "Your move" flags for its Drop in step. */
+  moves?: Record<string, Record<string, unknown>>;
 }
 
-export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }: Props) {
+export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType, moves }: Props) {
   const [s, setS] = useState<DropState>(emptyDropState);
   const partnerUid = partner.uid || null;
   useEffect(() => watchDrop(roomId, dropId, me.uid, partnerUid, setS), [roomId, dropId, me.uid, partnerUid]);
@@ -47,6 +51,21 @@ export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }:
     };
   }, [s, me, partner, createdBy, roomId, dropId]);
 
+  // Whose move is it? Worked out from what this phone sees, and mirrored into room.moves
+  // (only when it differs) so the chat list can show "Your move" without a listener per Drop.
+  const content0 = def && s.drop ? withDefaults(def, s.drop.content) : null;
+  let waiting: Waiting = null;
+  if (s.ready && def && content0 && partner.uid) {
+    try {
+      waiting = def.waitingOn ? def.waitingOn(content0, api) : waitingFromLocks(s.locks, me.uid, partner.uid);
+    } catch { waiting = null; }
+  }
+  useEffect(() => {
+    if (!moves || !s.ready || !def || !partner.uid) return;
+    const changes = moveChanges(moves, dropId, me.uid, partner.uid, waiting);
+    if (changes.length) setDropMoves(roomId, dropId, changes).catch(() => { /* retried on the next change */ });
+  }, [moves, s, waiting, partner.uid]);
+
   if (!s.drop) {
     return <section class="drop" aria-busy="true"><div class="drop-sub">Loading Drop…</div></section>;
   }
@@ -66,7 +85,7 @@ export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }:
 
   return (
     <section class="drop" aria-label={title}>
-      <Head title={title} sub={def.subtitle(content)} from={createdBy} />
+      <Head title={title} sub={def.subtitle(content)} from={createdBy} yourMove={waiting === 'me'} />
       <Renderer content={content} api={api} />
       <div class="drop-foot">
         {pinned
@@ -77,12 +96,12 @@ export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }:
   );
 }
 
-function Head({ title, sub, from }: { title: string; sub: string; from: Person }) {
+function Head({ title, sub, from, yourMove }: { title: string; sub: string; from: Person; yourMove?: boolean }) {
   return (
     <div class="drop-head">
       <div class="drop-icon"><DropIcon /></div>
       <div class="drop-titles">
-        <div class="drop-title">{title}</div>
+        <div class="drop-title">{title}{yourMove && <span class="move-chip">Your move</span>}</div>
         <div class="drop-sub">{sub} · dropped by {from.isMe ? 'you' : from.name}</div>
       </div>
     </div>

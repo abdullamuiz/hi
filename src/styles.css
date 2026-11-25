@@ -1405,3 +1405,17 @@ div.tod-card { opacity: .55; }
 .install-banner span { flex: 1; min-width: 0; }
 .install-banner .btn-primary.small { height: 34px; padding: 0 14px; font-size: 14px; width: auto; flex-shrink: 0; }
 .install-steps { padding: 0 2px 8px; }
+
+/* ---------------------------------------------------------------- your move / thread dot */
+.chat-sub-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chat-sub-row .chat-sub { flex: 1 1 auto; min-width: 0; }
+.move-chip {
+  flex-shrink: 0; display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 18px; white-space: nowrap; vertical-align: 2px;
+  background: var(--them); color: var(--on-them);
+}
+.chat-sub-row .move-chip { margin-left: 0; }
+.row-thread { flex-shrink: 0; font-size: 13px; line-height: 1; }
+.invite-card.flash { animation: invite-flash 1.6s ease-out 2; }
+@keyframes invite-flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 4px var(--them); } }
+@media (prefers-reduced-motion: reduce) { .invite-card.flash { animation: none; box-shadow: 0 0 0 3px var(--them); } }

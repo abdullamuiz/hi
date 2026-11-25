@@ -113,6 +113,12 @@ export interface DropDefinition<C extends Record<string, unknown> = Record<strin
    * a timestamp). Return an error message to stop, or the content to store.
    */
   prepare?(content: C): C | string;
+  /**
+   * Whose move it is, for the "Your move" chip on the chat list. Leave it out for
+   * hidden-answer Drops: by default the partner locked a key I haven't → 'me', and the
+   * other way round → 'partner'. Return null when nobody needs to act.
+   */
+  waitingOn?(content: C, api: DropApi): 'me' | 'partner' | null;
   Renderer: ComponentType<DropRendererProps<C>>;
 }
 

@@ -22,6 +22,12 @@ export default defineDrop<Content>({
     return { ...c, openAtMs: at };
   },
   subtitle: (c) => `Opens ${new Date(c.openAtMs).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`,
+  // Nothing to do until it can be opened; then whoever hasn't opened it is up.
+  waitingOn(c, api) {
+    if (Date.now() < c.openAtMs) return null;
+    const a = api.iLocked(K), b = api.theyLocked(K);
+    return b && !a ? 'me' : a && !b ? 'partner' : null;
+  },
   pinTitle: () => 'Time Capsule',
   pinDetail(c, api) {
     if (api.createdBy.isMe && !api.partner.uid && Date.now() < c.openAtMs) return `Opens ${new Date(c.openAtMs).toLocaleDateString()}`;

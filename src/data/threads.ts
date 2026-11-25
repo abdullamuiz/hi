@@ -41,6 +41,8 @@ export async function sendReply(roomId: string, root: Message, uid: string, raw:
     new FieldPath('thread', 'lastAt'), serverTimestamp(),
     new FieldPath('thread', 'lastBy'), uid,
     new FieldPath('thread', 'lastId'), ref.id);
+  // For the chat list's 💬 dot (no listener per thread needed).
+  b.update(doc(db, 'rooms', roomId), { lastThreadReplyAt: serverTimestamp(), lastThreadReplyBy: uid });
   await b.commit();
 }
 

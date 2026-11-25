@@ -1,5 +1,5 @@
 import {
-  collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, writeBatch, query, serverTimestamp,
+  collection, deleteDoc, deleteField, doc, FieldPath, getDoc, onSnapshot, writeBatch, query, serverTimestamp,
   setDoc, Timestamp, updateDoc, where, arrayUnion,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -22,6 +22,9 @@ function toRoom(id: string, d: any): Room {
     streak: d.streak && typeof d.streak === 'object' && (d.streak.state === 'proposed' || d.streak.state === 'on') ? d.streak : null,
     pinned: Array.isArray(d.pinned) ? d.pinned.filter((p: any) => p && typeof p.msgId === 'string').slice(0, 3) : [],
     self: d.self === true,
+    moves: d.moves && typeof d.moves === 'object' ? d.moves : {},
+    lastThreadReplyAt: d.lastThreadReplyAt || null,
+    lastThreadReplyBy: typeof d.lastThreadReplyBy === 'string' ? d.lastThreadReplyBy : null,
   };
 }
 
@@ -229,3 +232,11 @@ export const heartbeat = (roomId: string, uid: string) =>
 
 export const setTyping = (roomId: string, uid: string, tabId: string, typing: boolean) =>
   setDoc(memberRef(roomId, uid), { uid, typingTab: tabId, typingUntil: typing ? Timestamp.fromMillis(Date.now() + 6000) : null }, { merge: true });
+
+/** Sets or clears "Your move" flags for one Drop: room.moves[uid][dropId]. */
+export function setDropMoves(roomId: string, dropId: string, changes: Array<[string, boolean]>) {
+  if (!changes.length) return Promise.resolve();
+  const args: unknown[] = [];
+  for (const [uid, on] of changes) args.push(new FieldPath('moves', uid, dropId), on ? true : deleteField());
+  return (updateDoc as any)(doc(db, 'rooms', roomId), ...args) as Promise<void>;
+}

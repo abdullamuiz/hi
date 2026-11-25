@@ -20,10 +20,12 @@ export interface DropState {
   mine: Record<string, Sealed>;
   /** The partner's sealed answers, by key — only keys both of us have locked. */
   theirs: Record<string, Sealed>;
+  /** Every listener has delivered its first snapshot (safe to work out whose move it is). */
+  ready: boolean;
 }
 
 export const emptyDropState = (): DropState => ({
-  drop: null, locks: new Set(), entries: [], progress: {}, mine: {}, theirs: {},
+  drop: null, locks: new Set(), entries: [], progress: {}, mine: {}, theirs: {}, ready: false,
 });
 
 const dropRef = (roomId: string, dropId: string) => doc(db, 'rooms', roomId, 'drops', dropId);
@@ -37,6 +39,8 @@ export function watchDrop(
 ): () => void {
   let state = emptyDropState();
   const fetching = new Set<string>();
+  const seen = new Set<string>();
+  const first = (name: string) => { seen.add(name); if (seen.size === 5) state = { ...state, ready: true }; };
   const emit = () => cb({ ...state });
   const base = dropRef(roomId, dropId);
 
@@ -73,28 +77,33 @@ export function watchDrop(
   const unsubs = [
     onSnapshot(base, (s) => {
       state = { ...state, drop: s.exists() ? ({ id: s.id, ...(s.data({ serverTimestamps: 'estimate' }) as any) }) : null };
+      first('drop');
       emit();
     }),
     onSnapshot(collection(base, 'locks'), { includeMetadataChanges: true }, (s) => {
       locksPending = s.metadata.hasPendingWrites;
       state = { ...state, locks: new Set(s.docs.map((d) => d.id)) };
+      first('locks');
       emit();
       maybeReveal();
     }),
     onSnapshot(query(collection(base, 'entries'), orderBy('createdAt')), (s) => {
       state = { ...state, entries: s.docs.map((d) => ({ id: d.id, ...(d.data({ serverTimestamps: 'estimate' }) as any) })) };
+      first('entries');
       emit();
     }),
     onSnapshot(collection(base, 'users'), (s) => {
       const progress: DropState['progress'] = {};
       s.docs.forEach((d) => { progress[d.id] = d.data(); });
       state = { ...state, progress };
+      first('users');
       emit();
     }),
     onSnapshot(query(collection(base, 'sealed'), where('uid', '==', me)), (s) => {
       const mine: DropState['mine'] = {};
       s.docs.forEach((d) => { const x = d.data() as Sealed; mine[x.key] = x; });
       state = { ...state, mine };
+      first('mine');
       emit();
     }),
   ];

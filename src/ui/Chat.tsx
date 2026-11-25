@@ -888,6 +888,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 pinned={pinnedDrops.has(dropId)}
                 onPin={(title, detail) => pin({ title, detail, dropId, kind: 'drop' })}
                 onType={(type) => setDropTypes((t) => (t[dropId] === type ? t : { ...t, [dropId]: type }))}
+                moves={room.left || room.self ? undefined : room.moves}
               />
             );
           }

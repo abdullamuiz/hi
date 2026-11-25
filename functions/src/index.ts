@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { setGlobalOptions } from 'firebase-functions/v2';
-import { onDocumentCreated, onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentDeleted, onDocumentUpdated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
@@ -12,6 +13,7 @@ import { fetchPreview } from './og.js';
 import { notificationBody, openUrl, threadBody } from './notify.js';
 import { filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
+import { sendInvitePushes } from './invites.js';
 import { dayKeyIn, due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
 
 initializeApp();
@@ -59,6 +61,30 @@ async function pushTo(uid: string, data: Record<string, string>) {
   await Promise.all(dead.map(({ t }) => db.doc(`users/${uid}/tokens/${t}`).delete()));
   logger.info('push sent', { success: res.successCount, removed: dead.length });
 }
+
+/**
+ * Someone was invited by e-mail and already has an account: tell them ("Alice invited you
+ * to chat on Hi"). The sender's app is unchanged, so it learns nothing about whether the
+ * address has an account. Sent once per chat and address (server-only invitePushes/).
+ */
+export const notifyInvite = onDocumentWritten('rooms/{roomId}', async (event) => {
+  const before = event.data?.before?.data();
+  const after = event.data?.after?.data();
+  if (!after) return;
+  const db = getFirestore();
+  await sendInvitePushes(event.params.roomId, before, after, {
+    lookup: async (email) => {
+      try { return (await getAuth().getUserByEmail(email)).uid; } catch { return null; }
+    },
+    blocked: async (uid, owner) => (await db.doc(`users/${uid}/blocked/${owner}`).get()).exists,
+    claim: async (key) => {
+      // Hashed, so no e-mail address is stored.
+      const id = createHash('sha256').update(key).digest('hex').slice(0, 40);
+      try { await db.doc(`invitePushes/${id}`).create({ at: FieldValue.serverTimestamp() }); return true; } catch { return false; }
+    },
+    push: (uid, data) => pushTo(uid, data),
+  });
+});
 
 /** Push for a new message (see notifyMembers). */
 export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
