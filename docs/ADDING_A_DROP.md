@@ -64,9 +64,16 @@ Rules of thumb:
 - Keep `content` small and JSON-only. It's copied into Firestore when the Drop is created, so later edits to
   your defaults don't change Drops that already exist. `withDefaults` fills in fields you add later.
 
+## Extras
+
+- **Setup field kinds:** `text`, `lines` (one item per line) and `date` (a date picker, stored as `"YYYY-MM-DD"`).
+- **`prepare(content)`** runs when the sender taps *Drop it*: return an error message to stop, or the content to store (e.g. Countdown turns the date into `atMs`).
+- **`hidden: true`** keeps a Drop out of the tray (Today's question is dropped by the app itself).
+- Pure helpers shared by Drops live in `src/drops/logic.ts` (unit-tested) and small UI parts in `src/drops/parts.tsx` (`Options`, `RevealPair`). Only `*.drop.tsx` files are registered.
+
 ## Styling
 
-Reuse the classes in `src/styles.css` so new Drops match the rest of the app: `.stack`, `.q`, `.note`, `.field`,
+Reuse the classes in `src/styles.css` so new Drops match the rest of the app: `.stack`, `.q`, `.note`, `.field`, `.opt-list` / `.opt`,
 `.btn-primary`, `.btn-ghost`, `.reveal-grid` / `.reveal-card.me|.them`, `.track` / `.mark.me|.them`, `.story`.
 Colours: you = `var(--me)` (#2F5BEA), partner = `var(--them)` (#F2A15F), ink = `var(--ink)`.
 

@@ -76,6 +76,9 @@ interface ActionProps {
   onReact(code: ReactionCode): void;
   onPhrase?(): void;
   onReply(): void;
+  /** Start or open the side thread under this message. */
+  onThread?(): void;
+  threadLabel?: string;
   onCopy(): void;
   onPin(): void;
   onEdit(): void;
@@ -101,6 +104,7 @@ export function ActionSheet(p: ActionProps) {
       )}
       <div class="act-list">
         {alive && <ActBtn label="Reply" onClick={p.onReply} />}
+        {alive && p.onThread && <ActBtn label={p.threadLabel || 'Start a thread'} hint="A side chat about this message" onClick={p.onThread} />}
         {alive && p.onPhrase && <ActBtn label="Phrase react" hint="React to a few words" onClick={p.onPhrase} />}
         {alive && p.canCopy && <ActBtn label="Copy" onClick={p.onCopy} />}
         {alive && p.canPin && <ActBtn label={p.pinned ? 'Pinned' : 'Pin'} disabled={p.pinned} onClick={p.onPin} />}

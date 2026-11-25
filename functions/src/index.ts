@@ -9,7 +9,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { fetchPreview } from './og.js';
-import { notificationBody, openUrl } from './notify.js';
+import { notificationBody, openUrl, threadBody } from './notify.js';
 import { filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
 import { due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
@@ -60,16 +60,33 @@ async function pushTo(uid: string, data: Record<string, string>) {
   logger.info('push sent', { success: res.successCount, removed: dead.length });
 }
 
-/**
- * Sends a Web Push to the other member's devices. Skipped for a muted chat. During the
- * recipient's quiet hours it's held and summed up later, unless the sender marked it
- * Urgent (three a day).
- */
+/** Push for a new message (see notifyMembers). */
 export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   const msg = event.data?.data();
   // Setting changes ("… turned on disappearing messages") don't buzz anyone's phone.
   if (!msg || msg.kind === 'system') return;
   const { roomId, tabId } = event.params;
+  let dropType: string | undefined;
+  if (msg.kind === 'drop' && msg.dropId) {
+    dropType = (await getFirestore().doc(`rooms/${roomId}/drops/${msg.dropId}`).get()).data()?.type;
+  }
+  await notifyMembers(roomId, tabId, msg, notificationBody({ ...msg, dropType }));
+});
+
+/** A reply in a thread: same rules as a message (mute, quiet hours), its own text. */
+export const notifyThreadReply = onDocumentCreated(`${MESSAGE}/replies/{replyId}`, async (event) => {
+  const reply = event.data?.data();
+  if (!reply) return;
+  const { roomId, tabId } = event.params;
+  await notifyMembers(roomId, tabId, reply, threadBody(String(reply.text || '')));
+});
+
+/**
+ * Sends a Web Push to the other member's devices. Skipped for a muted chat. During the
+ * recipient's quiet hours it's held and summed up later, unless the sender marked it
+ * Urgent (three a day).
+ */
+async function notifyMembers(roomId: string, tabId: string, msg: Record<string, any>, body: string) {
   const db = getFirestore();
   const room = (await db.doc(`rooms/${roomId}`).get()).data();
   const recipients: string[] = (room?.members || []).filter((u: string) => u !== msg.uid);
@@ -80,11 +97,6 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   // Name the tab unless it's General, e.g. "Sam · Trip plans".
   const tabName = tabId === 'general' ? '' : String((await db.doc(`rooms/${roomId}/tabs/${tabId}`).get()).data()?.name || '');
   const title = tabName ? `${first} · ${tabName}` : first;
-  let dropType: string | undefined;
-  if (msg.kind === 'drop' && msg.dropId) {
-    dropType = (await db.doc(`rooms/${roomId}/drops/${msg.dropId}`).get()).data()?.type;
-  }
-  const body = notificationBody({ ...msg, dropType });
   const now = Date.now();
 
   for (const uid of recipients) {
@@ -113,7 +125,7 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
       body, tag: `room-${roomId}-${tabId}`, url: openUrl(roomId, tabId), room: roomId, tab: tabId,
     });
   }
-});
+}
 
 /**
  * Every minute: sends scheduled messages that are due, and the one-line summary of

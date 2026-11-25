@@ -123,6 +123,8 @@ export interface Message {
   urgent?: boolean;
   /** A screen or bubble effect (SPEC §4), from the list in src/lib/effects.ts. */
   effect?: import('./lib/effects').EffectCode;
+  /** Thread tile: the side discussion under this message. */
+  thread?: { count: number; lastAt: Timestamp | null; lastBy: string; lastId: string };
   /** Client-only: still waiting to reach the server. */
   pending?: boolean;
 }

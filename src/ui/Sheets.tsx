@@ -63,13 +63,18 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
         const lines = raw.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, f.max ?? 20);
         if (lines.length < (f.min ?? 1)) { setErr(`${f.label}: add at least ${f.min ?? 1}.`); return; }
         content[f.key] = lines.map((s) => s.slice(0, 80));
+      } else if (f.kind === 'date') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) { setErr(`${f.label}: pick a date.`); return; }
+        content[f.key] = raw;
       } else {
         const t = raw.trim().slice(0, f.maxLength ?? 200);
         if (!t) { setErr(`${f.label} can't be empty.`); return; }
         content[f.key] = t;
       }
     }
-    onDrop(content);
+    const ready = def.prepare ? def.prepare(content as any) : content;
+    if (typeof ready === 'string') { setErr(ready); return; }
+    onDrop(ready);
   };
 
   return (
@@ -84,7 +89,9 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
           <label class="field-label" for={`setup-${f.key}`}>{f.label}</label>
           {f.kind === 'lines'
             ? <textarea id={`setup-${f.key}`} class="field" rows={4} value={vals[f.key]} placeholder={f.placeholder} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />
-            : <input id={`setup-${f.key}`} class="field" value={vals[f.key]} placeholder={f.placeholder} maxLength={f.maxLength} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />}
+            : f.kind === 'date'
+              ? <input id={`setup-${f.key}`} class="field" type="date" value={vals[f.key]} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />
+              : <input id={`setup-${f.key}`} class="field" value={vals[f.key]} placeholder={f.placeholder} maxLength={f.maxLength} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />}
         </div>
       ))}
       <div style={{ display: 'flex', gap: '10px' }}>

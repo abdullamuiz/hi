@@ -34,6 +34,10 @@ import { Avatar, ContactSheet, DeleteAccountSheet, ProfileForm, useProfile } fro
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
 import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab } from '../types';
 import { DropCard } from './DropCard';
+import { ThreadTile, ThreadView } from './Thread';
+import { DailyBanner } from './Daily';
+import { ensureDailyQuestion } from '../data/daily';
+import { dayKey } from '../drops/logic';
 import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
 import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
@@ -119,6 +123,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewer, setViewer] = useState<string | null>(null);
+  const [thread, setThread] = useState<string | null>(null);
   const [toast, setToastState] = useState<Toast | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
@@ -269,6 +274,21 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
 
   // A brand-new room's tab may still be being created; messages need it to exist.
   const tabReady = tabs.some((t) => t.id === activeTab);
+  const dailyOn = !!partnerUid && !left && prefs?.dailyQuestion !== false;
+  const generalReady = tabs.some((t) => t.id === GENERAL);
+  // Today's question: whichever of us opens the chat first drops it (once a day).
+  useEffect(() => {
+    if (!dailyOn || !generalReady) return;
+    const key = `hi.daily.${room.id}`;
+    const today = dayKey();
+    try {
+      // hi.daily.off: a per-device switch (the end-to-end test keeps it off until it tests it).
+      if (localStorage.getItem(key) === today || localStorage.getItem('hi.daily.off') === '1') return;
+    } catch { /* ignore */ }
+    ensureDailyQuestion(room.id, user.uid)
+      .then((id) => { if (id) { try { localStorage.setItem(key, today); } catch { /* ignore */ } } })
+      .catch(() => {});
+  }, [dailyOn, generalReady, room.id]);
   const notReady = () => { flash('One moment — setting up your room…'); };
 
   // If you hit send before a brand-new tab has loaded, keep the message and send it
@@ -604,6 +624,9 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         </>}
         tabName={currentTab && currentTab.id !== GENERAL ? currentTab.name : ''}
         banner={<>
+          {activeTab === GENERAL && dailyOn && (
+            <DailyBanner roomId={room.id} me={user.uid} partner={partnerUid} partnerName={partner.name} onOpen={jumpTo} />
+          )}
           {left && (
             <div class="sys-card" role="status">
               <span>{room.left === user.uid ? 'You left this chat.' : `${partner.name} left this chat. You can read it, but you can’t send messages here any more.`}</span>
@@ -712,6 +735,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               {body}
               {m.effect && !m.deleted && <EffectTag effect={m.effect} motion={motion} onReplay={() => playFx(m)} />}
               <ReactionChips msg={m} me={user.uid} onToggle={(code, on) => react(m, code, on)} />
+              <ThreadTile msg={m} me={user.uid} nameOf={nameOf} onOpen={() => setThread(m.id)} />
               {mine && m.kind !== 'text' && !m.deleted && ticks.byId[m.id] && (
                 <span class="msg-meta"><StatusMark status={ticks.byId[m.id]} showRead={false} /></span>
               )}
@@ -791,6 +815,10 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
       </footer>
       </>)}
 
+      {thread && byId(thread) && (
+        <ThreadView roomId={room.id} root={byId(thread)!} me={user.uid} nameOf={nameOf} readOnly={left}
+          onToast={flash} onClose={() => setThread(null)} />
+      )}
       {viewer && photos.some((p) => p.id === viewer) && (
         <PhotoViewer
           photos={photos}
@@ -806,7 +834,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         <div class="sheet-wrap">
           <button type="button" class="scrim" onClick={() => setSheet(null)} aria-label="Close" />
           <div class="sheet" role="dialog" aria-modal="true">
-            {sheet.kind === 'tray' && <TraySheet drops={drops} onPick={(d) => startDrop(d)} />}
+            {sheet.kind === 'tray' && <TraySheet drops={drops.filter((d) => !d.hidden)} onPick={(d) => startDrop(d)} />}
             {sheet.kind === 'setup' && (() => {
               const def = getDrop(sheet.type);
               return def ? <SetupSheet def={def} prefill={sheet.prefill} onDrop={(c) => dropIt(def, c)} onBack={() => setSheet({ kind: 'tray' })} /> : null;
@@ -885,6 +913,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                   onReact={(code) => { setSheet(null); react(m, code, !mineRx.includes(code)); }}
                   onPhrase={m.kind === 'text' && m.text.trim() ? () => setSheet({ kind: 'phrase', msgId: m.id }) : undefined}
                   onReply={() => startReply(m)}
+                  onThread={m.kind !== 'system' ? () => { setSheet(null); setThread(m.id); } : undefined}
+                  threadLabel={m.thread?.count ? 'Open thread' : 'Start a thread'}
                   onCopy={() => { setSheet(null); copyMsgs([m]); }}
                   onPin={() => { setSheet(null); pinMsgs([m]); }}
                   onEdit={() => startEdit(m)}
@@ -924,6 +954,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 pinCount={pins.length}
                 nickname={prefs?.nickname || ''}
                 muted={isMuted(prefs)}
+                daily={prefs?.dailyQuestion !== false}
+                onDaily={(on) => setContact(user.uid, partnerUid, { dailyQuestion: on }).then(() => flash(on ? 'Daily question on' : 'Daily question off')).catch((e) => flash(e.message))}
                 onNickname={(nickname) => setContact(user.uid, partnerUid, { nickname }).then(() => flash(nickname ? 'Nickname saved' : 'Nickname removed')).catch((e) => flash(e.message))}
                 onMute={(muted) => setContact(user.uid, partnerUid, muteFor(muted ? 'always' : 'off')).then(() => flash(muted ? 'Muted' : 'Unmuted')).catch((e) => flash(e.message))}
                 onRemove={async () => {

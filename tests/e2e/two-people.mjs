@@ -31,6 +31,8 @@ const shot = (page, name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
 async function person(email, startUrl = APP) {
   const ctx = await browser.newContext({ ...phone, permissions: ['clipboard-read', 'clipboard-write', 'microphone'] });
+  // Today's question stays off until its own step, so it doesn't shift the other checks.
+  await ctx.addInitScript(() => { if (localStorage.getItem('hi.daily.e2e') !== 'on') localStorage.setItem('hi.daily.off', '1'); });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => console.error(`[${email}] pageerror`, e.message));
   page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.error(`[${email}] console.${m.type()}`, m.text().slice(0, 300)); });
@@ -442,6 +444,60 @@ try {
   await alice.getByRole('region', { name: 'Tag-team Story' }).getByText('Then the radio crackled.').waitFor();
   await sB.getByText('alice is writing the next line…').waitFor();
 
+  step('The tray lists every Drop');
+  await alice.getByRole('button', { name: 'Add a Drop' }).click();
+  for (const t of ['Two Truths & a Lie', 'Predict Me', 'Rank It', 'Decision Wheel', 'Watch Party', 'Countdown', 'Poll', 'This or That', 'Time Capsule', 'Mood Check']) {
+    await alice.locator('.tray-item', { hasText: t }).waitFor();
+  }
+  assert.equal(await alice.locator('.tray-item', { hasText: 'Today’s question' }).count(), 0, 'the daily question isn’t in the tray');
+  await shot(alice, 'tray-all');
+
+  step('Poll: votes stay hidden until both have voted');
+  await alice.locator('.tray-item', { hasText: 'Poll' }).click();
+  await alice.getByRole('button', { name: 'Drop it' }).click();
+  const pA = alice.getByRole('region', { name: 'Poll' });
+  const pB = bob.getByRole('region', { name: 'Poll' });
+  await pB.waitFor();
+  await pB.getByRole('radio', { name: 'Beach' }).click();
+  await pB.getByRole('button', { name: 'Vote', exact: true }).click();
+  await pA.getByText('bob has voted · hidden').waitFor();
+  assert.equal(await pA.locator('.them-tag').count(), 0);
+  await pA.getByRole('radio', { name: 'City break' }).click();
+  await pA.getByRole('button', { name: 'Vote', exact: true }).click();
+  await pA.getByText('Split vote. Talk it out?').waitFor();
+  await pB.locator('.them-tag', { hasText: 'alice' }).waitFor();
+  await shot(alice, 'drop-poll');
+
+  step('Two Truths & a Lie: Bob marks the lie, Alice guesses');
+  await bob.getByRole('button', { name: 'Add a Drop' }).click();
+  await bob.locator('.tray-item', { hasText: 'Two Truths' }).click();
+  await bob.getByRole('button', { name: 'Drop it' }).click();
+  const tB = bob.getByRole('region', { name: 'Two Truths & a Lie' });
+  const tA = alice.getByRole('region', { name: 'Two Truths & a Lie' });
+  await tB.getByRole('radio', { name: 'I can juggle' }).click();
+  await tB.getByRole('button', { name: 'Lock the lie' }).click();
+  await tA.getByText('Two are true. Which one is the lie?').waitFor();
+  await tA.getByRole('radio', { name: 'I can juggle' }).click();
+  await tA.getByRole('button', { name: 'Lock my guess' }).click();
+  await tA.getByText('You spotted it!').waitFor();
+  await tB.getByText('alice spotted it. Too easy?').waitFor();
+
+  step('Decision Wheel: both add options, one spin, same result on both phones');
+  await alice.getByRole('button', { name: 'Add a Drop' }).click();
+  await alice.locator('.tray-item', { hasText: 'Decision Wheel' }).click();
+  await alice.getByRole('button', { name: 'Drop it' }).click();
+  const wA = alice.getByRole('region', { name: 'Decision Wheel' });
+  const wB = bob.getByRole('region', { name: 'Decision Wheel' });
+  await wA.getByLabel('Add an option').fill('Sushi');
+  await wA.getByRole('button', { name: 'Add', exact: true }).click();
+  await wB.getByText('Sushi').waitFor();
+  await wB.getByLabel('Add an option').fill('Tacos');
+  await wB.getByRole('button', { name: 'Add', exact: true }).click();
+  await wB.getByRole('button', { name: 'Spin the wheel' }).click();
+  await wA.getByText('The wheel chose').waitFor({ timeout: 15000 });
+  await wB.getByText('The wheel chose').waitFor({ timeout: 15000 });
+  assert.equal(await wA.locator('.gap-line b').textContent(), await wB.locator('.gap-line b').textContent());
+
   step('Pin to scrapbook shows for both');
   await bobCard.getByRole('button', { name: 'Pin to scrapbook' }).click();
   await alice.locator('.badge', { hasText: '1' }).waitFor();
@@ -451,6 +507,71 @@ try {
   await actionsOn(alice, 'Which part got you?');
   await alice.getByRole('button', { name: 'Pin', exact: true }).click();
   await bob.locator('.badge', { hasText: '2' }).waitFor();
+
+  step('Threads: Alice starts one under a message; Bob sees the tile with an unread dot and replies');
+  await actionsOn(alice, 'Which part got you?');
+  await alice.getByRole('button', { name: 'Start a thread' }).click();
+  await alice.getByRole('dialog', { name: 'Thread' }).waitFor();
+  await alice.getByText('No replies yet. Start the side chat.').waitFor();
+  await alice.getByLabel('Reply in thread').fill('The docking scene, obviously');
+  await alice.getByRole('button', { name: 'Send reply' }).click();
+  await alice.getByRole('dialog', { name: 'Thread' }).getByText('1 reply').waitFor();
+  await alice.getByRole('button', { name: 'Close thread' }).click();
+  await alice.getByRole('dialog', { name: 'Thread' }).waitFor({ state: 'detached' });
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  const tileB = bob.locator('.thread-tile');
+  await tileB.getByText('1 reply').waitFor();
+  assert.ok(await tileB.evaluate((el) => el.classList.contains('unread')), 'unread dot for Bob');
+  await tileB.scrollIntoViewIfNeeded();
+  await shot(bob, 'thread-tile');
+  await tileB.click();
+  const thB = bob.getByRole('dialog', { name: 'Thread' });
+  await thB.getByText('The docking scene, obviously').waitFor();
+  await thB.getByLabel('Reply in thread').fill('Agreed. And the waves.');
+  await thB.getByRole('button', { name: 'Send reply' }).click();
+  await thB.getByText('2 replies').waitFor();
+  await shot(bob, 'thread-view');
+  // The phone's back gesture closes the thread, not the chat.
+  await bob.goBack();
+  await thB.waitFor({ state: 'detached' });
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+  assert.equal(await tileB.evaluate((el) => el.classList.contains('unread')), false, 'read once opened');
+  await alice.locator('.thread-tile', { hasText: '2 replies' }).waitFor();
+  assert.ok(await alice.locator('.thread-tile').evaluate((el) => el.classList.contains('unread')), 'Bob’s reply is new for Alice');
+
+  step('Today’s question: dropped once, hidden answers, banner until both answer');
+  for (const p of [alice, bob]) {
+    await p.evaluate(() => { localStorage.setItem('hi.daily.e2e', 'on'); localStorage.removeItem('hi.daily.off'); });
+  }
+  for (const p of [alice, bob]) {
+    await p.reload();
+    await p.locator('#splash').waitFor({ state: 'detached', timeout: 15000 });
+    await p.getByRole('textbox', { name: 'Message' }).waitFor();
+    const general = p.getByRole('tab', { name: /^General/ });
+    if ((await general.getAttribute('aria-selected')) !== 'true') await general.click();
+  }
+  const dA = alice.getByRole('region', { name: 'Today’s question' });
+  const dB = bob.getByRole('region', { name: 'Today’s question' });
+  await alice.locator('.daily-banner').waitFor({ timeout: 20000 });
+  await bob.locator('.daily-banner').waitFor({ timeout: 20000 });
+  await dA.waitFor();
+  assert.equal(await alice.getByRole('region', { name: 'Today’s question' }).count(), 1, 'only one per day, even with both phones open');
+  await shot(alice, 'daily-banner');
+  await alice.locator('.daily-banner').click();
+  await dA.getByLabel('Your answer').fill('A good cup of tea');
+  await dA.getByRole('button', { name: 'Answer', exact: true }).click();
+  await bob.locator('.daily-banner', { hasText: 'alice answered · your turn' }).waitFor();
+  await dB.getByLabel('Your answer').fill('Your voice note');
+  await dB.getByRole('button', { name: 'Answer', exact: true }).click();
+  await dA.getByText('Your voice note').waitFor();
+  await dB.getByText('A good cup of tea').waitFor();
+  await alice.locator('.daily-banner').waitFor({ state: 'detached' });
+  await shot(bob, 'daily-revealed');
+  // Turned off in the contact profile (private to Alice).
+  await alice.locator('.hdr-who').click();
+  await alice.getByRole('switch', { name: /Daily question/ }).click();
+  await alice.getByText('Daily question off').waitFor();
+  await alice.keyboard.press('Escape');
 
   step('Mood weather');
   await alice.getByRole('button', { name: /Your mood weather/ }).click();

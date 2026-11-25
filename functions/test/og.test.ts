@@ -85,3 +85,18 @@ describe('notificationBody', () => {
     expect(notificationBody({ kind: 'text', text: 'LOUD', effect: 'shout' })).toBe('LOUD');
   });
 });
+
+describe('Drops and threads in push text', async () => {
+  const { DROP_TITLES, threadBody } = await import('../src/notify');
+  it('names every Drop in the app', async () => {
+    const fs = await import('node:fs');
+    const files = fs.readdirSync(new URL('../../src/drops/', import.meta.url)).filter((f: string) => f.endsWith('.drop.tsx'));
+    const types = files.map((f: string) => /type: '([a-z0-9-]+)'/.exec(fs.readFileSync(new URL(`../../src/drops/${f}`, import.meta.url), 'utf8'))![1]);
+    for (const t of types) expect(DROP_TITLES[t], t).toBeTruthy();
+    expect(notificationBody({ kind: 'drop', dropType: 'poll' })).toBe('Dropped a Poll — your move');
+  });
+  it('labels thread replies and keeps them short', () => {
+    expect(threadBody('see  you\nthere')).toBe('💬 In a thread: see you there');
+    expect(threadBody('x'.repeat(200)).length).toBeLessThan(140);
+  });
+});
