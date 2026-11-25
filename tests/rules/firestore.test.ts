@@ -1136,3 +1136,83 @@ describe('scrapbook: notes, board order and pinned messages', () => {
     await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM), { pinned: [] }));
   });
 });
+
+describe('Notes to self', () => {
+  const selfRoom = (owner: string, extra: Record<string, unknown> = {}) => ({
+    owner, ownerName: owner, members: [owner], invites: [], self: true, timezone: 'Indian/Maldives', createdAt: serverTimestamp(), ...extra,
+  });
+
+  it('only I can create rooms/self_{my uid}, and it carries no invite', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'rooms', 'self_alice'), selfRoom('alice')));
+    // Someone else's id, a random id, or an invite or share code: refused.
+    await assertFails(setDoc(doc(alice(), 'rooms', 'self_bob'), selfRoom('alice')));
+    await assertFails(setDoc(doc(alice(), 'rooms', 'notes'), selfRoom('alice')));
+    await assertFails(setDoc(doc(bob(), 'rooms', 'self_bob'), selfRoom('bob', { invites: ['eve@example.com'] })));
+    await assertFails(setDoc(doc(bob(), 'rooms', 'self_bob'), selfRoom('bob', { inviteCode: 'abcdefghijklmnopqrstu' })));
+    // No ordinary room may squat a self_ id.
+    await assertFails(setDoc(doc(eve(), 'rooms', 'self_bob'), {
+      owner: 'eve', ownerName: 'Eve', members: ['eve'], invites: [], timezone: 'Indian/Maldives', createdAt: serverTimestamp(),
+    }));
+  });
+
+  it('the room, its tab, my profile and the pointer are created in one write', async () => {
+    const db = alice();
+    const b = writeBatch(db);
+    b.set(doc(db, 'rooms', 'self_alice'), selfRoom('alice'));
+    b.set(doc(db, 'rooms', 'self_alice', 'members', 'alice'), { uid: 'alice', name: 'Alice', photoURL: null, lastSeen: serverTimestamp() });
+    b.set(doc(db, 'rooms', 'self_alice', 'tabs', 'general'), { ...tabDoc('alice', 'General'), createdAt: serverTimestamp() });
+    b.set(doc(db, 'users', 'alice'), { selfRoom: 'self_alice' }, { merge: true });
+    await assertSucceeds(b.commit());
+  });
+
+  it('nobody can join a self room, by e-mail or by code, and no invite can be added', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'rooms', 'self_alice'), { ...selfRoom('alice'), createdAt: new Date() });
+    });
+    await assertFails(updateDoc(doc(bob(), 'rooms', 'self_alice'), { members: ['alice', 'bob'] }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', 'self_alice'), { members: ['alice', 'bob'], invites: [], joinCode: 'abcdefghijklmnopqrstu' }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', 'self_alice'), { invites: ['bob@example.com'] }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', 'self_alice'), { inviteCode: 'abcdefghijklmnopqrstu' }));
+    // Even a crafted inviteCode slipped in with rules off can't be used.
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'rooms', 'self_alice'), { inviteCode: 'abcdefghijklmnopqrstu' });
+    });
+    await assertFails(updateDoc(doc(bob(), 'rooms', 'self_alice'), {
+      members: ['alice', 'bob'], invites: [], inviteCode: deleteField(), joinCode: 'abcdefghijklmnopqrstu',
+    }));
+  });
+
+  it('a chat nobody joined becomes Notes to self, only by its owner, only while alone', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'rooms', 'wait'), { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: ['bob@example.com'], inviteCode: 'abcdefghijklmnopqrstu', createdAt: new Date() });
+      await setDoc(doc(db, 'rooms', 'full'), { owner: 'alice', ownerName: 'Alice', members: ['alice', 'bob'], invites: [], createdAt: new Date() });
+    });
+    await assertFails(updateDoc(doc(bob(), 'rooms', 'full'), { self: true, invites: [] }));
+    await assertFails(updateDoc(doc(alice(), 'rooms', 'full'), { self: true, invites: [] }));
+    // The invite and the code must go in the same write.
+    await assertFails(updateDoc(doc(alice(), 'rooms', 'wait'), { self: true }));
+    const db = alice();
+    const b = writeBatch(db);
+    b.update(doc(db, 'rooms', 'wait'), { self: true, invites: [], inviteCode: deleteField() });
+    b.set(doc(db, 'users', 'alice'), { selfRoom: 'wait' }, { merge: true });
+    await assertSucceeds(b.commit());
+    // Afterwards the old share code is gone, and nobody can join.
+    await assertFails(updateDoc(doc(bob(), 'rooms', 'wait'), { members: ['alice', 'bob'], invites: [], joinCode: 'abcdefghijklmnopqrstu' }));
+  });
+
+  it('users/{uid}.selfRoom must point at my own self room', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'rooms', 'self_alice'), { ...selfRoom('alice'), createdAt: new Date() });
+      await setDoc(doc(db, 'rooms', 'self_bob'), { ...selfRoom('bob'), createdAt: new Date() });
+      await setDoc(doc(db, 'rooms', 'plain'), { owner: 'alice', ownerName: 'Alice', members: ['alice'], invites: [], createdAt: new Date() });
+    });
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice'), { selfRoom: 'self_alice' }, { merge: true }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice'), { selfRoom: 'self_bob' }, { merge: true }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice'), { selfRoom: 'plain' }, { merge: true }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice'), { selfRoom: 'nope' }, { merge: true }));
+    // Other settings still save without touching it.
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice'), { readReceipts: false }, { merge: true }));
+  });
+});
