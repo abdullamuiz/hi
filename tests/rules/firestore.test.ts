@@ -845,3 +845,91 @@ describe('effects (Phase 5)', () => {
     await assertSucceeds(updateDoc(ref, { deleted: true, text: '', effect: deleteField() }));
   });
 });
+
+describe('more Drops, daily question, threads (Phase 7)', () => {
+  const root = (db: Firestore) => doc(msgs(db), 'm1');
+  const reply = (db: Firestore, id: string) => doc(db, 'rooms', ROOM, 'tabs', 'general', 'messages', 'm1', 'replies', id);
+  async function seedRoot(extra: Record<string, unknown> = {}) {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'rooms', ROOM, 'tabs', 'general', 'messages', 'm1'), {
+      uid: 'alice', kind: 'text', text: 'Plans for Saturday?', createdAt: new Date(), ...extra,
+    }));
+  }
+  function replyBatch(db: Firestore, uid: string, id: string, count: number, text = 'Brunch?') {
+    const b = writeBatch(db);
+    b.set(reply(db, id), { uid, text, createdAt: serverTimestamp() });
+    b.update(root(db), { thread: { count, lastAt: serverTimestamp(), lastBy: uid, lastId: id } });
+    return b;
+  }
+
+  it('a thread reply is written together with the root’s count', async () => {
+    await seedRoom();
+    await seedRoot();
+    await assertSucceeds(replyBatch(bob(), 'bob', 'r1', 1).commit());
+    await assertSucceeds(replyBatch(alice(), 'alice', 'r2', 2).commit());
+    // Wrong count, a reply on its own, or a bump on its own are refused.
+    await assertFails(replyBatch(bob(), 'bob', 'r3', 5).commit());
+    await assertFails(setDoc(reply(bob(), 'r4'), { uid: 'bob', text: 'solo', createdAt: serverTimestamp() }));
+    await assertFails(updateDoc(root(bob()), { thread: { count: 3, lastAt: serverTimestamp(), lastBy: 'bob', lastId: 'r2' } }));
+    // Not as someone else, not by outsiders.
+    await assertFails(replyBatch(bob(), 'alice', 'r5', 3).commit());
+    await assertFails(replyBatch(eve(), 'eve', 'r6', 3).commit());
+    await assertFails(getDoc(reply(eve(), 'r1')));
+    await assertSucceeds(getDoc(reply(alice(), 'r1')));
+  });
+
+  it('thread replies: own reactions, delete for everyone by the sender only, none on a deleted message', async () => {
+    await seedRoom();
+    await seedRoot();
+    await assertSucceeds(replyBatch(bob(), 'bob', 'r1', 1).commit());
+    await assertSucceeds(updateDoc(reply(alice(), 'r1'), new FieldPath('reactions', 'heart'), arrayUnion('alice')));
+    await assertFails(updateDoc(reply(alice(), 'r1'), new FieldPath('reactions', 'heart'), arrayUnion('bob')));
+    await assertFails(updateDoc(reply(alice(), 'r1'), { deleted: true, text: '' }));
+    await assertFails(updateDoc(reply(bob(), 'r1'), { text: 'edited' }));
+    await assertSucceeds(updateDoc(reply(bob(), 'r1'), { deleted: true, text: '', reactions: deleteField() }));
+    await seedRoot({ deleted: true, text: '' });
+    await assertFails(replyBatch(bob(), 'bob', 'r2', 1).commit());
+  });
+
+  it('the daily question opt-out is a private contact setting', async () => {
+    const ref = doc(alice(), 'users', 'alice', 'contacts', 'bob');
+    await assertSucceeds(setDoc(ref, { dailyQuestion: false, updatedAt: serverTimestamp() }));
+    await assertFails(setDoc(ref, { dailyQuestion: 'no', updatedAt: serverTimestamp() }));
+  });
+
+  it('today’s question is created once, with a fixed id, by either member', async () => {
+    await seedRoom();
+    const make = (db: Firestore, uid: string) => {
+      const b = writeBatch(db);
+      b.set(doc(db, 'rooms', ROOM, 'drops', 'daily-20261125'), { type: 'daily-question', createdBy: uid, createdAt: serverTimestamp(), content: { question: 'Q?', day: '20261125' } });
+      b.set(doc(msgs(db), 'daily-20261125'), { uid, kind: 'drop', text: '', dropId: 'daily-20261125', createdAt: serverTimestamp() });
+      return b.commit();
+    };
+    await assertSucceeds(make(bob(), 'bob'));
+    // The second phone's attempt fails harmlessly: nobody can overwrite it.
+    await assertFails(make(alice(), 'alice'));
+    await assertFails(make(eve(), 'eve'));
+  });
+
+  it('a time capsule can’t be opened before its date', async () => {
+    await seedRoom();
+    const capsule = async (openAtMs: number) => env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'rooms', ROOM, 'drops', 'd1'), {
+      type: 'time-capsule', createdBy: 'alice', createdAt: new Date(), content: { openOn: '2099-01-01', openAtMs },
+    }));
+    await capsule(Date.now() + 86400000);
+    // The author seals the message any time; the other person can't answer yet.
+    await assertSucceeds(lockIn(alice(), 'alice', 'Happy birthday!', 'msg'));
+    await assertFails(lockIn(bob(), 'bob', 'opened', 'msg'));
+    await assertFails(setDoc(sealedRef(bob(), 'bob', 'msg'), { uid: 'bob', key: 'msg', value: 'x', locked: false, updatedAt: serverTimestamp() }));
+    await assertFails(getDoc(sealedRef(bob(), 'alice', 'msg')));
+    // On the day: open, then read it.
+    await capsule(Date.now() - 1000);
+    await assertSucceeds(lockIn(bob(), 'bob', 'opened', 'msg'));
+    await assertSucceeds(getDoc(sealedRef(bob(), 'alice', 'msg')));
+  });
+
+  it('a new time capsule needs its open time as a number', async () => {
+    await seedRoom();
+    await assertFails(setDoc(doc(alice(), 'rooms', ROOM, 'drops', 'tc'), { type: 'time-capsule', createdBy: 'alice', createdAt: serverTimestamp(), content: { openOn: '2099-01-01' } }));
+    await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'drops', 'tc'), { type: 'time-capsule', createdBy: 'alice', createdAt: serverTimestamp(), content: { openOn: '2099-01-01', openAtMs: 4070908800000 } }));
+  });
+});

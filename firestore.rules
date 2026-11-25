@@ -87,9 +87,10 @@ service cloud.firestore {
       match /contacts/{cid} {
         allow read, delete: if signedIn() && me() == uid;
         allow create, update: if signedIn() && me() == uid
-          && onlyKeys(['nickname', 'muted', 'mutedUntil', 'updatedAt'])
+          && onlyKeys(['nickname', 'muted', 'mutedUntil', 'dailyQuestion', 'updatedAt'])
           && str(incoming().get('nickname', ''), 0, 40)
           && incoming().get('muted', false) is bool
+          && incoming().get('dailyQuestion', true) is bool
           && (incoming().get('mutedUntil', null) == null || incoming().mutedUntil is timestamp)
           && incoming().updatedAt == request.time;
       }
@@ -539,9 +540,54 @@ service cloud.firestore {
             && validExpiry()
             && (validText() || validLink() || validPhoto() || validVoice() || validDrop() || validSystem());
           // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
+          // Thread tile: a new reply bumps the root's summary in the same write.
+          function replyPath(id) {
+            return /databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId)/messages/$(msgId)/replies/$(id);
+          }
+          function isThreadBump() {
+            let before = resource.data.get('thread', {'count': 0});
+            let t = incoming().thread;
+            return alive()
+              && resource.data.kind != 'system'
+              && changedKeys().hasOnly(['thread'])
+              && t is map
+              && t.keys().hasOnly(['count', 'lastAt', 'lastBy', 'lastId'])
+              && t.count == before.count + 1
+              && t.lastAt == request.time
+              && t.lastBy == me()
+              && t.lastId is string
+              && !exists(replyPath(t.lastId))
+              && existsAfter(replyPath(t.lastId));
+          }
+
           allow update: if isMember(roomId)
-            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase() || isPlayed() || isVoiceReact());
+            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase() || isPlayed() || isVoiceReact() || isThreadBump());
           allow delete: if false;
+
+          // A side discussion under one message (thread tiles). Text only, plus quick
+          // reactions and delete-for-everyone. A reply is created together with the
+          // root's thread bump, so the tile's count is always right.
+          match /replies/{replyId} {
+            function root() { return get(/databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId)/messages/$(msgId)).data; }
+            allow read: if isMember(roomId);
+            allow create: if isMember(roomId)
+              && roomData(roomId).get('left', null) == null
+              && onlyKeys(['uid', 'text', 'createdAt', 'expiresAt'])
+              && incoming().uid == me()
+              && str(incoming().text, 1, 4000)
+              && incoming().createdAt == request.time
+              && root().get('deleted', false) != true
+              && incoming().get('expiresAt', null) == root().get('expiresAt', null)
+              && getAfter(/databases/$(database)/documents/rooms/$(roomId)/tabs/$(tabId)/messages/$(msgId)).data.thread.lastId == replyId;
+            allow update: if isMember(roomId) && (
+              isReact()
+              || (mine() && alive()
+                  && changedKeys().hasOnly(['deleted', 'text', 'reactions'])
+                  && incoming().deleted == true && incoming().text == ''
+                  && !incoming().keys().hasAny(['reactions']))
+            );
+            allow delete: if false;
+          }
         }
       }
 
@@ -606,6 +652,7 @@ service cloud.firestore {
           && str(incoming().type, 1, 40)
           && incoming().type.matches('^[a-z0-9-]+$')
           && incoming().content is map
+          && (incoming().type != 'time-capsule' || incoming().content.get('openAtMs', null) is int)
           && incoming().createdAt == request.time;
         allow update, delete: if false;
 
@@ -631,12 +678,22 @@ service cloud.firestore {
           // Queries may only ever return the caller's own answers.
           allow list: if isMember(roomId) && resource.data.uid == me();
 
-          allow create: if isMember(roomId) && validSealed();
+          // Time Capsule: the other person can't answer (and so can't unlock the message)
+          // before the open date the author chose.
+          function capsuleOpen() {
+            let d = get(/databases/$(database)/documents/rooms/$(roomId)/drops/$(dropId)).data;
+            return d.type != 'time-capsule'
+              || d.createdBy == me()
+              || request.time.toMillis() >= d.content.get('openAtMs', 0);
+          }
+
+          allow create: if isMember(roomId) && validSealed() && capsuleOpen();
           // Editable until locked; frozen forever after.
           allow update: if isMember(roomId)
             && resource.data.uid == me()
             && resource.data.locked != true
-            && validSealed();
+            && validSealed()
+            && capsuleOpen();
           allow delete: if false;
         }
 
