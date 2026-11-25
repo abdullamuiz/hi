@@ -11,7 +11,9 @@ export interface Person {
 /** A field the sender fills in when dropping the card (pre-filled from `content`). */
 export type SetupField =
   | { key: string; label: string; kind: 'text'; placeholder?: string; maxLength?: number }
-  | { key: string; label: string; kind: 'lines'; placeholder?: string; min?: number; max?: number };
+  | { key: string; label: string; kind: 'lines'; placeholder?: string; min?: number; max?: number }
+  /** A calendar date, stored as "YYYY-MM-DD". */
+  | { key: string; label: string; kind: 'date' };
 
 /**
  * What a Drop renderer can see and do. Everything is scoped to the current
@@ -78,6 +80,13 @@ export interface DropDefinition<C extends Record<string, unknown> = Record<strin
   initialEntries?(content: C): string[];
   /** Tray order; lower comes first. */
   order?: number;
+  /** Not offered in the tray (e.g. the Daily question, which the app drops itself). */
+  hidden?: boolean;
+  /**
+   * Last chance to check or derive content before dropping (e.g. turn a date into
+   * a timestamp). Return an error message to stop, or the content to store.
+   */
+  prepare?(content: C): C | string;
   Renderer: ComponentType<DropRendererProps<C>>;
 }
 

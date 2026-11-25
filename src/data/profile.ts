@@ -24,6 +24,8 @@ export interface ContactPrefs {
   muted: boolean;
   /** Muted until this time (ms), e.g. 8 hours or a week. */
   mutedUntil: number | null;
+  /** The daily question in this chat (on unless I turned it off). */
+  dailyQuestion?: boolean;
 }
 
 export interface Blocked {
@@ -117,7 +119,7 @@ export function watchContacts(me: string, cb: (c: Record<string, ContactPrefs>) 
     s.docs.forEach((d) => {
       const x = d.data();
       const until = x.mutedUntil && typeof x.mutedUntil.toMillis === 'function' ? x.mutedUntil.toMillis() : null;
-      out[d.id] = { nickname: String(x.nickname || ''), muted: x.muted === true, mutedUntil: until };
+      out[d.id] = { nickname: String(x.nickname || ''), muted: x.muted === true, mutedUntil: until, dailyQuestion: x.dailyQuestion !== false };
     });
     cb(out);
   }, () => cb({}));

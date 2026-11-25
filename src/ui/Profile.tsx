@@ -205,6 +205,9 @@ interface ContactProps {
   pinCount: number;
   nickname: string;
   muted: boolean;
+  /** Today's question in this chat. */
+  daily?: boolean;
+  onDaily?(on: boolean): void;
   onNickname(nick: string): void;
   onMute(muted: boolean): void;
   onRemove(): void;
@@ -274,6 +277,12 @@ export function ContactSheet(p: ContactProps) {
           <button type="button" class="act-btn" role="switch" aria-checked={p.muted} onClick={() => p.onMute(!p.muted)}>
             {p.muted ? 'Unmute notifications' : 'Mute notifications'}
           </button>
+          {p.onDaily && (
+            <button type="button" class="act-btn" role="switch" aria-checked={!!p.daily} onClick={() => p.onDaily!(!p.daily)}>
+              <span>Daily question</span>
+              <span class="act-hint">{p.daily ? 'On · one gentle question a day' : 'Off'}</span>
+            </button>
+          )}
           <button type="button" class="act-btn danger" onClick={() => setStep('remove')}>Remove contact</button>
           <button type="button" class="act-btn danger" onClick={() => setStep('block')}>Block</button>
         </div>
