@@ -18,6 +18,7 @@ function toRoom(id: string, d: any): Room {
     inviteCode: typeof d.inviteCode === 'string' ? d.inviteCode : null,
     lastMessage: d.lastMessage && typeof d.lastMessage === 'object' ? d.lastMessage : null,
     left: typeof d.left === 'string' ? d.left : null,
+    streak: d.streak && typeof d.streak === 'object' && (d.streak.state === 'proposed' || d.streak.state === 'on') ? d.streak : null,
   };
 }
 

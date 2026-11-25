@@ -20,6 +20,25 @@ export interface Room {
   lastMessage: LastMessage | null;
   /** uid of the person who left (removed the contact). The chat is then read-only. */
   left: string | null;
+  /** Hot streak (opt-in): proposed by one, on once the other accepts. */
+  streak: RoomStreak | null;
+}
+
+/**
+ * room.streak. The count is worked out on the phones from rooms/{id}/days; `count`,
+ * `best` and `day` are just a cache for the chat list.
+ */
+export interface RoomStreak {
+  state: 'proposed' | 'on';
+  /** Who proposed it. */
+  by: string;
+  at: Timestamp | null;
+  /** When it was accepted: days are counted from then. */
+  since?: Timestamp | null;
+  count?: number;
+  best?: number;
+  /** Day key the cached count was worked out on. */
+  day?: string;
 }
 
 export interface LastMessage {

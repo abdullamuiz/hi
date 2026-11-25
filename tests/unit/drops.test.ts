@@ -9,7 +9,7 @@ describe('Drop registry', async () => {
   it('discovers every built-in Drop in tray order', () => {
     expect(drops.map((d) => d.type)).toEqual([
       'feeling-map', 'blind-reveal', 'gap-slider', 'tag-team-story', 'two-truths', 'predict-me', 'rank-it',
-      'decision-wheel', 'watch-party', 'countdown', 'poll', 'this-or-that', 'time-capsule', 'mood-check', 'daily-question',
+      'decision-wheel', 'watch-party', 'countdown', 'rewind', 'poll', 'this-or-that', 'time-capsule', 'mood-check', 'daily-question',
     ]);
     // The daily question is dropped by the app, not from the tray.
     expect(drops.filter((d) => d.hidden).map((d) => d.type)).toEqual(['daily-question']);
@@ -62,5 +62,17 @@ describe('Drop registry', async () => {
   it('seeds the story with its opening line', () => {
     const story = getDrop('tag-team-story')!;
     expect(story.initialEntries!({ opening: '  Once.  ', maxLines: 8 })).toEqual(['Once.']);
+  });
+});
+
+describe('Rewind Drop', async () => {
+  const { getDrop } = await import('../../src/drops/registry');
+  it('recaps last month early in a month, otherwise this month so far', () => {
+    const def = getDrop('rewind')!;
+    const c = def.prepare!({ ...def.content }) as any;
+    expect(c.to).toBeGreaterThan(c.from);
+    expect(c.label).toMatch(/^[A-Z][a-z]+( so far| \d{4})?$/);
+    expect(c.auto).toBe(false);
+    expect(def.pinDetail(c, {} as any)).toBe(`${c.label} recap`);
   });
 });

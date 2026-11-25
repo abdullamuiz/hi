@@ -10,6 +10,7 @@ export const DROP_TITLES: Record<string, string> = {
   'decision-wheel': 'a Decision Wheel',
   'watch-party': 'a Watch Party',
   'countdown': 'a Countdown',
+  'rewind': 'a Rewind',
   'poll': 'a Poll',
   'this-or-that': 'a This or That',
   'time-capsule': 'a Time Capsule',

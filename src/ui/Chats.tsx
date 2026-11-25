@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { FlameIcon, listStreak } from './Memories';
 import type { User } from 'firebase/auth';
 import { declineInvite, joinRoom, watchMembers } from '../data/rooms';
 import { sendNoteReply } from '../data/messages';
@@ -328,16 +329,18 @@ function ChatRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: RowPro
       : typing ? 'typing…' : last ? `${last.uid === me ? 'You: ' : ''}${last.text}` : 'Say hi';
   const mood = partner?.mood ? MOODS.find((m) => m.id === partner.mood) : undefined;
   const muted = isMuted(prefs);
+  const fire = room.left ? 0 : listStreak(room);
 
   return (
     <li class="chat-row">
       <button type="button" class="chat-open" onClick={onOpen}
-        aria-label={`${name}${mood ? `, mood ${mood.label}` : ''}${unread ? ', unread messages' : ''}${muted ? ', muted' : ''}. ${sub}`}>
+        aria-label={`${name}${mood ? `, mood ${mood.label}` : ''}${fire ? `, ${fire}-day streak` : ''}${unread ? ', unread messages' : ''}${muted ? ', muted' : ''}. ${sub}`}>
         {alone ? <span class="avatar" aria-hidden="true">+</span> : <Avatar profile={profile} fallbackPhoto={partner?.photoURL} name={name} />}
         <span class="chat-text" aria-hidden="true">
           <span class="chat-top">
             <span class="chat-name">{name}</span>
             {partner?.mood && !room.left && <MoodIcon mood={partner.mood} size={18} />}
+            {fire > 0 && <span class="row-streak"><FlameIcon size={13} />{fire}</span>}
             {muted && <span class="muted-mark" title={muteLabel(prefs)}>🔕</span>}
             <span class="chat-time">{timeLabel(lastMs)}</span>
           </span>

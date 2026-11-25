@@ -215,6 +215,13 @@ interface ContactProps {
   /** Photos, links, voice notes and Drops in this chat. */
   onMedia?(): void;
   onExport?(): void;
+  /** Hot streak state line ("On · 4 days", "Off"…); absent in a chat someone left. */
+  streak?: string;
+  onStreak?(): void;
+  onRewind?(): void;
+  /** On This Day cards and the monthly Rewind. */
+  memories?: boolean;
+  onMemories?(on: boolean): void;
 }
 
 /** Tap the header in a chat: who they are, plus nickname, mute, remove, block. */
@@ -272,7 +279,14 @@ export function ContactSheet(p: ContactProps) {
       ) : (
         <div class="contact-actions">
           {p.onMedia && <button type="button" class="act-btn" onClick={p.onMedia}>Photos, links &amp; voice</button>}
+          {p.onRewind && <button type="button" class="act-btn" onClick={p.onRewind}>Rewind</button>}
           {p.onExport && <button type="button" class="act-btn" onClick={p.onExport}>Export chat</button>}
+          {p.streak && p.onStreak && (
+            <button type="button" class="act-btn" onClick={p.onStreak}>
+              <span>Hot streak</span>
+              <span class="act-hint">{p.streak}</span>
+            </button>
+          )}
           <button type="button" class="act-btn" onClick={() => setStep('nick')}>{p.nickname ? 'Change nickname' : 'Nickname'}</button>
           <button type="button" class="act-btn" role="switch" aria-checked={p.muted} onClick={() => p.onMute(!p.muted)}>
             {p.muted ? 'Unmute notifications' : 'Mute notifications'}
@@ -281,6 +295,12 @@ export function ContactSheet(p: ContactProps) {
             <button type="button" class="act-btn" role="switch" aria-checked={!!p.daily} onClick={() => p.onDaily!(!p.daily)}>
               <span>Daily question</span>
               <span class="act-hint">{p.daily ? 'On · one gentle question a day' : 'Off'}</span>
+            </button>
+          )}
+          {p.onMemories && (
+            <button type="button" class="act-btn" role="switch" aria-checked={!!p.memories} onClick={() => p.onMemories!(!p.memories)}>
+              <span>Memories</span>
+              <span class="act-hint">{p.memories ? 'On · On this day and monthly Rewind' : 'Off'}</span>
             </button>
           )}
           <button type="button" class="act-btn danger" onClick={() => setStep('remove')}>Remove contact</button>

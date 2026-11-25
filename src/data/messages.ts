@@ -3,6 +3,7 @@ import {
   serverTimestamp, Timestamp, updateDoc, where, writeBatch, type WriteBatch,
 } from 'firebase/firestore';
 import { ttlOf } from './tabs';
+import { markActivity } from './memories';
 import { expiryFor, ttlLabel } from '../lib/disappear';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -45,6 +46,8 @@ function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, da
   b.set(doc(msgsCol(roomId, tabId), id), { ...data, ...(exp ? { expiresAt: Timestamp.fromMillis(exp) } : {}), createdAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId, 'tabs', tabId), { lastMessageAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId), { lastMessage: { id, uid: data.uid, tabId, text: preview.slice(0, 160), at: serverTimestamp() } });
+  // Today counts towards the streak and Rewind (system lines like "disappearing on" don't).
+  if (data.kind !== 'system') markActivity(b, roomId, String(data.uid));
 }
 
 export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null, opts: { urgent?: boolean; effect?: EffectCode | null } = {}) {

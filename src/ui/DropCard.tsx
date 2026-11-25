@@ -27,7 +27,7 @@ export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }:
   const api = useMemo<DropApi>(() => {
     const has = (uid: string, key: string) => s.locks.has(`${uid}_${key}`);
     return {
-      me, partner, createdBy,
+      roomId, me, partner, createdBy,
       mine: (key) => s.mine[key]?.value as any,
       theirs: (key) => s.theirs[key]?.value as any,
       iLocked: (key) => !!s.mine[key]?.locked || has(me.uid, key),

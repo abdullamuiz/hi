@@ -26,6 +26,8 @@ export interface ContactPrefs {
   mutedUntil: number | null;
   /** The daily question in this chat (on unless I turned it off). */
   dailyQuestion?: boolean;
+  /** On This Day cards and the monthly Rewind in this chat. */
+  memories?: boolean;
 }
 
 export interface Blocked {
@@ -119,7 +121,7 @@ export function watchContacts(me: string, cb: (c: Record<string, ContactPrefs>) 
     s.docs.forEach((d) => {
       const x = d.data();
       const until = x.mutedUntil && typeof x.mutedUntil.toMillis === 'function' ? x.mutedUntil.toMillis() : null;
-      out[d.id] = { nickname: String(x.nickname || ''), muted: x.muted === true, mutedUntil: until, dailyQuestion: x.dailyQuestion !== false };
+      out[d.id] = { nickname: String(x.nickname || ''), muted: x.muted === true, mutedUntil: until, dailyQuestion: x.dailyQuestion !== false, memories: x.memories !== false };
     });
     cb(out);
   }, () => cb({}));
