@@ -1209,6 +1209,107 @@ try {
   await rwBob.waitFor({ state: 'detached' });
   await bob.getByRole('textbox', { name: 'Message' }).waitFor();
 
+  step('Session: Mini Type Test — answer at your own pace, resume after a reload, reveal together');
+  // The four-question test is behind a developer switch; the real Type Test has 32 questions.
+  for (const p of [alice, bob]) {
+    await p.evaluate(() => localStorage.setItem('hi.sessions.dev', '1'));
+    const general = p.getByRole('tab', { name: /^General/ });
+    if ((await general.getAttribute('aria-selected')) !== 'true') await general.click();
+  }
+  await alice.getByRole('button', { name: 'Add a Drop' }).click();
+  await alice.locator('.session-item', { hasText: /^🧭 Type Test/ }).scrollIntoViewIfNeeded();
+  await alice.waitForTimeout(400);
+  await shot(alice, 'tray-sessions');
+  await alice.locator('.session-item', { hasText: 'Mini Type Test' }).click();
+  const sesA = () => alice.getByRole('dialog', { name: 'Mini Type Test' });
+  const sesB = () => bob.getByRole('dialog', { name: 'Mini Type Test' });
+  await sesA().getByText('4 quick questions', { exact: false }).waitFor();
+  await sesA().getByText('not a clinical or official assessment', { exact: false }).waitFor();
+  const cardB = bob.getByRole('region', { name: 'Mini Type Test' }).last();
+  await cardB.getByText('alice started a Mini Type Test').waitFor();
+  await sesA().getByRole('button', { name: 'Start' }).click();
+  await sesA().getByText('Question 1 of 4').waitFor();
+  await sesA().getByRole('radio', { name: 'Out with a group, the more the merrier' }).click();
+  await sesA().getByText('Question 2 of 4').waitFor();
+  await alice.waitForTimeout(500); // let the question fade in
+  await shot(alice, 'session-question');
+  await sesA().getByRole('radio', { name: 'Clear steps and real examples' }).click();
+  await sesA().getByText('Question 3 of 4').waitFor();
+  await cardB.getByText('alice 2/4').waitFor();
+  // Alice reloads mid-session: the card says Continue and she resumes at question 3.
+  await alice.reload();
+  await alice.locator('#splash').waitFor({ state: 'detached', timeout: 15000 });
+  const cardA = alice.getByRole('region', { name: 'Mini Type Test' }).last();
+  await cardA.getByText('You 2/4').waitFor({ timeout: 20000 });
+  await cardA.getByRole('button', { name: 'Continue' }).click();
+  await sesA().getByText('Question 3 of 4').waitFor();
+  // Going back shows the earlier answer still chosen.
+  await sesA().getByRole('button', { name: '← Previous question' }).click();
+  await sesA().getByRole('radio', { name: 'Clear steps and real examples', checked: true }).waitFor();
+  await sesA().getByRole('radio', { name: 'Clear steps and real examples' }).click();
+  await sesA().getByText('Question 3 of 4').waitFor();
+  // Bob joins while Alice is in it: he sees her progress and that she's there now.
+  await cardB.getByRole('button', { name: 'Join' }).click();
+  await sesB().getByRole('button', { name: 'Start' }).click();
+  await sesB().locator('.session-progress', { hasText: 'alice 2/4' }).waitFor();
+  await sesB().locator('.session-progress .here-dot').waitFor();
+  for (const [n, opt] of [[1, 'A quiet night in, maybe with one close friend'], [2, 'The big idea first, details later'], [3, 'Tell them what you love about it'], [4, 'Made up as you go']]) {
+    await sesB().getByText(`Question ${n} of 4`).waitFor();
+    await sesB().getByRole('radio', { name: opt }).click();
+  }
+  await sesB().getByText('All 4 answered').waitFor();
+  await sesB().getByRole('button', { name: 'Finish' }).click();
+  await sesB().getByText('Waiting for alice', { exact: false }).waitFor();
+  // Bob's answers stay hidden from Alice until she finishes too.
+  await sesA().locator('.session-progress', { hasText: 'Bobby 🐻 done' }).waitFor();
+  await sesA().getByRole('radio', { name: 'Point out what might go wrong' }).click();
+  await sesA().getByText('Question 4 of 4').waitFor();
+  await sesA().getByRole('radio', { name: 'Planned day by day' }).click();
+  await sesA().getByRole('button', { name: 'Finish' }).click();
+  // The reveal, step by step.
+  await sesA().locator('.type-card', { hasText: 'ESTJ' }).waitFor({ timeout: 20000 });
+  await sesA().locator('.type-card', { hasText: 'INFP' }).getByText('The Daydreamer').waitFor();
+  await sesB().locator('.type-card', { hasText: 'INFP' }).waitFor({ timeout: 20000 });
+  await alice.waitForTimeout(1200); // let the cards flip
+  await shot(alice, 'session-reveal-types');
+  await sesA().getByRole('button', { name: 'Next' }).click();
+  await sesA().getByRole('img', { name: /^Energy: you 100% Fills up with people, Bobby 🐻 0%/ }).waitFor();
+  await alice.waitForTimeout(600);
+  await shot(alice, 'session-reveal-scales');
+  await sesA().getByRole('button', { name: 'Next' }).click();
+  await sesA().getByText('Nowhere! You balance each other out.').waitFor();
+  assert.equal(await sesA().locator('.match-card.differ').count(), 4);
+  await sesA().getByRole('button', { name: 'Next' }).click();
+  assert.equal(await sesA().locator('.prompt-card').count(), 3);
+  await alice.waitForTimeout(600);
+  await shot(alice, 'session-reveal-prompts');
+  await sesA().getByRole('button', { name: 'Next' }).click();
+  await sesA().locator('.session-hero', { hasText: 'You ESTJ · Bobby 🐻 INFP' }).waitFor();
+  await alice.waitForTimeout(800);
+  await shot(alice, 'session-reveal-finish');
+  const [sesImg] = await Promise.all([
+    alice.waitForEvent('download', { timeout: 30_000 }),
+    sesA().getByRole('button', { name: 'Share as image' }).click(),
+  ]);
+  assert.equal(sesImg.suggestedFilename(), 'hi-mini-type.png');
+  await sesA().getByRole('button', { name: 'Pin result' }).click();
+  await alice.getByText('Pinned to scrapbook').waitFor();
+  await sesA().getByRole('button', { name: 'Talk about it' }).click();
+  await sesA().waitFor({ state: 'detached' });
+  assert.match(await alice.getByRole('textbox', { name: 'Message' }).inputValue(), /^We got ESTJ and INFP!/);
+  await alice.getByRole('textbox', { name: 'Message' }).fill('');
+  // The cards in the chat now show both results.
+  await cardA.locator('.session-codes', { hasText: 'ESTJ' }).waitFor();
+  await cardB.locator('.session-codes', { hasText: 'INFP' }).waitFor();
+  // Reopening goes back to the reveal step you were on; the back gesture closes it.
+  await cardA.getByRole('button', { name: 'See results' }).click();
+  await sesA().locator('.session-hero').waitFor();
+  await alice.goBack();
+  await sesA().waitFor({ state: 'detached' });
+  await bob.goBack();
+  await sesB().waitFor({ state: 'detached' });
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+
   // Every send above went through (the activity day rides in the same batch as each message).
   assert.equal(await alice.locator('.msg.failed').count(), 0, 'no unsent messages (alice)');
   assert.equal(await bob.locator('.msg.failed').count(), 0, 'no unsent messages (bob)');
