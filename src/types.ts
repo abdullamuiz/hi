@@ -22,6 +22,21 @@ export interface Room {
   left: string | null;
   /** Hot streak (opt-in): proposed by one, on once the other accepts. */
   streak: RoomStreak | null;
+  /** Up to 3 messages pinned to the top of the chat (oldest first). */
+  pinned: TopPin[];
+}
+
+/** room.pinned[]: a message pinned to the top of the chat. */
+export interface TopPin {
+  msgId: string;
+  tabId: string;
+  /** Who wrote the message (for its colour and name). */
+  uid: string;
+  /** Who pinned it. */
+  by: string;
+  /** Snippet (sealed/whisper text stays hidden). */
+  text: string;
+  at: Timestamp | null;
 }
 
 /**
@@ -210,14 +225,29 @@ export interface Entry {
   createdAt: Timestamp | null;
 }
 
-/** rooms/{roomId}/pins/{id} */
+/** rooms/{roomId}/pins/{id}: one scrap in the scrapbook. */
+export type ScrapKind = 'drop' | 'message' | 'photo' | 'note';
 export interface Pin {
   id: string;
+  /** Who pinned (or wrote the note). */
   by: string;
   title: string;
+  /** Snippet, or the note's text. */
   detail: string;
   dropId: string | null;
   messageId: string | null;
   tabId: string | null;
   createdAt: Timestamp | null;
+  /** Missing on older pins: worked out from dropId / messageId. */
+  kind?: ScrapKind;
+  /** Board position (higher = nearer the top). Older pins use their creation time. */
+  order?: number;
+  /** Sticky-note colour (notes). */
+  colour?: string;
+  /** Photo scraps: the Storage path (pinned photos are kept by any future media clean-up). */
+  photoPath?: string | null;
+  /** Message/photo scraps: who wrote it. */
+  senderId?: string | null;
+  editedBy?: string | null;
+  editedAt?: Timestamp | null;
 }

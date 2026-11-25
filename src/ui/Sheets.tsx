@@ -5,7 +5,7 @@ import type { SessionTest } from '../sessions/types';
 import type { PushStatus } from '../data/push';
 import { signOut } from '../data/auth';
 import { disablePush } from '../data/push';
-import type { MoodId, Pin } from '../types';
+import type { MoodId } from '../types';
 import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 import { buildLabel, reloadApp } from '../lib/updates';
@@ -238,27 +238,6 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = []
         )}
         <div class="fine">About: messages are protected by access rules but are not end-to-end encrypted.</div>
       </div>
-    </div>
-  );
-}
-
-export function ScrapSheet({ pins, nameOf, tabName }: { pins: Pin[]; nameOf(uid: string): string; tabName(id: string | null): string }) {
-  return (
-    <div class="stack">
-      <div>
-        <div class="sheet-title">Scrapbook</div>
-        <div class="sheet-sub">Moments you both pinned</div>
-      </div>
-      {pins.length === 0 && <div class="empty">Nothing pinned yet. Tap "Pin to scrapbook" on any Drop.</div>}
-      {pins.map((p) => (
-        <div class="scrap-item" key={p.id}>
-          <div class="scrap-title">{p.title}</div>
-          <div class="scrap-detail">{p.detail}</div>
-          <div class="fine">
-            {[tabName(p.tabId), p.createdAt ? p.createdAt.toDate().toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '', `pinned by ${nameOf(p.by)}`].filter(Boolean).join(' · ')}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

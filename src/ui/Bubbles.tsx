@@ -25,7 +25,7 @@ export function LinkCard({ msg, onFeel }: { msg: Message; onFeel?: () => void })
   );
 }
 
-function usePhoto(path: string) {
+export function usePhoto(path: string) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let live = true;

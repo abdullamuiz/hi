@@ -505,8 +505,135 @@ try {
 
   step('Pin a plain message');
   await actionsOn(alice, 'Which part got you?');
-  await alice.getByRole('button', { name: 'Pin', exact: true }).click();
+  await alice.locator('.sheet').getByRole('button', { name: 'Pin to scrapbook' }).click();
   await bob.locator('.badge', { hasText: '2' }).waitFor();
+
+  step('Scrapbook: full screen, a photo scrap, a note both can edit, the Drop as a pop-up, drag to reorder');
+  await actionsOn(alice, 'Cinema snacks were elite');
+  await alice.locator('.sheet').getByRole('button', { name: 'Pin to scrapbook' }).click();
+  await bob.locator('.badge', { hasText: '3' }).waitFor();
+  await alice.getByRole('button', { name: 'Open scrapbook' }).click();
+  const sbA = alice.getByRole('dialog', { name: 'Scrapbook' });
+  await sbA.locator('.scrap-photo img').waitFor();
+  await sbA.getByRole('button', { name: 'Note', exact: true }).click();
+  await alice.getByLabel('Note', { exact: true }).fill('Bring snacks for movie night');
+  await alice.getByRole('radio', { name: 'Colour #CFE6FF' }).click();
+  await shot(alice, 'scrapbook-note-editor');
+  await alice.getByRole('button', { name: 'Add note' }).click();
+  await sbA.getByRole('button', { name: 'Note: Bring snacks for movie night' }).waitFor();
+  // Bob edits Alice's note.
+  await bob.getByRole('button', { name: 'Open scrapbook' }).click();
+  const sbB = bob.getByRole('dialog', { name: 'Scrapbook' });
+  await sbB.getByRole('button', { name: 'Note: Bring snacks for movie night' }).click();
+  await bob.getByLabel('Note', { exact: true }).fill('Bring snacks AND drinks');
+  await bob.getByRole('button', { name: 'Save note' }).click();
+  await sbA.getByRole('button', { name: 'Note: Bring snacks AND drinks' }).waitFor();
+  await sbA.getByText('edited by bob').waitFor();
+  const scrapKinds = (page) => page.locator('[data-scrap]').evaluateAll((els) => els.map((e) => e.className.match(/kind-(note|photo|message|drop)/)[1]));
+  assert.deepEqual(await scrapKinds(alice), ['note', 'photo', 'message', 'drop'], 'newest on top');
+  await alice.waitForTimeout(300);
+  await shot(alice, 'scrapbook-board');
+  // Press and hold the Drop, drag it to the top.
+  {
+    const from = await sbA.locator('.scrap-drop').boundingBox();
+    const to = await sbA.locator('[data-scrap]').first().boundingBox();
+    await alice.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await alice.mouse.down();
+    await alice.waitForTimeout(550);
+    await alice.mouse.move(to.x + to.width * 0.2, to.y + to.height * 0.15, { steps: 10 });
+    await shot(alice, 'scrapbook-drag');
+    await alice.mouse.up();
+  }
+  await alice.waitForFunction(() => document.querySelector('[data-scrap]')?.classList.contains('kind-drop'));
+  await bob.waitForFunction(() => document.querySelector('[data-scrap]')?.classList.contains('kind-drop'));
+  assert.deepEqual(await scrapKinds(bob), ['drop', 'note', 'photo', 'message'], 'same order on both phones');
+  // Keyboard/menu: move the note later.
+  await sbB.locator('.kind-note').getByRole('button', { name: 'Scrap options' }).click();
+  await sbB.getByRole('button', { name: 'Move later' }).click();
+  await alice.waitForFunction(() => [...document.querySelectorAll('[data-scrap]')][2]?.classList.contains('kind-note'));
+  // A pinned Drop opens as a pop-up, still the real card.
+  await sbA.locator('.scrap-drop').click();
+  const popA = alice.getByRole('dialog', { name: 'Drop' });
+  await popA.getByRole('region', { name: 'Blind Reveal' }).waitFor();
+  await shot(alice, 'scrapbook-drop-popup');
+  await alice.keyboard.press('Escape');
+  await popA.waitFor({ state: 'detached' });
+  // A photo scrap opens the photo viewer; Escape closes only the viewer.
+  await sbA.locator('.scrap-photo').click();
+  await alice.locator('.viewer img').waitFor();
+  await alice.keyboard.press('Escape');
+  await alice.locator('.viewer').waitFor({ state: 'detached' });
+  assert.ok(await sbA.isVisible(), 'scrapbook stays open');
+  // A message scrap closes the scrapbook and jumps to the message.
+  await sbA.locator('.scrap-msg').click();
+  await sbA.waitFor({ state: 'detached' });
+  await alice.locator('.msg.flash', { hasText: 'Which part got you?' }).waitFor();
+  // Bob closes his with the back gesture.
+  await bob.goBack();
+  await sbB.waitFor({ state: 'detached' });
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+
+  step('Pin up to 3 messages to the top; a 4th asks what to do; the pinned bar jumps');
+  for (const n of ['one', 'two', 'three', 'four']) {
+    await alice.getByRole('textbox', { name: 'Message' }).fill(`Pin me ${n}`);
+    await alice.keyboard.press('Enter');
+    await bob.getByText(`Pin me ${n}`).waitFor();
+  }
+  for (const [i, n] of ['one', 'two', 'three'].entries()) {
+    await actionsOn(alice, `Pin me ${n}`);
+    await alice.getByRole('button', { name: 'Pin to top' }).click();
+    await bob.locator('.pinned-ticks span').nth(i).waitFor();
+  }
+  await bob.getByRole('region', { name: 'Pinned messages' }).getByText('Pinned · 1/3').waitFor();
+  await actionsOn(bob, 'Pin me four');
+  await bob.getByRole('button', { name: 'Pin to top' }).click();
+  await bob.getByText('Three messages are already pinned').waitFor();
+  await shot(bob, 'pin-full');
+  await bob.getByRole('button', { name: 'Move the oldest to Scrapbook' }).click();
+  await alice.locator('.badge', { hasText: '5' }).waitFor();
+  await alice.getByRole('region', { name: 'Pinned messages' }).getByText('Pin me two').waitFor();
+  // The oldest went to the scrapbook and Bob's message took its place: three again.
+  await alice.locator('.pinned-ticks span').nth(2).waitFor();
+  assert.equal(await alice.locator('.pinned-ticks span').count(), 3);
+  await alice.evaluate(() => document.querySelector('.feed').scrollTo(0, 0));
+  await alice.locator('.pinned-main').click();
+  await alice.locator('.msg.flash', { hasText: 'Pin me two' }).waitFor();
+  await alice.getByRole('region', { name: 'Pinned messages' }).getByText('Pinned · 2/3').waitFor();
+  await shot(alice, 'pinned-bar');
+  await alice.getByRole('button', { name: 'Pinned message options' }).click();
+  await alice.getByRole('button', { name: 'Unpin' }).click();
+  await bob.locator('.pinned-ticks span').nth(2).waitFor({ state: 'detached' });
+
+  step('Countdown banner: live time above the chat, opens the Drop, "It’s here" at zero');
+  {
+    const roomId = await alice.evaluate(() => localStorage.getItem('hi.room'));
+    const DB = `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents`;
+    const H = { Authorization: 'Bearer owner', 'Content-Type': 'application/json' };
+    const room = await (await fetch(`${DB}/rooms/${roomId}`, { headers: H })).json();
+    const res = await fetch(`${DB}/rooms/${roomId}/drops?documentId=cd-e2e`, {
+      method: 'POST', headers: H, body: JSON.stringify({ fields: {
+        type: { stringValue: 'countdown' }, createdBy: { stringValue: room.fields.owner.stringValue },
+        createdAt: { timestampValue: new Date().toISOString() },
+        content: { mapValue: { fields: { title: { stringValue: 'Movie night' }, date: { stringValue: '' }, atMs: { integerValue: String(Date.now() + 9000) } } } },
+      } }),
+    });
+    assert.equal(res.status, 200);
+  }
+  const cdA = alice.getByRole('region', { name: 'Upcoming countdown' });
+  await cdA.getByText('Movie night').waitFor();
+  {
+    const left = /^0m (\d\d)s$/.exec(await cdA.locator('.cd-time').textContent());
+    assert.ok(left && Number(left[1]) <= 10, 'about 9 s to go, worked out from the current time');
+  }
+  await shot(alice, 'countdown-banner');
+  await cdA.locator('.cd-main').click();
+  await alice.getByRole('dialog', { name: 'Countdown' }).getByRole('region', { name: 'Countdown' }).waitFor();
+  await alice.keyboard.press('Escape');
+  await alice.getByRole('dialog', { name: 'Countdown' }).waitFor({ state: 'detached' });
+  await cdA.getByText('It’s here! 🎉').waitFor({ timeout: 20_000 });
+  await bob.getByRole('region', { name: 'Upcoming countdown' }).getByText('It’s here! 🎉').waitFor();
+  await cdA.getByRole('button', { name: 'Dismiss countdown' }).click();
+  await cdA.waitFor({ state: 'detached' });
 
   step('Threads: Alice starts one under a message; Bob sees the tile with an unread dot and replies');
   await actionsOn(alice, 'Which part got you?');

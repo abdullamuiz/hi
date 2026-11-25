@@ -81,6 +81,9 @@ interface ActionProps {
   threadLabel?: string;
   onCopy(): void;
   onPin(): void;
+  /** Pin to the top of the chat (max 3). */
+  onPinTop?(): void;
+  pinnedTop?: boolean;
   onEdit(): void;
   onSelect(): void;
   onDelete(): void;
@@ -107,7 +110,10 @@ export function ActionSheet(p: ActionProps) {
         {alive && p.onThread && <ActBtn label={p.threadLabel || 'Start a thread'} hint="A side chat about this message" onClick={p.onThread} />}
         {alive && p.onPhrase && <ActBtn label="Phrase react" hint="React to a few words" onClick={p.onPhrase} />}
         {alive && p.canCopy && <ActBtn label="Copy" onClick={p.onCopy} />}
-        {alive && p.canPin && <ActBtn label={p.pinned ? 'Pinned' : 'Pin'} disabled={p.pinned} onClick={p.onPin} />}
+        {alive && p.onPinTop && (
+          <ActBtn label={p.pinnedTop ? 'Pinned to top' : 'Pin to top'} hint="Up to 3, kept above the chat" disabled={p.pinnedTop} onClick={p.onPinTop} />
+        )}
+        {alive && p.canPin && <ActBtn label={p.pinned ? 'In scrapbook' : 'Pin to scrapbook'} disabled={p.pinned} onClick={p.onPin} />}
         {p.canEdit && <ActBtn label="Edit" hint="Up to 15 minutes after sending" onClick={p.onEdit} />}
         <ActBtn label="Select" onClick={p.onSelect} />
         <ActBtn label="Delete" danger onClick={p.onDelete} />
