@@ -72,6 +72,26 @@ Rules of thumb:
 - **`solo: true`** marks a Drop that works with nobody else in the chat, so it's offered in **Notes to self** too (Countdown, Time Capsule, Decision Wheel). Leave it off for anything that needs the other person (hidden answers, guessing, comparing). `api.partner.uid` is empty in Notes to self, so a solo Drop can adjust its wording (see `time-capsule.drop.tsx`).
 - Pure helpers shared by Drops live in `src/drops/logic.ts` (unit-tested) and small UI parts in `src/drops/parts.tsx` (`Options`, `RevealPair`). Only `*.drop.tsx` files are registered.
 
+## Setup fields
+
+`setup` builds the form shown before dropping. Field kinds:
+
+- `text`: one line. Add `optional: true` to allow it empty, and `suggest: () => string` to show a 🎲 button that fills it (Truth or Dare uses its deck).
+- `lines`: one item per line (`min`, `max`).
+- `date`: a calendar date stored as `"YYYY-MM-DD"`.
+- `secret`: a private pick among other fields, e.g. `{ key: 'lie', label: 'Which one is the lie?', kind: 'secret', from: ['a', 'b', 'c'] }`. It isn't stored in `content`. The chosen index is **sealed and locked for the sender under `key` in the same write that creates the Drop**, so the other person can't read it until they lock the same key (Two Truths & a Lie).
+
+## Photos and fun moments
+
+- `api.uploadPhoto(file)` compresses and uploads a photo for the Drop and resolves to its Storage path. Store the path in progress, and show it with `api.photoUrl(path)` (Truth or Dare answers).
+- `api.dropId` is stable. Use it for "play once" keys.
+- `src/drops/fx.tsx` has the shared moments, all respecting Settings → Play effects and reduce-motion:
+  - `burst('stars' | 'flags' | 'chicken' | 'crown')`: a full-screen overlay.
+  - `confetti()`
+  - `buzz(ms)`: a short vibration.
+  - `useOnceWhen(condition, key, fn)`: run once per device.
+  - `useRevealBeat(revealed, key)` and `<HiddenCard>`: a 3-2-1 countdown, then a flip. `RevealPair` does this for you when given `beatKey`.
+
 ## Styling
 
 Reuse the classes in `src/styles.css` so new Drops match the rest of the app: `.stack`, `.q`, `.note`, `.field`, `.opt-list` / `.opt`,

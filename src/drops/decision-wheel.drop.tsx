@@ -134,7 +134,7 @@ function Wheel({ options, rot, tick, landed, winner, me }: {
                 <path d={`M${C},${C} L${x0},${y0} A${R},${R} 0 ${slice > Math.PI ? 1 : 0} 1 ${x1},${y1} Z`}
                   fill={SLICE_COLOURS[i % SLICE_COLOURS.length]} stroke="#fff" stroke-width="2" />
                 <text x={tx} y={ty} class={`wheel-label${o.uid === me ? ' me' : ''}`} text-anchor="middle" dominant-baseline="middle"
-                  transform={`rotate(${(mid * 180) / Math.PI - 90} ${tx} ${ty})`}>{label}</text>
+                  transform={`rotate(${(mid * 180) / Math.PI - 90 + (mid > Math.PI ? 180 : 0)} ${tx} ${ty})`}>{label}</text>
               </g>
             );
           })}
