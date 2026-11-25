@@ -21,6 +21,9 @@ rules_version = '2';
 //       locks/{uid}_{key}                          public "I locked {key}" marker
 //       entries/{id}                               public, append-only lines
 //       users/{uid}                                public per-user progress
+//     sessions/{id}                                a full-screen test (id = its Drop's id)
+//       private/{uid}                              my answers: PRIVATE until both finished
+//       users/{uid}                                public progress, presence, result code
 //
 // Hidden answers: a sealed doc can be read by its owner at any time, and by the
 // other member only once (a) the owner has locked it and (b) the reader has a
@@ -781,6 +784,68 @@ service cloud.firestore {
         match /users/{uid} {
           allow read: if isMember(roomId);
           allow create, update: if isMember(roomId) && me() == uid && incoming().size() <= 20;
+          allow delete: if false;
+        }
+      }
+      // -------------------------------------------------------- sessions
+      // Full-screen paired tests (Type Test …). The session id is the id of the
+      // "session" Drop that carries its card in the chat.
+      match /sessions/{sessionId} {
+        function sesPath() { return /databases/$(database)/documents/rooms/$(roomId)/sessions/$(sessionId); }
+        function sesDoc(sub, id) { return /databases/$(database)/documents/rooms/$(roomId)/sessions/$(sessionId)/$(sub)/$(id); }
+        function iFinished() {
+          return exists(sesDoc('private', me())) && get(sesDoc('private', me())).data.done == true;
+        }
+
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId)
+          && onlyKeys(['testId', 'version', 'tabId', 'createdBy', 'createdAt'])
+          && incoming().createdBy == me()
+          && incoming().testId is string && incoming().testId.matches('^[a-z0-9-]{1,40}$')
+          && incoming().version is int
+          && str(incoming().tabId, 1, 80)
+          && getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(sessionId)).data.createdBy == me()
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+
+        // My raw answers: only I can read them until we have BOTH finished.
+        // Editable while I'm still answering; frozen once I finish.
+        match /private/{uid} {
+          function validPrivate() {
+            return uid == me()
+              && onlyKeys(['uid', 'answers', 'done', 'updatedAt'])
+              && incoming().uid == me()
+              && incoming().answers is map
+              && incoming().answers.size() <= 100
+              && incoming().done is bool
+              && incoming().updatedAt == request.time
+              && exists(sesPath());
+          }
+          allow get: if isMember(roomId) && (
+            uid == me()
+            || (resource.data.done == true && iFinished())
+          );
+          allow list: if false;
+          allow create: if isMember(roomId) && validPrivate();
+          allow update: if isMember(roomId) && resource.data.done != true && validPrivate();
+          allow delete: if false;
+        }
+
+        // Public progress and presence: how far I am, whether I'm in the session now,
+        // and (once finished) my result code for the chat card.
+        match /users/{uid} {
+          allow read: if isMember(roomId);
+          allow create, update: if isMember(roomId)
+            && uid == me()
+            && onlyKeys(['answered', 'total', 'done', 'seenAt', 'code'])
+            && incoming().answered is int && incoming().answered >= 0 && incoming().answered <= 100
+            && incoming().total is int && incoming().total > 0 && incoming().total <= 100
+            && incoming().done is bool
+            && incoming().seenAt == request.time
+            // Can't claim to be done before my answers are frozen, nor un-finish.
+            && (incoming().done == false || getAfter(sesDoc('private', me())).data.done == true)
+            && (resource == null || resource.data.done != true || incoming().done == true)
+            && (!incoming().keys().hasAny(['code']) || (incoming().done == true && str(incoming().code, 1, 12)));
           allow delete: if false;
         }
       }

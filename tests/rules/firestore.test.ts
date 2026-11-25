@@ -1000,3 +1000,85 @@ describe('streaks & activity days', () => {
     await assertFails(setDoc(doc(alice(), 'users', 'alice', 'contacts', 'bob'), { memories: 'no', updatedAt: serverTimestamp() }, { merge: true }));
   });
 });
+
+describe('sessions (Phase 9)', () => {
+  const S = 's1';
+  const ses = (db: Firestore) => doc(db, 'rooms', ROOM, 'sessions', S);
+  const priv = (db: Firestore, uid: string) => doc(db, 'rooms', ROOM, 'sessions', S, 'private', uid);
+  const prog = (db: Firestore, uid: string) => doc(db, 'rooms', ROOM, 'sessions', S, 'users', uid);
+  const answers = (db: Firestore, uid: string, done: boolean, a: Record<string, unknown> = { q1: 'a' }) =>
+    setDoc(priv(db, uid), { uid, answers: a, done, updatedAt: serverTimestamp() });
+  const progress = (uid: string, done: boolean, extra: Record<string, unknown> = {}) =>
+    ({ answered: done ? 4 : 1, total: 4, done, seenAt: serverTimestamp(), ...extra });
+  async function finish(db: Firestore, uid: string) {
+    const b = writeBatch(db);
+    b.set(priv(db, uid), { uid, answers: { q1: 'a', q2: 'b' }, done: true, updatedAt: serverTimestamp() });
+    b.set(prog(db, uid), progress(uid, true));
+    await b.commit();
+  }
+  async function seedSession() {
+    await seedRoom();
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'rooms', ROOM, 'drops', S), { type: 'session', createdBy: 'alice', createdAt: new Date(), content: { testId: 'type-test', sessionId: S } });
+      await setDoc(doc(db, 'rooms', ROOM, 'sessions', S), { testId: 'type-test', version: 1, tabId: 'general', createdBy: 'alice', createdAt: new Date() });
+    });
+  }
+
+  it('is started together with its Drop card, by the person starting it', async () => {
+    await seedRoom();
+    const db = bob();
+    const b = writeBatch(db);
+    b.set(doc(db, 'rooms', ROOM, 'drops', 's2'), { type: 'session', createdBy: 'bob', createdAt: serverTimestamp(), content: { testId: 'type-test', sessionId: 's2' } });
+    b.set(doc(db, 'rooms', ROOM, 'sessions', 's2'), { testId: 'type-test', version: 1, tabId: 'general', createdBy: 'bob', createdAt: serverTimestamp() });
+    b.set(doc(msgs(db), 'ms'), { uid: 'bob', kind: 'drop', text: '', dropId: 's2', createdAt: serverTimestamp() });
+    await assertSucceeds(b.commit());
+    // No matching Drop (d1 is alice's), wrong creator, bad test id, outsider.
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'sessions', 'd1'), { testId: 'type-test', version: 1, tabId: 'general', createdBy: 'bob', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'sessions', 's3'), { testId: 'type-test', version: 1, tabId: 'general', createdBy: 'alice', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'sessions', 's2'), { testId: 'Type Test!', version: 1, tabId: 'general', createdBy: 'bob', createdAt: serverTimestamp() }));
+    await assertFails(getDoc(doc(eve(), 'rooms', ROOM, 'sessions', 's2')));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM, 'sessions', 's2'), { tabId: 'x' }));
+  });
+
+  it('answers stay private until BOTH have finished', async () => {
+    await seedSession();
+    await assertSucceeds(answers(alice(), 'alice', false));
+    await assertSucceeds(getDoc(priv(alice(), 'alice')));
+    await assertFails(getDoc(priv(bob(), 'alice')));
+    await assertFails(answers(bob(), 'alice', false, { q1: 'b' }));               // can't write someone else's
+    await assertSucceeds(finish(alice(), 'alice'));
+    await assertFails(getDoc(priv(bob(), 'alice')));                              // bob hasn't finished
+    await assertSucceeds(answers(bob(), 'bob', false));
+    await assertFails(getDoc(priv(bob(), 'alice')));                              // still answering
+    await assertSucceeds(finish(bob(), 'bob'));
+    await assertSucceeds(getDoc(priv(bob(), 'alice')));
+    await assertSucceeds(getDoc(priv(alice(), 'bob')));
+    await assertFails(getDoc(priv(eve(), 'alice')));
+    await assertFails(getDocs(collection(bob(), 'rooms', ROOM, 'sessions', S, 'private')));
+  });
+
+  it('finished answers are frozen, and nobody can un-finish', async () => {
+    await seedSession();
+    await assertSucceeds(answers(alice(), 'alice', false));
+    await assertSucceeds(answers(alice(), 'alice', false, { q1: 'b' }));          // still editable
+    await assertSucceeds(finish(alice(), 'alice'));
+    await assertFails(answers(alice(), 'alice', true, { q1: 'a' }));
+    await assertFails(answers(alice(), 'alice', false));
+    await assertFails(setDoc(prog(alice(), 'alice'), progress('alice', false)));
+    await assertFails(deleteDoc(priv(alice(), 'alice')));
+  });
+
+  it('progress: my own, and "done" only once my answers are frozen', async () => {
+    await seedSession();
+    await assertSucceeds(setDoc(prog(bob(), 'bob'), progress('bob', false)));
+    await assertSucceeds(getDoc(prog(alice(), 'bob')));
+    await assertFails(setDoc(prog(bob(), 'alice'), progress('alice', false)));
+    await assertFails(setDoc(prog(bob(), 'bob'), progress('bob', true)));        // answers not finished
+    await assertFails(setDoc(prog(bob(), 'bob'), progress('bob', false, { code: 'ENFP' }))); // code only when done
+    await assertFails(setDoc(prog(bob(), 'bob'), progress('bob', false, { extra: 1 })));
+    await finish(bob(), 'bob');
+    await assertSucceeds(setDoc(prog(bob(), 'bob'), progress('bob', true, { code: 'ENFP' })));
+    await assertFails(setDoc(prog(eve(), 'eve'), progress('eve', false)));
+  });
+});
