@@ -31,13 +31,13 @@ const EXT: Record<string, string> = { 'audio/webm': 'webm', 'audio/ogg': 'ogg', 
  */
 export async function buildZip(data: ExportData, onProgress?: (done: number, total: number) => void): Promise<Blob> {
   const { zipSync, strToU8 } = await import('fflate');
-  const media = exportable(data.messages, data.me.uid, data.exportedAt).filter((m) => (m.kind === 'photo' && m.photo?.path) || (m.kind === 'voice' && m.voice?.path));
+  const media = exportable(data.messages, data.me.uid, data.exportedAt).filter((m) => (m.kind === 'photo' && m.photo?.path && !m.viewLimit) || (m.kind === 'voice' && m.voice?.path));
   const files: Record<string, string> = {};
   const out: Record<string, Uint8Array> = {};
   const missing: string[] = [];
   let done = 0;
   for (const m of media) {
-    const path = m.kind === 'photo' ? m.photo!.path : m.voice!.path;
+    const path = (m.kind === 'photo' ? m.photo!.path : m.voice!.path)!;
     const name = m.kind === 'photo'
       ? `photos/${m.id}.jpg`
       : `voice/${m.id}.${EXT[(m.voice?.mime || '').split(';')[0]] || path.split('.').pop() || 'webm'}`;

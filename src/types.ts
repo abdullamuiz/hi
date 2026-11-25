@@ -117,9 +117,12 @@ export interface LinkPreview {
 }
 
 export interface PhotoRef {
-  path: string;
+  /** Gone once a view-once / view-twice photo has been used up. */
+  path?: string;
   width: number;
   height: number;
+  /** ~480px copy for bubbles and the scrapbook (photos sent before it existed have none). */
+  thumbPath?: string;
 }
 
 /** rooms/{roomId}/tabs/{tabId}/messages/{id} */
@@ -166,6 +169,10 @@ export interface Message {
   effect?: import('./lib/effects').EffectCode;
   /** Thread tile: the side discussion under this message. */
   thread?: { count: number; lastAt: Timestamp | null; lastBy: string; lastId: string };
+  /** View-once (1) / view-twice (2) photo. */
+  viewLimit?: 1 | 2;
+  /** How often the recipient has opened it. */
+  viewCount?: number;
   /** Client-only: still waiting to reach the server. */
   pending?: boolean;
 }

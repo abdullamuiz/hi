@@ -73,10 +73,10 @@ export async function printExport(data: ExportData) {
   // Photo thumbnails: fetch their addresses first (a few seconds at most).
   const photos: Record<string, string> = {};
   await Promise.all(exportable(data.messages, data.me.uid, data.exportedAt)
-    .filter((m) => m.kind === 'photo' && m.photo?.path)
+    .filter((m) => m.kind === 'photo' && m.photo?.path && !m.viewLimit)
     .slice(0, 200)
     .map((m) => Promise.race([
-      photoURL(m.photo!.path).then((u) => { photos[m.id] = u; }).catch(() => {}),
+      photoURL(m.photo!.thumbPath || m.photo!.path!).then((u) => { photos[m.id] = u; }).catch(() => {}),
       new Promise((r) => setTimeout(r, 4000)),
     ])));
   render(<PrintView data={data} photos={photos} />, root);
@@ -112,7 +112,7 @@ function PrintView({ data, photos }: { data: ExportData; photos: Record<string, 
                   {m.kind === 'photo' && photos[m.id] && <img src={photos[m.id]} alt="" />}
                   {m.kind === 'drop'
                     ? <div class="print-card">A Drop</div>
-                    : <div class="print-text">{m.kind === 'photo' ? m.text || '[Photo]' : lineText(m)}</div>}
+                    : <div class="print-text">{m.kind === 'photo' ? (m.viewLimit ? '[View-once photo]' : m.text || '[Photo]') : lineText(m)}</div>}
                   {m.reactions && Object.keys(m.reactions).length > 0 && (
                     <div class="print-rx">{REACTIONS.filter((r) => m.reactions?.[r.code]?.length).map((r) => r.emoji).join(' ')}</div>
                   )}

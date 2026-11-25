@@ -26,9 +26,9 @@ export function searchableText(m: Pick<Message, 'text' | 'link'>): string {
   return [m.text, l?.title, l?.description, l?.siteName, l?.url].filter(Boolean).join(' \n ');
 }
 
-/** Can this message turn up in my search at all? */
-export function searchable(m: Pick<Message, 'kind' | 'deleted' | 'hiddenFor' | 'expiresAt'>, me: string, now = Date.now()) {
-  return m.kind !== 'system' && !m.deleted && !m.hiddenFor?.includes(me) && !isExpired(m, now);
+/** Can this message turn up in my search (and exports) at all? View-once photos never do. */
+export function searchable(m: Pick<Message, 'kind' | 'deleted' | 'hiddenFor' | 'expiresAt' | 'viewLimit'>, me: string, now = Date.now()) {
+  return m.kind !== 'system' && !m.deleted && !m.viewLimit && !m.hiddenFor?.includes(me) && !isExpired(m, now);
 }
 
 /** Every term appears somewhere in the message (any order). */

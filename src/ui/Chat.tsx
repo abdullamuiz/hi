@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { User } from 'firebase/auth';
 import {
   addPhraseReaction, addVoiceReaction, createDrop, deleteForEveryone, editMessage, hideMessage, markPlayed, removePhraseReaction,
-  removeVoiceReaction, sendPhoto, sendText, sendVoice, setDisappearing, setReaction, watchMessages, type VoiceRecording,
+  countView, removeVoiceReaction, sendPhoto, sendText, sendVoice, setDisappearing, setReaction, watchMessages, type VoiceRecording,
 } from '../data/messages';
 import { notExpired, systemText } from '../lib/disappear';
 import { takeJump, type Jump } from '../lib/jump';
@@ -53,7 +53,8 @@ import { trayTests } from '../sessions/registry';
 import type { SessionTest } from '../sessions/types';
 import { ensureDailyQuestion, roomDayKey } from '../data/daily';
 import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
-import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
+import { LinkCard, OnceBubble, OnceViewer, PhotoBubble, PhotoViewer } from './Bubbles';
+import { evictMedia, evictedBetween, seenOf } from '../lib/mediaCache';
 import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
 import { loadPlayed, motionOn, pickArrival, previewFor, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
 import { MoodSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
@@ -143,6 +144,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [draft, setDraft] = useState('');
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewer, setViewer] = useState<string | null>(null);
+  // A view-once / view-twice photo open full screen.
+  // Kept as opened: the server clears the photo once it's used up, which mustn't close it.
+  const [onceOpen, setOnceOpen] = useState<Message | null>(null);
+  // A photo picked but not sent yet: choose normal / view once / view twice first.
+  const [photoDraft, setPhotoDraft] = useState<{ file: File; url: string; limit: 0 | 1 | 2 } | null>(null);
   const [thread, setThread] = useState<string | null>(null);
   // Full-screen Session (Type Test …) by session id.
   const [session, setSession] = useState<string | null>(null);
@@ -468,20 +474,26 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const urgentLeft = urgentLeftOf(delivery.urgent);
 
   const pickPhoto = () => fileInput.current?.click();
-  const onFile = async (e: Event) => {
+  const onFile = (e: Event) => {
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
     if (!tabReady) return notReady();
-    const caption = draft;
-    setDraft('');
-    flash('Sending photo…');
+    // Notes to self: no one else to show it to, so no view-once choice. Send straight away.
+    if (isSelf) return void doSendPhoto(file, 0);
+    setPhotoDraft({ file, url: URL.createObjectURL(file), limit: 0 });
+  };
+  const closePhotoDraft = () => setPhotoDraft((d) => { if (d) URL.revokeObjectURL(d.url); return null; });
+  const doSendPhoto = async (file: File, limit: 0 | 1 | 2) => {
+    const caption = limit ? '' : draft;
+    if (!limit) setDraft('');
+    flash(limit ? 'Sending view-once photo…' : 'Sending photo…');
     try {
-      await sendPhoto(room.id, activeTab, user.uid, file, caption);
+      await sendPhoto(room.id, activeTab, user.uid, file, caption, limit);
       setToast('');
     } catch (err: any) {
-      setDraft(caption);
+      if (!limit) setDraft(caption);
       flash(err?.message || 'Photo could not be sent.');
     }
   };
@@ -615,7 +627,21 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   }, [shown]);
   // Suggest an effect from the draft's words ("congrats" → confetti); never applied without a tap.
   const fxSuggestion = !fx && !editing ? suggestEffect(draft) : null;
-  const photos = useMemo(() => (shown || []).filter((m) => m.kind === 'photo' && m.photo && !m.deleted), [shown]);
+  // Forget cached photo/voice bytes on this device when a message loses them: deleted
+  // for everyone, hidden for me, expired, or a view-once photo used up.
+  const seenRef = useRef<{ tab: string; seen: ReturnType<typeof seenOf> } | null>(null);
+  useEffect(() => {
+    if (!messages) return;
+    const next = seenOf(messages, user.uid);
+    const prev = seenRef.current;
+    if (prev && prev.tab === activeTab) {
+      const gone = evictedBetween(prev.seen, next);
+      if (gone.length) void evictMedia(gone);
+    }
+    seenRef.current = { tab: activeTab, seen: next };
+  }, [messages]);
+
+  const photos = useMemo(() => (shown || []).filter((m) => m.kind === 'photo' && m.photo?.path && !m.deleted && !m.viewLimit), [shown]);
   // Ticks: read only when we both share read receipts.
   const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
   const ticks = useMemo(() => statuses(
@@ -861,6 +887,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={false} onJump={() => jumpTo(m.replyTo!.msgId)} />}
               <LinkCard msg={m} onFeel={fm ? () => startDrop(fm, { subject: cleanTitle(m.link!.title) || fm.content.subject }) : undefined} />
             </>);
+          } else if (m.kind === 'photo' && m.photo && m.viewLimit) {
+            body = <OnceBubble msg={m} mine={mine} onOpen={() => setOnceOpen(m)} />;
           } else if (m.kind === 'photo' && m.photo) {
             body = <PhotoBubble msg={m} mine={mine} onView={() => setViewer(m.id)} />;
           } else if (m.kind === 'voice' && m.voice) {
@@ -1018,6 +1046,36 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         <ThreadView roomId={room.id} root={byId(thread)!} me={user.uid} nameOf={nameOf} readOnly={left}
           onToast={flash} onClose={() => setThread(null)} />
       )}
+      {onceOpen?.photo?.path && (
+        <OnceViewer
+          msg={onceOpen}
+          from={partner.name}
+          onCount={() => countView(room.id, onceOpen.tabId || activeTab, onceOpen.id)}
+          onClose={() => setOnceOpen(null)}
+        />
+      )}
+      {photoDraft && (
+        <div class="photo-draft" role="dialog" aria-modal="true" aria-label="Send photo">
+          <div class="photo-draft-card">
+            <img src={photoDraft.url} alt="" class={photoDraft.limit ? 'blurred' : ''} />
+            <div class="segmented photo-limit" role="radiogroup" aria-label="Who can see it, and how often">
+              {([[0, 'Normal'], [1, '① View once'], [2, '② View twice']] as const).map(([v, label]) => (
+                <button type="button" key={v} role="radio" aria-checked={photoDraft.limit === v} class={photoDraft.limit === v ? 'on' : ''}
+                  onClick={() => setPhotoDraft({ ...photoDraft, limit: v })}>{label}</button>
+              ))}
+            </div>
+            <div class="fine">
+              {photoDraft.limit
+                ? `${partner.name} can open it ${photoDraft.limit === 1 ? 'once' : 'twice'}, then it's deleted. No caption. Screenshots can't be blocked.`
+                : draft.trim() ? `Caption: ${draft.trim()}` : 'Tip: type a caption in the message box first.'}
+            </div>
+            <div class="row-btns">
+              <button type="button" class="btn-ghost" onClick={closePhotoDraft}>Cancel</button>
+              <button type="button" class="btn-primary" onClick={() => { const d = photoDraft; closePhotoDraft(); void doSendPhoto(d.file, d.limit); }}>Send photo</button>
+            </div>
+          </div>
+        </div>
+      )}
       {viewer && photos.some((p) => p.id === viewer) && (
         <PhotoViewer
           photos={photos}
@@ -1152,8 +1210,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                   msg={m}
                   preview={`${mine ? 'You' : nameOf(m.uid)}: ${snip(m)}`}
                   canEdit={isEditable(m)}
-                  canCopy={!!copyText(m)}
-                  canPin={m.kind !== 'drop'}
+                  canCopy={!m.viewLimit && !!copyText(m)}
+                  canPin={m.kind !== 'drop' && !m.viewLimit}
                   pinned={pinnedMsgs.has(m.id)}
                   myReactions={mineRx}
                   onReact={(code) => { setSheet(null); react(m, code, !mineRx.includes(code)); }}

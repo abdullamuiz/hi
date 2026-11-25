@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { closeOverlay, forgetOverlay, openOverlay } from '../lib/overlay';
 import { photoURL } from '../data/photos';
+import { evictMedia } from '../lib/mediaCache';
 import type { Message } from '../types';
 import { CloseIcon, LinkIcon, PlayIcon } from './icons';
 
@@ -25,27 +26,128 @@ export function LinkCard({ msg, onFeel }: { msg: Message; onFeel?: () => void })
   );
 }
 
-export function usePhoto(path: string) {
+/**
+ * A photo's address: from the device cache when we have it. `fallback` is tried when
+ * `path` can't be loaded (e.g. a thumbnail that older photos don't have). A cached
+ * address that stopped working is forgotten and fetched again.
+ */
+export function usePhoto(path: string | undefined, fallback?: string) {
   const [url, setUrl] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     let live = true;
-    photoURL(path).then((u) => live && setUrl(u)).catch(() => {});
+    setUrl(null);
+    if (!path) return;
+    photoURL(path)
+      .catch((e) => (fallback && fallback !== path ? photoURL(fallback) : Promise.reject(e)))
+      .then((u) => live && setUrl(u))
+      .catch(() => {});
     return () => { live = false; };
-  }, [path]);
-  return url;
+  }, [path, fallback, retry]);
+  const broken = () => {
+    if (retry > 1) return;
+    void evictMedia([path, fallback]).then(() => setRetry((r) => r + 1));
+  };
+  return { url, broken };
 }
+
+/** Bubble height for a photo: 240px wide, height follows the photo within sensible bounds. */
+const bubbleHeight = (p: { width: number; height: number }) => Math.round(Math.max(140, Math.min(320, (240 * p.height) / Math.max(1, p.width))));
 
 export function PhotoBubble({ msg, mine, onView }: { msg: Message; mine: boolean; onView(): void }) {
   const p = msg.photo!;
-  const url = usePhoto(p.path);
-  // 240px wide, height follows the photo within sensible bounds (prototype: 240×180).
-  const h = Math.round(Math.max(140, Math.min(320, (240 * p.height) / Math.max(1, p.width))));
+  const { url, broken } = usePhoto(p.thumbPath || p.path, p.path);
   return (
     <div class="photo-wrap">
-      <button type="button" class="photo-btn" style={{ height: `${h}px` }} onClick={onView} aria-label="View photo full screen">
-        {url ? <img src={url} alt={msg.text || 'Photo'} loading="lazy" decoding="async" /> : <span class="uploading">Loading…</span>}
+      <button type="button" class="photo-btn" style={{ height: `${bubbleHeight(p)}px` }} onClick={onView} aria-label="View photo full screen">
+        {url ? <img src={url} alt={msg.text || 'Photo'} loading="lazy" decoding="async" onError={broken} /> : <span class="uploading">Loading…</span>}
       </button>
       {msg.text && <div class="caption" style={{ textAlign: mine ? 'right' : 'left' }}>{msg.text}</div>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------- view once
+
+/** How many views are left for the recipient. */
+export const viewsLeft = (m: Pick<Message, 'viewLimit' | 'viewCount' | 'photo'>) =>
+  !m.photo?.path ? 0 : Math.max(0, (m.viewLimit || 0) - (m.viewCount || 0));
+
+/** A view-once / view-twice photo in the chat: never shows the picture itself. */
+export function OnceBubble({ msg, mine, onOpen }: { msg: Message; mine: boolean; onOpen(): void }) {
+  const left = viewsLeft(msg);
+  const kind = msg.viewLimit === 2 ? 'twice' : 'once';
+  const label = mine
+    ? (msg.viewCount ? (left ? `Opened ${msg.viewCount} of 2` : 'Opened') : 'Delivered')
+    : (left ? `Tap to view (${left === 2 ? 'twice' : 'once'})` : 'Opened');
+  const icon = msg.viewLimit === 2 ? '②' : '①';
+  return (
+    <button type="button" class={`once-bubble${left && !mine ? ' ready' : ''}`} disabled={mine || !left}
+      onClick={onOpen} aria-label={`View-${kind} photo · ${label}`}>
+      <span class="once-icon" aria-hidden="true">{icon}</span>
+      <span class="once-text">
+        <span class="once-title">📷 Photo</span>
+        <span class="once-sub">{label}</span>
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Full screen for a view-once / view-twice photo. The picture is loaded first, then one
+ * view is counted, and only then shown, so closing the app half way can't win an extra
+ * look. No save, share, pin or zoom; it can't stop screenshots, and says so.
+ */
+export function OnceViewer({ msg, from, onCount, onClose }: { msg: Message; from: string; onCount(): Promise<void>; onClose(): void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState('');
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const [firstTime] = useState(() => { try { return !localStorage.getItem('hi.once.seen'); } catch { return false; } });
+
+  useLayoutEffect(() => {
+    const close = () => closeRef.current();
+    openOverlay(close);
+    return () => forgetOverlay(close);
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const u = await photoURL(msg.photo!.path!);
+        const img = new Image();
+        img.src = u;
+        await img.decode();
+        await onCount();
+        if (live) setUrl(u);
+        try { localStorage.setItem('hi.once.seen', '1'); } catch { /* ignore */ }
+      } catch {
+        if (live) setErr('This photo can’t be opened any more.');
+      }
+    })();
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') closeOverlay(); };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  }, []);
+
+  return (
+    <div class="viewer once-viewer" role="dialog" aria-modal="true" aria-label={`View-${msg.viewLimit === 2 ? 'twice' : 'once'} photo from ${from}`}
+      onContextMenu={(e) => e.preventDefault()}>
+      <div class="viewer-top">
+        <div class="viewer-from"><span>{from}</span><span class="viewer-when">{msg.viewLimit === 2 ? 'View twice' : 'View once'}</span></div>
+        <button type="button" class="viewer-x" onClick={() => closeOverlay()} aria-label="Close photo"><CloseIcon /></button>
+      </div>
+      <div class="viewer-img">
+        {url && <img src={url} alt="View-once photo" draggable={false} class="once-img" />}
+        {!url && !err && <span class="uploading">Opening…</span>}
+        {err && <span class="uploading">{err}</span>}
+      </div>
+      {firstTime && <div class="viewer-bottom"><div class="viewer-cap once-hint">View once — can’t be saved. Screenshots can’t be blocked.</div></div>}
     </div>
   );
 }
@@ -71,7 +173,7 @@ const when = (m: Message) => (m.createdAt ? m.createdAt.toDate().toLocaleString(
 export function PhotoViewer({ photos, startId, nameOf, isPinned, onPin, onClose }: ViewerProps) {
   const [index, setIndex] = useState(() => Math.max(0, photos.findIndex((p) => p.id === startId)));
   const msg = photos[Math.min(index, photos.length - 1)];
-  const url = usePhoto(msg?.photo?.path || '');
+  const { url } = usePhoto(msg?.photo?.path);
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
   const [drag, setDrag] = useState({ dx: 0, dy: 0, active: false });
   const [note, setNote] = useState('');

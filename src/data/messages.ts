@@ -1,5 +1,5 @@
 import {
-  arrayRemove, arrayUnion, collection, deleteField, doc, FieldPath, getDoc, limitToLast, onSnapshot, orderBy, query,
+  arrayRemove, arrayUnion, collection, deleteField, doc, FieldPath, getDoc, increment, limitToLast, onSnapshot, orderBy, query,
   serverTimestamp, Timestamp, updateDoc, where, writeBatch, type WriteBatch,
 } from 'firebase/firestore';
 import { ttlOf } from './tabs';
@@ -99,18 +99,41 @@ export async function sendNoteReply(roomId: string, tabId: string, uid: string, 
   await commit(b, mark);
 }
 
-export async function sendPhoto(roomId: string, tabId: string, uid: string, file: File, caption: string) {
+/**
+ * Sends a photo: the full image (≤1600px) plus a ~480px thumbnail for bubbles and the
+ * scrapbook. `viewLimit` 1/2 makes it a view-once / view-twice photo: no thumbnail, no
+ * caption, stored where only the recipient can open it, and deleted once used up.
+ */
+export async function sendPhoto(roomId: string, tabId: string, uid: string, file: File, caption: string, viewLimit: 0 | 1 | 2 = 0) {
   const { blob, width, height } = await compressImage(file, 1600);
   const id = newId(roomId, tabId);
-  const path = `rooms/${roomId}/photos/${uid}/${id}.jpg`;
+  const once = viewLimit > 0;
+  const path = once ? `rooms/${roomId}/once/${uid}/${tabId}/${id}.jpg` : `rooms/${roomId}/photos/${uid}/${id}.jpg`;
+  const thumbPath = once ? null : `rooms/${roomId}/photos/${uid}/${id}_t.jpg`;
+  let thumbSaved: string | null = null;
   try {
-    await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg', cacheControl: 'private, max-age=31536000' });
+    const meta = { contentType: 'image/jpeg', cacheControl: once ? 'private, no-store' : 'private, max-age=31536000' };
+    const thumb = thumbPath ? await compressImage(blob, 480, 0.72).catch(() => null) : null;
+    await Promise.all([
+      uploadBytes(ref(storage, path), blob, meta),
+      thumb && thumbPath ? uploadBytes(ref(storage, thumbPath), thumb.blob, meta).then(() => { thumbSaved = thumbPath; }) : null,
+    ]);
   } catch (e) { throw friendlyStorageError(e, 'Photos'); }
-  const b = writeBatch(db);
-  const text = caption.trim().slice(0, 1000);
-  const mark = addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text, photo: { path, width, height } }, snippetOf({ kind: 'photo', text }));
-  await commit(b, mark);
+  return sendPhotoDoc(thumbSaved);
+
+  async function sendPhotoDoc(thumb: string | null = null) {
+    const b = writeBatch(db);
+    const text = once ? '' : caption.trim().slice(0, 1000);
+    const photo = { path, width, height, ...(thumb ? { thumbPath: thumb } : {}) };
+    const data = { uid, kind: 'photo', text, photo, ...(once ? { viewLimit } : {}) };
+    const mark = addMessage(b, roomId, tabId, id, data, snippetOf({ kind: 'photo', text, viewLimit }));
+    await commit(b, mark);
+  }
 }
+
+/** The recipient opened a view-once / view-twice photo: count one view. */
+export const countView = (roomId: string, tabId: string, msgId: string) =>
+  updateDoc(doc(db, 'rooms', roomId, 'tabs', tabId, 'messages', msgId), { viewCount: increment(1) });
 
 export interface VoiceRecording {
   blob: Blob;
