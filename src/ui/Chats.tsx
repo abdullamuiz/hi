@@ -24,6 +24,7 @@ import { ModeToggle } from './ModeToggle';
 import { Logo, MoodIcon, MOODS, PlusIcon, SearchIcon, SettingsIcon } from './icons';
 import { SearchSheet } from './Search';
 import { requestJump } from '../lib/jump';
+import { InstallBanner } from './Install';
 
 interface Props {
   user: User;
@@ -123,6 +124,7 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
         {pull}
         <div class="feed-inner chats">
           {err && <div class="err" role="alert">{err}</div>}
+          <InstallBanner />
 
           <NotesStrip
             me={user.uid}
