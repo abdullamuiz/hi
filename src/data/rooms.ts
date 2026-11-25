@@ -17,6 +17,7 @@ function toRoom(id: string, d: any): Room {
     timezone: d.timezone || DEFAULT_TZ, createdAt: d.createdAt || null,
     inviteCode: typeof d.inviteCode === 'string' ? d.inviteCode : null,
     lastMessage: d.lastMessage && typeof d.lastMessage === 'object' ? d.lastMessage : null,
+    left: typeof d.left === 'string' ? d.left : null,
   };
 }
 

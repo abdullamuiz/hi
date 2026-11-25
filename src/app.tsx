@@ -13,6 +13,8 @@ import { watchForUpdates } from './lib/updates';
 import { splashReady } from './lib/splash';
 import { clearPendingJoin, loadPendingJoin, parseJoin, savePendingJoin, type JoinRequest } from './lib/invite';
 import { firstName } from './lib/names';
+import { watchBlocked, watchContacts, type Blocked, type ContactPrefs } from './data/profile';
+import { ProfileSetup, useProfile } from './ui/Profile';
 
 export function App() {
   const [update, setUpdate] = useState(false);
@@ -51,6 +53,9 @@ function Screen() {
   roomsRef.current = rooms;
   // A chat I just joined isn't listed until the server confirms it: open it when it shows up.
   const [awaiting, setAwaiting] = useState<string | null>(null);
+  const myProfile = useProfile(user?.uid);
+  const [contacts, setContacts] = useState<Record<string, ContactPrefs>>({});
+  const [blocked, setBlocked] = useState<Blocked[]>([]);
 
   useEffect(() => {
     getRedirectResult(auth).catch((e) => setErr(e?.message || String(e)));
@@ -62,6 +67,7 @@ function Screen() {
     syncThemeFromAccount(user.uid);
     const unsubs = [watchMyRooms(user.uid, setRooms, (e) => setErr(e.message))];
     if (user.email && user.emailVerified) unsubs.push(watchInvites(user.email, user.uid, setInvites, (e) => setErr(e.message)));
+    unsubs.push(watchContacts(user.uid, setContacts), watchBlocked(user.uid, setBlocked));
     return () => unsubs.forEach((u) => u());
   }, [user?.uid]);
 
@@ -135,12 +141,15 @@ function Screen() {
     }
   }, [rooms]);
 
-  const loading = user === undefined || (!!user && rooms === null && !err);
+  const loading = user === undefined || (!!user && ((rooms === null && !err) || myProfile === undefined));
   useEffect(() => { if (!loading) splashReady(); }, [loading]);
 
   if (loading) return <Splash />;
   if (!user) return <SignIn invitedBy={join ? firstName(join.from, '') : undefined} />;
   if (err && rooms === null) return <div class="app"><div class="screen"><div class="err">{err}</div></div></div>;
+
+  // First sign-in: set up a profile before anything else.
+  if (myProfile === null) return <ProfileSetup user={user} roomIds={(rooms || []).map((r) => r.id)} onDone={() => {}} />;
 
   const finishJoin = () => { clearPendingJoin(); setJoin(null); };
   if (join) {
@@ -158,8 +167,9 @@ function Screen() {
   if (awaiting) return <div class="app" aria-busy="true"><div class="screen"><div class="sys">Opening chat…</div></div></div>;
   // (A chat that has gone away, e.g. a removed invite, falls back to the list.)
   const room = openId ? rooms!.find((r) => r.id === openId) : undefined;
-  if (room) return <Chat key={`${room.id}:${nonce}`} user={user} room={room} onBack={back} />;
-  return <Chats user={user} rooms={rooms!} invites={invites} onOpen={open} />;
+  if (room) return <Chat key={`${room.id}:${nonce}`} user={user} room={room} contacts={contacts} blocked={blocked} onBack={back} />;
+  const blockedIds = new Set(blocked.map((b) => b.uid));
+  return <Chats user={user} profile={myProfile} rooms={rooms!} invites={invites.filter((r) => !blockedIds.has(r.owner))} contacts={contacts} blocked={blocked} onOpen={open} />;
 }
 
 function Splash() {

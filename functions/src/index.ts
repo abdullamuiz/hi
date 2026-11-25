@@ -1,13 +1,16 @@
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { fetchPreview } from './og.js';
 import { notificationBody, openUrl } from './notify.js';
 import { filesToDelete } from './cleanup.js';
+import { accountPlan } from './account.js';
 
 initializeApp();
 // Small, capped instances keep a two-person app comfortably inside the free tier.
@@ -60,6 +63,9 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   const body = notificationBody({ ...msg, dropType });
 
   for (const uid of recipients) {
+    // Muted this chat (Contact profile → Mute): no push.
+    const contact = (await db.doc(`users/${uid}/contacts/${msg.uid}`).get()).data();
+    if (contact?.muted === true) continue;
     const tokensSnap = await db.collection(`users/${uid}/tokens`).get();
     const tokens = tokensSnap.docs.map((d) => d.id);
     if (!tokens.length) continue;
@@ -86,4 +92,27 @@ export const deleteMessageFiles = onDocumentUpdated(MESSAGE, async (event) => {
   const bucket = getStorage().bucket();
   await Promise.all(paths.map((p) => bucket.file(p).delete({ ignoreNotFound: true })));
   logger.info('deleted message files', { roomId: event.params.roomId, count: paths.length });
+});
+
+/**
+ * Settings → Delete account. Leaves every shared chat (the other person sees that you
+ * left), deletes chats only you are in, your profile and private data, then the
+ * sign-in account itself. The app falls back to doing the same steps itself when
+ * Cloud Functions aren't deployed (they need the Blaze plan).
+ */
+export const deleteAccount = onCall({ timeoutSeconds: 120 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const db = getFirestore();
+  const rooms = await db.collection('rooms').where('members', 'array-contains', uid).get();
+  const plan = accountPlan(uid, rooms.docs.map((d) => ({ id: d.id, members: d.data().members })));
+  for (const id of plan.leave) {
+    await db.doc(`rooms/${id}`).update({ members: FieldValue.arrayRemove(uid), left: uid, invites: [] });
+  }
+  for (const id of plan.remove) await db.recursiveDelete(db.doc(`rooms/${id}`));
+  await db.recursiveDelete(db.doc(`users/${uid}`));
+  await db.doc(`profiles/${uid}`).delete();
+  await getAuth().deleteUser(uid);
+  logger.info('account deleted', { left: plan.leave.length, removed: plan.remove.length });
+  return { left: plan.leave.length, removed: plan.remove.length };
 });

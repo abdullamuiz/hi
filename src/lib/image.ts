@@ -27,7 +27,7 @@ export async function compressImage(file: Blob, max = 1600, quality = 0.82): Pro
   return { blob, width, height };
 }
 
-async function loadBitmap(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
+export async function loadBitmap(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   if ('createImageBitmap' in window) {
     try {
       return await createImageBitmap(file, { imageOrientation: 'from-image' });
@@ -45,4 +45,30 @@ async function loadBitmap(file: Blob): Promise<ImageBitmap | HTMLImageElement> {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * A profile photo: centre-cropped square JPEG as a data: URL, small enough to live in
+ * Firestore (so it works without Cloud Storage). Steps the quality down if needed.
+ */
+export async function avatarDataUrl(file: Blob, size = 384, maxChars = 140_000): Promise<string> {
+  const bitmap = await loadBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const sx = (bitmap.width - side) / 2;
+  const sy = (bitmap.height - side) / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas not available');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, size, size);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size);
+  if ('close' in bitmap) (bitmap as ImageBitmap).close();
+  for (const q of [0.82, 0.7, 0.55, 0.4]) {
+    const url = canvas.toDataURL('image/jpeg', q);
+    if (url.length <= maxChars) return url;
+  }
+  throw new Error('That photo is too detailed. Try another one.');
 }

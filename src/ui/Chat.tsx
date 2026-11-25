@@ -17,7 +17,10 @@ import { currentPrefs, onThemeChange, type ThemePrefs } from '../lib/themes';
 import { ModeToggle } from './ModeToggle';
 import { drops, getDrop } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
-import { firstName, initial } from '../lib/names';
+import { firstName } from '../lib/names';
+import { blockContact, deleteRoom, leaveRoom, setContact, unblock, type Blocked, type ContactPrefs } from '../data/profile';
+import { displayName, noteLabel } from '../lib/profile';
+import { Avatar, ContactSheet, DeleteAccountSheet, ProfileForm, useProfile } from './Profile';
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
 import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Tab } from '../types';
 import { DropCard } from './DropCard';
@@ -39,7 +42,10 @@ type Sheet =
   | { kind: 'invite' }
   | { kind: 'actions'; msgId: string }
   | { kind: 'delete'; ids: string[] }
-  | { kind: 'phrase'; msgId: string };
+  | { kind: 'phrase'; msgId: string }
+  | { kind: 'contact' }
+  | { kind: 'profile' }
+  | { kind: 'delete-account' };
 
 interface Toast { text: string; undo?: () => void }
 
@@ -66,7 +72,16 @@ function initialTab(roomId: string): string {
   try { return localStorage.getItem(tabKey(roomId)) || GENERAL; } catch { return GENERAL; }
 }
 
-export function Chat({ user, room, onBack }: { user: User; room: Room; onBack(): void }) {
+interface ChatProps {
+  user: User;
+  room: Room;
+  /** My private nicknames / mutes. */
+  contacts: Record<string, ContactPrefs>;
+  blocked: Blocked[];
+  onBack(): void;
+}
+
+export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTab, setActiveTab] = useState<string>(() => initialTab(room.id));
@@ -89,16 +104,21 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
   const lastTypingWrite = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const partnerUid = room.members.find((u) => u !== user.uid) || '';
+  // After the other person left (removed the contact) the room only lists me; their profile stays readable.
+  const partnerUid = room.members.find((u) => u !== user.uid) || (room.left && room.left !== user.uid ? room.left : '');
+  const left = !!room.left;
   const meMember = members[user.uid];
   const partnerMember = partnerUid ? members[partnerUid] : undefined;
+  const partnerProfile = useProfile(partnerUid || null);
+  const myProfile = useProfile(user.uid);
+  const prefs = partnerUid ? contacts[partnerUid] : undefined;
 
-  const me = useMemo<Person>(() => ({ uid: user.uid, name: firstName(meMember?.name || user.displayName || user.email, 'You'), isMe: true }), [user.uid, meMember?.name, user.displayName, user.email]);
+  const me = useMemo<Person>(() => ({ uid: user.uid, name: firstName(myProfile?.name || meMember?.name || user.displayName || user.email, 'You'), isMe: true }), [user.uid, myProfile?.name, meMember?.name, user.displayName, user.email]);
   const partner = useMemo<Person>(() => ({
     uid: partnerUid,
-    name: partnerUid ? firstName(partnerMember?.name, 'Them') : room.invites[0] ? firstName(room.invites[0], 'Them') : 'Just you',
+    name: partnerUid ? displayName(prefs?.nickname, partnerProfile?.name, partnerMember?.name, 'Them') : room.invites[0] ? firstName(room.invites[0], 'Them') : 'Just you',
     isMe: false,
-  }), [partnerUid, partnerMember?.name, room.invites[0]]);
+  }), [partnerUid, prefs?.nickname, partnerProfile?.name, partnerMember?.name, room.invites[0]]);
 
   // --- subscriptions ---------------------------------------------------------
   useEffect(() => {
@@ -169,8 +189,15 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
   const setToast = (text: string) => showToast(text ? { text } : null);
 
   // --- actions ---------------------------------------------------------------
+  // Stop showing "typing…" as soon as I clear the box or leave it.
+  const stopTyping = () => {
+    if (!lastTypingWrite.current) return;
+    lastTypingWrite.current = 0;
+    setTyping(room.id, user.uid, activeTab, false).catch(() => {});
+  };
   const onDraft = (v: string) => {
     setDraft(v);
+    if (!v) { stopTyping(); return; }
     const now = Date.now();
     if (v && now - lastTypingWrite.current > 3000) {
       lastTypingWrite.current = now;
@@ -202,12 +229,12 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
       editMessage(room.id, m, t, room.lastMessage).catch((e) => { flash(e?.code === 'permission-denied' ? 'Too late to edit — messages can be edited for 15 minutes.' : e.message); });
       return;
     }
+    lastTypingWrite.current = 0;
+    setTyping(room.id, user.uid, activeTab, false).catch(() => {});
     if (!tabReady) { queued.current = t; setDraft(''); return; }
     const reply = replyTo;
     setDraft('');
     setReplyTo(null);
-    lastTypingWrite.current = 0;
-    setTyping(room.id, user.uid, activeTab, false).catch(() => {});
     sendText(room.id, activeTab, user.uid, t, reply).catch((e) => { setDraft(t); setReplyTo(reply); flash(e.message); });
   };
 
@@ -356,9 +383,10 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
     <div class="app">
       <header class="hdr">
         <button type="button" class="back-btn" onClick={onBack} aria-label="Back to chats"><BackIcon /></button>
-        <div class="avatar" aria-hidden="true">
-          {partnerMember?.photoURL ? <img src={partnerMember.photoURL} alt="" referrerpolicy="no-referrer" /> : initial(partner.name)}
-        </div>
+        <button type="button" class="hdr-who" disabled={!partnerUid} onClick={() => setSheet({ kind: 'contact' })}
+          aria-label={partnerUid ? `${partner.name}’s profile` : undefined}>
+          <Avatar profile={partnerUid ? partnerProfile : null} fallbackPhoto={partnerMember?.photoURL} name={partner.name} />
+        </button>
         <div class="hdr-text">
           <div class="hdr-name-row">
             <span class="hdr-name">{partner.name}</span>
@@ -368,7 +396,7 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
               </span>
             )}
           </div>
-          <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
+          {left ? <div class="hdr-sub">Left this chat</div> : <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />}
         </div>
         <div class="hdr-actions">
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
@@ -406,6 +434,11 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
         typing={<TypingIndicator member={partnerMember} name={partner.name} tabId={activeTab} />}
         tabName={currentTab && currentTab.id !== GENERAL ? currentTab.name : ''}
         banner={<>
+          {left && (
+            <div class="sys-card" role="status">
+              <span>{room.left === user.uid ? 'You left this chat.' : `${partner.name} left this chat. You can read it, but you can’t send messages here any more.`}</span>
+            </div>
+          )}
           {!partnerUid && (
             <div class="sys-card">
               <span>{room.invites[0]
@@ -414,7 +447,7 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
               <button type="button" onClick={() => setSheet({ kind: 'invite' })}>{room.invites[0] ? 'Invite' : 'Invite someone'}</button>
             </div>
           )}
-          {partnerUid && !bannerHidden && (push === 'default' || push === 'needs-install') ? (
+          {partnerUid && !left && !bannerHidden && (push === 'default' || push === 'needs-install') ? (
             <div class="sys-card">
               <span>{push === 'needs-install'
                 ? `Add Drops to your Home Screen (Share → Add to Home Screen) to get notified when ${partner.name} messages.`
@@ -433,6 +466,12 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
             body = (
               <div class={`bubble ${mine ? 'mine' : 'theirs'}`}>
                 {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={mine} onJump={() => jumpTo(m.replyTo!.msgId)} />}
+                {m.replyToNote && (
+                  <div class={`quote note-reply${mine ? ' on-mine' : ''}`}>
+                    <span class="quote-name">{mine ? `Replied to ${partner.name}’s note` : 'Replied to your note'}</span>
+                    <span class="quote-text">{noteLabel({ ...m.replyToNote, atMs: null })}</span>
+                  </div>
+                )}
                 <PhraseText text={m.text} phrases={m.phraseReactions} me={user.uid} nameOf={nameOf}
                   onRemove={(p) => removePhraseReaction(room.id, m, p).catch((e) => flash(e.message))} />
                 {m.editedAt && <span class="edited"> · edited</span>}
@@ -479,7 +518,13 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
         }}
       />
 
-      {selected ? (
+      {left ? (
+        <footer class="composer left-bar">
+          <button type="button" class="btn-ghost danger-text" onClick={async () => {
+            try { await deleteRoom(room.id); onBack(); } catch (e: any) { flash(e.message); }
+          }}>Delete chat</button>
+        </footer>
+      ) : selected ? (
         <footer class="composer select-bar" aria-label="Selected messages">
           <button type="button" class="round-btn" onClick={() => setSelected(null)} aria-label="Cancel selection"><XIcon /></button>
           <span class="select-count" role="status">{selected.size} selected</span>
@@ -510,6 +555,7 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
           value={draft}
           onInput={(e) => onDraft(e.currentTarget.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } }}
+          onBlur={stopTyping}
           placeholder="Message"
           autocomplete="off"
           enterKeyHint="send"
@@ -550,6 +596,10 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
                 onTheme={(t) => { setTheme(t); chooseTheme(user.uid, t); }}
                 push={push}
                 onPush={turnOnPush}
+                blocked={blocked}
+                onUnblock={(uid) => unblock(user.uid, uid).then(() => flash('Unblocked')).catch((e) => flash(e.message))}
+                onEditProfile={() => setSheet({ kind: 'profile' })}
+                onDeleteAccount={() => setSheet({ kind: 'delete-account' })}
               />
             )}
             {sheet.kind === 'scrap' && <ScrapSheet pins={pins} nameOf={nameOf} tabName={tabName} />}
@@ -618,6 +668,33 @@ export function Chat({ user, room, onBack }: { user: User; room: Room; onBack():
                 }} />
               ) : null;
             })()}
+            {sheet.kind === 'contact' && partnerUid && (
+              <ContactSheet
+                name={partner.name}
+                realName={firstName(partnerProfile?.name || partnerMember?.name, '')}
+                profile={partnerProfile}
+                member={partnerMember}
+                sinceMs={toMillis(room.createdAt)}
+                pinCount={pins.length}
+                nickname={prefs?.nickname || ''}
+                muted={!!prefs?.muted}
+                onNickname={(nickname) => setContact(user.uid, partnerUid, { nickname }).then(() => flash(nickname ? 'Nickname saved' : 'Nickname removed')).catch((e) => flash(e.message))}
+                onMute={(muted) => setContact(user.uid, partnerUid, { muted }).then(() => flash(muted ? 'Muted' : 'Unmuted')).catch((e) => flash(e.message))}
+                onRemove={async () => {
+                  setSheet(null);
+                  try { if (left) await deleteRoom(room.id); else await leaveRoom(room.id, user.uid); onBack(); } catch (e: any) { flash(e.message); }
+                }}
+                onBlock={async () => {
+                  setSheet(null);
+                  try { await blockContact(user.uid, partnerUid, partnerProfile?.name || partnerMember?.name || partner.name, left ? [] : [room.id]); if (left) await deleteRoom(room.id); onBack(); } catch (e: any) { flash(e.message); }
+                }}
+              />
+            )}
+            {sheet.kind === 'profile' && (<>
+              <div class="sheet-title">Your profile</div>
+              <ProfileForm user={user} profile={myProfile} roomIds={[room.id]} submitLabel="Save" onSaved={() => { setSheet(null); flash('Profile saved'); }} />
+            </>)}
+            {sheet.kind === 'delete-account' && <DeleteAccountSheet user={user} onCancel={() => setSheet(null)} />}
             {sheet.kind === 'archived' && (
               <ArchivedSheet
                 tabs={tabs}
@@ -786,6 +863,6 @@ function TypingIndicator({ member, name, tabId }: { member?: Member; name: strin
   const here = !member?.typingTab || member.typingTab === tabId;
   const until = here && member?.typingUntil ? member.typingUntil.toMillis() : 0;
   const now = useNow(1000, until > Date.now());
-  if (until <= now) return null;
+  if (until <= Math.max(now, Date.now())) return null;
   return <div class="row"><div class="bubble theirs typing">{name} is typing…</div></div>;
 }
