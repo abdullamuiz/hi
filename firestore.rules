@@ -829,8 +829,9 @@ service cloud.firestore {
 
           // Time Capsule: the other person can't answer (and so can't unlock the message)
           // before the open date the author chose.
+          // getAfter: an answer can be sealed in the same write that creates the Drop.
           function capsuleOpen() {
-            let d = get(/databases/$(database)/documents/rooms/$(roomId)/drops/$(dropId)).data;
+            let d = getAfter(/databases/$(database)/documents/rooms/$(roomId)/drops/$(dropId)).data;
             return d.type != 'time-capsule'
               || d.createdBy == me()
               || request.time.toMillis() >= d.content.get('openAtMs', 0);

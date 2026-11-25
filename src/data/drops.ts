@@ -1,7 +1,11 @@
 import {
   collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, writeBatch,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes } from 'firebase/storage';
+import type { WriteBatch } from 'firebase/firestore';
+import { db, storage } from '../firebase';
+import { compressImage } from '../lib/image';
+import { friendlyStorageError } from '../lib/errors';
 import type { DropDoc, Entry, Sealed } from '../types';
 
 /** Everything one viewer is allowed to know about one Drop, kept live. */
@@ -111,6 +115,24 @@ export function lockAnswer(roomId: string, dropId: string, uid: string, key: str
   b.set(doc(base, 'sealed', `${uid}_${key}`), { uid, key, value, locked: true, updatedAt: serverTimestamp() });
   b.set(doc(base, 'locks', `${uid}_${key}`), { uid, key, at: serverTimestamp() });
   return b.commit();
+}
+
+/** Seal and lock an answer inside another batch (e.g. a secret picked while creating the Drop). */
+export function lockInBatch(b: WriteBatch, roomId: string, dropId: string, uid: string, key: string, value: unknown) {
+  const base = dropRef(roomId, dropId);
+  b.set(doc(base, 'sealed', `${uid}_${key}`), { uid, key, value, locked: true, updatedAt: serverTimestamp() });
+  b.set(doc(base, 'locks', `${uid}_${key}`), { uid, key, at: serverTimestamp() });
+}
+
+/** A photo for a Drop (e.g. a dare answer), stored with the chat's photos. */
+export async function uploadDropPhoto(roomId: string, dropId: string, uid: string, file: File): Promise<string> {
+  const { blob } = await compressImage(file, 1600);
+  const id = `${dropId}-${Date.now().toString(36)}`.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60);
+  const path = `rooms/${roomId}/photos/${uid}/${id}.jpg`;
+  try {
+    await uploadBytes(ref(storage, path), blob, { contentType: 'image/jpeg', cacheControl: 'private, max-age=31536000' });
+  } catch (e) { throw friendlyStorageError(e, 'Photos'); }
+  return path;
 }
 
 export function addEntry(roomId: string, dropId: string, uid: string, text: string) {

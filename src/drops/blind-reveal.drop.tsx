@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { defineDrop } from './types';
+import { RevealPair } from './parts';
 
 type Content = { question: string };
 const K = 'answer';
@@ -56,25 +57,7 @@ export default defineDrop<Content>({
           </div>
         )}
         {locked && (
-          <div class="reveal-grid">
-            <div class="reveal-card me">
-              <div class="reveal-who">You</div>
-              <div class="reveal-ans">{api.mine<string>(K)}</div>
-            </div>
-            {api.revealed(K)
-              ? (
-                <div class="reveal-card them">
-                  <div class="reveal-who">{p}</div>
-                  <div class="reveal-ans">{api.theirs<string>(K)}</div>
-                </div>
-              ) : (
-                <div class="reveal-card hidden">
-                  <div class="reveal-who">{p}</div>
-                  <div class="reveal-ans" aria-label="Hidden">?</div>
-                  <div style={{ fontSize: '12px' }}>Flips when they lock in</div>
-                </div>
-              )}
-          </div>
+          <RevealPair me={api.mine<string>(K)} them={api.theirs<string>(K)} partner={p} revealed={api.revealed(K)} beatKey={`br:${api.dropId}`} />
         )}
       </div>
     );

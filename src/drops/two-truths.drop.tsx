@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import { defineDrop } from './types';
 import { Options } from './parts';
+import { burst, useOnceWhen } from './fx';
+import { spottedLie } from './logic';
 
 type Content = { a: string; b: string; c: string };
 // The author locks which one is the lie; the guesser locks a guess under the same key,
@@ -17,6 +19,8 @@ export default defineDrop<Content>({
     { key: 'a', label: 'Statement 1', kind: 'text', maxLength: 120 },
     { key: 'b', label: 'Statement 2', kind: 'text', maxLength: 120 },
     { key: 'c', label: 'Statement 3', kind: 'text', maxLength: 120 },
+    // Picked privately while writing; sealed for the sender as the Drop is created.
+    { key: K, label: 'Which one is the lie?', kind: 'secret', from: ['a', 'b', 'c'] },
   ],
   subtitle: () => 'Spot the lie',
   pinTitle: () => 'Two Truths & a Lie',
@@ -42,10 +46,16 @@ export default defineDrop<Content>({
       try { await api.lock(K, pick); } finally { setBusy(false); }
     };
 
-    if (api.revealed(K)) {
-      const lie = amAuthor ? api.mine<number>(K)! : api.theirs<number>(K)!;
-      const guess = amAuthor ? api.theirs<number>(K)! : api.mine<number>(K)!;
-      const right = lie === guess;
+    const revealed = api.revealed(K);
+    const lieV = amAuthor ? api.mine<number>(K) : api.theirs<number>(K);
+    const guessV = amAuthor ? api.theirs<number>(K) : api.mine<number>(K);
+    // Gold stars when the lie is spotted, waving red flags when it isn't. Once per phone.
+    useOnceWhen(revealed && lieV != null, `tt:${api.dropId}`, () => burst(spottedLie(lieV, guessV) ? 'stars' : 'flags'));
+
+    if (revealed) {
+      const lie = lieV!;
+      const guess = guessV!;
+      const right = spottedLie(lie, guess);
       return (
         <div class="stack-10">
           <div class="opt-list">
@@ -59,7 +69,7 @@ export default defineDrop<Content>({
               </div>
             ))}
           </div>
-          <div class="gap-line"><div class="gap-txt">{right
+          <div class={`gap-line tt-result ${right ? 'right' : 'wrong'}`}><div class="gap-txt">{right ? '⭐ ' : '🚩 '}{right
             ? (amAuthor ? `${p} spotted it. Too easy?` : 'You spotted it!')
             : (amAuthor ? `You fooled ${p}.` : `Fooled! ${p} got you.`)}</div></div>
         </div>

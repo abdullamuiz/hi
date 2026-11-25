@@ -41,7 +41,7 @@ export default defineDrop<Content>({
           <div class="note plain">{api.theyLocked(K) ? `${p} has answered · hidden` : `${p} hasn't answered yet`}</div>
           <button type="button" class="btn-primary" disabled={!draft.trim() || busy} onClick={lock}>Answer</button>
         </>) : (
-          <RevealPair me={api.mine<string>(K)} them={api.theirs<string>(K)} partner={p} revealed={api.revealed(K)} hiddenNote="Shows when they answer" />
+          <RevealPair me={api.mine<string>(K)} them={api.theirs<string>(K)} partner={p} revealed={api.revealed(K)} hiddenNote="Shows when they answer" beatKey={`dq:${api.dropId}`} />
         )}
       </div>
     );

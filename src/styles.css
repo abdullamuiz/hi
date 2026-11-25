@@ -1256,3 +1256,139 @@ button.phrase-chip { cursor: pointer; }
 }
 .self-row .chat-name { font-weight: 700; }
 .self-offer { padding-top: 6px; border-top: 1px solid var(--line, color-mix(in srgb, var(--ink) 10%, transparent)); }
+
+/* ================================================================= fun Drops */
+/* Lock-in squish and a gentle pulse while waiting on the other person. */
+.drop .btn-primary { transition: transform .12s ease; }
+.drop .btn-primary:active:not(:disabled) { transform: scale(.94); }
+.reveal-card.hidden.waiting, .note.heartbeat { animation: hi-heartbeat 1.6s ease-in-out infinite; }
+.reveal-card.hidden.counting .reveal-ans { font-size: 34px; font-weight: 700; color: var(--ink); animation: hi-count .42s ease-out; }
+.reveal-card.flip-in { animation: hi-flip .6s cubic-bezier(.2,.8,.3,1.2); transform-origin: center; }
+@keyframes hi-heartbeat { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.025); } 24% { transform: scale(1); } 36% { transform: scale(1.02); } }
+@keyframes hi-count { from { transform: scale(1.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes hi-flip { from { transform: perspective(600px) rotateY(90deg); } to { transform: perspective(600px) rotateY(0); } }
+
+/* Full-screen overlays: stars, flags, chicken, crown. */
+.drop-fx { position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
+.drop-fx .fx-bit { position: absolute; font-size: 30px; line-height: 1; }
+.drop-fx .fx-text {
+  position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  padding: 10px 18px; border-radius: 999px; background: var(--surface); color: var(--ink);
+  font-weight: 700; font-size: 20px; box-shadow: 0 8px 30px rgba(0,0,0,.18); animation: fx-text 2s ease-out both;
+}
+.drop-fx-stars .fx-bit { left: var(--x); top: 45%; animation: fx-star 1.9s ease-out var(--d) both; }
+.drop-fx-flags .fx-bit { top: calc(10% + var(--i) * 8%); font-size: 34px; animation: fx-flag 2.2s ease-in-out var(--d) both; }
+.drop-fx-flags .fx-bit:nth-child(odd) { left: -50px; --dir: 1; }
+.drop-fx-flags .fx-bit:nth-child(even) { right: -50px; --dir: -1; }
+.drop-fx-chicken .fx-bit { left: -60px; bottom: 22%; font-size: 54px; animation: fx-chicken 2s linear both; }
+.drop-fx-crown .fx-bit { left: 50%; top: 40%; font-size: 64px; animation: fx-crown 1.5s cubic-bezier(.2,.9,.3,1.3) both; }
+.app.fx-shake { animation: fx-shake .45s ease-in-out; }
+@keyframes fx-text { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.7); } 15% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -60%) scale(1); } }
+@keyframes fx-star { 0% { opacity: 0; transform: translate(0, 0) scale(.3) rotate(0); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(calc(var(--side) * 40px), -260px) scale(1.2) rotate(calc(var(--side) * 220deg)); } }
+@keyframes fx-flag { 0% { opacity: 0; transform: translateX(0) rotate(0); } 20% { opacity: 1; } 35% { transform: translateX(calc(var(--dir) * 120px)) rotate(calc(var(--dir) * -14deg)); } 50% { transform: translateX(calc(var(--dir) * 140px)) rotate(calc(var(--dir) * 12deg)); } 65% { transform: translateX(calc(var(--dir) * 130px)) rotate(calc(var(--dir) * -12deg)); } 85% { opacity: 1; } 100% { opacity: 0; transform: translateX(calc(var(--dir) * 120px)) rotate(0); } }
+@keyframes fx-chicken { 0% { transform: translateX(0) translateY(0); } 25% { transform: translateX(30vw) translateY(-14px); } 50% { transform: translateX(55vw) translateY(0); } 75% { transform: translateX(80vw) translateY(-14px); } 100% { transform: translateX(calc(100vw + 120px)) translateY(0); } }
+@keyframes fx-crown { 0% { opacity: 0; transform: translate(-50%, -120px) scale(.4); } 40% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 70% { transform: translate(-50%, 0) scale(1); } 100% { opacity: 0; transform: translate(-50%, -20px) scale(1); } }
+@keyframes fx-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }
+
+/* Decision Wheel */
+.wheel-wrap { position: relative; display: grid; place-items: center; padding-top: 6px; }
+.wheel { width: min(240px, 70vw); height: auto; filter: drop-shadow(0 4px 10px rgba(0,0,0,.15)); }
+.wheel-label { fill: #fff; font: 600 11px/1 inherit; paint-order: stroke; stroke: rgba(0,0,0,.25); stroke-width: 2px; }
+.wheel-pointer { position: absolute; top: 0; z-index: 1; fill: var(--ink); transition: transform .06s; }
+.wheel-pointer.tock { transform: translateY(2px) scaleY(.85); }
+.wheel-wrap.landed .wheel { animation: wheel-land .5s cubic-bezier(.3,1.6,.5,1); }
+.wheel-wrap.landed .win path { filter: brightness(1.15); }
+@keyframes wheel-land { 0% { transform: rotate(0); } 40% { transform: rotate(-4deg); } 100% { transform: rotate(0); } }
+
+/* Two Truths */
+.tt-result.right { background: rgba(232, 197, 71, .18); }
+.tt-result.wrong { background: rgba(217, 82, 82, .12); }
+
+/* Truth or Dare */
+.tod-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tod-card { min-height: 96px; border-radius: 16px; border: 0; font: inherit; font-size: 20px; font-weight: 700; color: #fff; display: grid; place-items: center; }
+.tod-card.truth { background: linear-gradient(135deg, #1E7F93, #4FA3B8); }
+.tod-card.dare { background: linear-gradient(135deg, #D96C5A, #F2A15F); }
+button.tod-card:active:not(:disabled) { transform: scale(.95) rotate(-1deg); }
+div.tod-card { opacity: .55; }
+.tod-prompt { border-radius: 14px; padding: 12px 14px; color: #fff; }
+.tod-prompt.truth { background: linear-gradient(135deg, #1E7F93, #4FA3B8); }
+.tod-prompt.dare { background: linear-gradient(135deg, #D96C5A, #F2A15F); }
+.tod-prompt .q { color: #fff; margin-top: 4px; }
+.tod-kind { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; opacity: .85; }
+.tod-actions { display: flex; gap: 10px; }
+.tod-actions .btn-primary { flex: 1; }
+.tod-photo { width: 100%; max-height: 320px; object-fit: cover; border-radius: 12px; }
+.tod-photo.loading { height: 160px; background: var(--soft); }
+.tod-big { font-size: 56px; text-align: center; }
+.setup-row { display: flex; gap: 8px; align-items: center; }
+.setup-row .field { flex: 1; }
+.icon-btn.dice { font-size: 20px; }
+
+/* Poll */
+.poll-row { position: relative; overflow: hidden; }
+.poll-bar { position: absolute; inset: 0 auto 0 0; background: var(--sel-bg); transition: width 1.1s cubic-bezier(.2,.8,.2,1); z-index: 0; }
+.poll-row > :not(.poll-bar) { position: relative; z-index: 1; }
+.poll-row.winner { border-color: #E8C547; }
+.poll-crown { display: inline-block; animation: hi-count .5s ease-out .9s both; }
+
+/* This or That */
+.tot-swipe { display: flex; flex-direction: column; gap: 10px; }
+.tot-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 110px; padding: 14px;
+  border-radius: 18px; background: var(--surface); border: 1.5px solid var(--line-2); box-shadow: 0 6px 18px rgba(0,0,0,.08);
+  touch-action: pan-y; user-select: none; cursor: grab; transition: transform .2s ease;
+}
+.tot-card.dragging { transition: none; cursor: grabbing; }
+.tot-side { font-weight: 700; font-size: 17px; transition: color .15s, transform .15s; }
+.tot-side.hot { color: var(--me); transform: scale(1.08); }
+.tot-same { font-size: 12px; font-weight: 700; color: #D96C8A; animation: hi-count .45s ease-out both; }
+
+/* Rank It */
+.rank-lines { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); align-items: start; }
+.rank-lines .rank-col { list-style: none; margin: 0; padding: 0; }
+.rank-lines .rank-col li { display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 10px; font-size: 14px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rank-lines .rank-col.me li { background: color-mix(in srgb, var(--me) 12%, transparent); }
+.rank-lines .rank-col.them li { background: color-mix(in srgb, var(--them) 16%, transparent); }
+.rank-lines .rank-col li + li { margin-top: 0; }
+.rank-svg { width: 40px; }
+.rank-link { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 80; stroke-dashoffset: 80; animation: rank-draw .6s ease-out calc(var(--k) * 120ms) forwards; }
+.rank-link.same { stroke: var(--me); stroke-width: 3; }
+@keyframes rank-draw { to { stroke-dashoffset: 0; } }
+
+/* Predict Me */
+.know-meter { display: flex; flex-direction: column; gap: 6px; }
+.know-track { height: 12px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.know-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--them), var(--me)); }
+.know-label { font-size: 15px; }
+.know-emoji { font-size: 20px; }
+
+/* Gap Slider */
+.track .mark { transition: left .9s cubic-bezier(.2,.8,.2,1); }
+.gap-burst { position: absolute; top: -34px; transform: translateX(-50%); font-size: 26px; animation: hi-count .5s ease-out .85s both; }
+
+/* Time Capsule: an envelope with a wax seal. */
+.envelope { position: relative; width: 52px; height: 38px; flex-shrink: 0; }
+.env-body { position: absolute; inset: 0; border-radius: 6px; background: #F2EFE6; border: 1.5px solid #C9C2AE; }
+.env-flap { position: absolute; left: 0; right: 0; top: 0; height: 22px; background: #E6DFCC; clip-path: polygon(0 0, 100% 0, 50% 100%); border-radius: 6px 6px 0 0; transform-origin: top; transition: transform .6s; }
+.env-wax { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); width: 18px; height: 18px; border-radius: 50%; background: #B23A3A; color: #F2EFE6; font: 700 10px/18px inherit; text-align: center; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.env-letter { position: absolute; left: 6px; right: 6px; top: 4px; height: 28px; background: #fff; border-radius: 3px; transition: transform .6s .3s; }
+.envelope.open .env-flap { transform: rotateX(180deg); z-index: 0; }
+.envelope.open .env-letter { transform: translateY(-16px); z-index: 1; animation: env-unfold .8s ease-out; }
+@keyframes env-unfold { from { transform: translateY(0); } to { transform: translateY(-16px); } }
+
+/* Watch Party: a filmstrip, reactions popping in along it. */
+.wp-track { background:
+  radial-gradient(circle, var(--surface) 2px, transparent 2.5px) 0 2px / 10px 5px repeat-x,
+  radial-gradient(circle, var(--surface) 2px, transparent 2.5px) 0 calc(100% - 2px) / 10px 5px repeat-x,
+  #2B2F3A; height: 38px; }
+.wp-mark { top: 9px; animation: hi-count .4s ease-out both; }
+.wp-mark:nth-child(2) { animation-delay: .08s; } .wp-mark:nth-child(3) { animation-delay: .16s; } .wp-mark:nth-child(4) { animation-delay: .24s; }
+.wp-mark:nth-child(5) { animation-delay: .32s; } .wp-mark:nth-child(n+6) { animation-delay: .4s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-card.hidden.waiting, .note.heartbeat, .reveal-card.flip-in, .wheel-wrap.landed .wheel, .poll-crown, .tot-same,
+  .rank-link, .gap-burst, .envelope.open .env-letter, .wp-mark, .reveal-card.hidden.counting .reveal-ans { animation: none; }
+  .rank-link { stroke-dashoffset: 0; }
+  .poll-bar, .track .mark, .tot-card { transition: none; }
+}

@@ -1,6 +1,8 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { defineDrop } from './types';
 import { Options } from './parts';
+import { knowTier } from './logic';
+import { buzz, fxOn, once, played } from './fx';
 
 type Content = { question: string; options: string[] };
 type Answer = { own: number; guess: number };
@@ -74,9 +76,34 @@ export default defineDrop<Content>({
             <div style={{ fontSize: '12px' }}>You guessed {iGot ? 'right ✓' : `“${opts[a.guess]}”`}</div>
           </div>
         </div>
-        <div class="gap-line"><div class="gap-num">{Number(iGot) + Number(theyGot)}/2</div>
-          <div class="gap-txt">{iGot && theyGot ? 'You know each other well.' : iGot || theyGot ? 'One of you is paying attention.' : 'Plenty still to learn!'}</div></div>
+        <KnowMeter pct={((Number(iGot) + Number(theyGot)) / 2) * 100} onceKey={`pm:${api.dropId}`} />
       </div>
     );
   },
 });
+
+/** A meter that fills to the score, then names the tier ("You know me 💞 50%"). */
+function KnowMeter({ pct, onceKey }: { pct: number; onceKey: string }) {
+  const animate = fxOn() && !played(onceKey);
+  const [shown, setShown] = useState(animate ? 0 : pct);
+  useEffect(() => {
+    if (!animate) return;
+    once(onceKey);
+    const t0 = performance.now();
+    let raf = 0;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / 1200);
+      setShown(Math.round(pct * (1 - (1 - t) ** 3)));
+      if (t < 1) raf = requestAnimationFrame(step); else buzz(12);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const tier = knowTier(shown);
+  return (
+    <div class="know-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label="How well you know each other">
+      <div class="know-track"><div class="know-fill" style={{ width: `${shown}%` }} /></div>
+      <div class="know-label"><span class="know-emoji" aria-hidden="true">{tier.emoji}</span> {tier.label} <b>{shown}%</b></div>
+    </div>
+  );
+}

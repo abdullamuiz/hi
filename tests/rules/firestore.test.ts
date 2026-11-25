@@ -227,6 +227,35 @@ describe('members & mood weather', () => {
   });
 });
 
+describe('a secret picked while creating a Drop (Two Truths: the lie)', () => {
+  it('can be sealed and locked in the same write as the new Drop, and stays hidden', async () => {
+    await seedRoom();
+    const db = alice();
+    const b = writeBatch(db);
+    const d = doc(db, 'rooms', ROOM, 'drops', 'tt1');
+    b.set(d, { type: 'two-truths', createdBy: 'alice', createdAt: serverTimestamp(), content: { a: 'x', b: 'y', c: 'z' } });
+    b.set(doc(d, 'sealed', 'alice_lie'), { uid: 'alice', key: 'lie', value: 2, locked: true, updatedAt: serverTimestamp() });
+    b.set(doc(d, 'locks', 'alice_lie'), { uid: 'alice', key: 'lie', at: serverTimestamp() });
+    await assertSucceeds(b.commit());
+    // Bob can't read the lie until he has locked his guess under the same key.
+    await assertFails(getDoc(doc(bob(), 'rooms', ROOM, 'drops', 'tt1', 'sealed', 'alice_lie')));
+    const bdb = bob();
+    const g = writeBatch(bdb);
+    g.set(doc(bdb, 'rooms', ROOM, 'drops', 'tt1', 'sealed', 'bob_lie'), { uid: 'bob', key: 'lie', value: 1, locked: true, updatedAt: serverTimestamp() });
+    g.set(doc(bdb, 'rooms', ROOM, 'drops', 'tt1', 'locks', 'bob_lie'), { uid: 'bob', key: 'lie', at: serverTimestamp() });
+    await assertSucceeds(g.commit());
+    await assertSucceeds(getDoc(doc(bdb, 'rooms', ROOM, 'drops', 'tt1', 'sealed', 'alice_lie')));
+  });
+
+  it('a Time Capsule still refuses an early open after the change to getAfter', async () => {
+    await seedRoom();
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'rooms', ROOM, 'drops', 'tc1'), { type: 'time-capsule', createdBy: 'alice', createdAt: new Date(), content: { openOn: '2099-01-01', openAtMs: Date.UTC(2099, 0, 1) } });
+    });
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'drops', 'tc1', 'sealed', 'bob_msg'), { uid: 'bob', key: 'msg', value: 'opened', locked: true, updatedAt: serverTimestamp() }));
+  });
+});
+
 describe('sealed answers (hidden until both lock in)', () => {
   it('the partner cannot read an unlocked answer', async () => {
     await seedRoom();

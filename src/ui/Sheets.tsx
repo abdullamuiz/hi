@@ -10,6 +10,7 @@ import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
 import { buildLabel, reloadApp } from '../lib/updates';
 import { DeliverySettings } from './Delivery';
+import { Options } from '../drops/parts';
 import { EffectsSetting } from './Effects';
 import { BlockedList } from './Profile';
 import type { Blocked } from '../data/profile';
@@ -59,7 +60,8 @@ export function TraySheet({ drops, onPick, sessions = [], onSession, self = fals
 interface SetupProps {
   def: DropDefinition<any>;
   prefill?: Record<string, unknown>;
-  onDrop(content: Record<string, unknown>): void;
+  /** `secrets`: private picks (setup fields of kind "secret"), sealed for the sender on create. */
+  onDrop(content: Record<string, unknown>, secrets: Record<string, unknown>): void;
   onBack(): void;
 }
 
@@ -69,6 +71,7 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
   const [vals, setVals] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
     (def.setup || []).forEach((f) => {
+      if (f.kind === 'secret') { v[f.key] = ''; return; }
       const x = start[f.key];
       v[f.key] = Array.isArray(x) ? x.join('\n') : String(x ?? '');
     });
@@ -79,8 +82,14 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
   const submit = (e: Event) => {
     e.preventDefault();
     const content: Record<string, unknown> = { ...start };
+    const secrets: Record<string, unknown> = {};
     for (const f of def.setup || []) {
       const raw = vals[f.key] || '';
+      if (f.kind === 'secret') {
+        if (raw === '') { setErr(`${f.label}: choose one.`); return; }
+        secrets[f.key] = Number(raw);
+        continue;
+      }
       if (f.kind === 'lines') {
         const lines = raw.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, f.max ?? 20);
         if (lines.length < (f.min ?? 1)) { setErr(`${f.label}: add at least ${f.min ?? 1}.`); return; }
@@ -90,13 +99,13 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
         content[f.key] = raw;
       } else {
         const t = raw.trim().slice(0, f.maxLength ?? 200);
-        if (!t) { setErr(`${f.label} can't be empty.`); return; }
+        if (!t && !f.optional) { setErr(`${f.label} can't be empty.`); return; }
         content[f.key] = t;
       }
     }
     const ready = def.prepare ? def.prepare(content as any) : content;
     if (typeof ready === 'string') { setErr(ready); return; }
-    onDrop(ready);
+    onDrop(ready, secrets);
   };
 
   return (
@@ -106,16 +115,33 @@ export function SetupSheet({ def, prefill, onDrop, onBack }: SetupProps) {
         <div class="sheet-sub">{def.trayDescription}</div>
       </div>
       {err && <div class="err" role="alert">{err}</div>}
-      {(def.setup || []).map((f) => (
-        <div class="stack" style={{ gap: '6px' }} key={f.key}>
-          <label class="field-label" for={`setup-${f.key}`}>{f.label}</label>
-          {f.kind === 'lines'
-            ? <textarea id={`setup-${f.key}`} class="field" rows={4} value={vals[f.key]} placeholder={f.placeholder} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />
-            : f.kind === 'date'
-              ? <input id={`setup-${f.key}`} class="field" type="date" value={vals[f.key]} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />
-              : <input id={`setup-${f.key}`} class="field" value={vals[f.key]} placeholder={f.placeholder} maxLength={f.maxLength} onInput={(e) => setVals({ ...vals, [f.key]: e.currentTarget.value })} />}
-        </div>
-      ))}
+      {(def.setup || []).map((f) => {
+        const set = (v: string) => setVals({ ...vals, [f.key]: v });
+        if (f.kind === 'secret') {
+          const items = f.from.map((k) => (vals[k] || '').trim() || '…');
+          return (
+            <div class="stack setup-secret" style={{ gap: '6px' }} key={f.key}>
+              <div class="field-label" id={`setup-${f.key}-label`}>{f.label} <span class="fine">· only you see this</span></div>
+              <Options items={items} value={vals[f.key] === '' ? null : Number(vals[f.key])} onPick={(i) => set(String(i))} label={f.label} />
+            </div>
+          );
+        }
+        return (
+          <div class="stack" style={{ gap: '6px' }} key={f.key}>
+            <label class="field-label" for={`setup-${f.key}`}>{f.label}{f.kind === 'text' && f.optional ? <span class="fine"> · optional</span> : null}</label>
+            {f.kind === 'lines'
+              ? <textarea id={`setup-${f.key}`} class="field" rows={4} value={vals[f.key]} placeholder={f.placeholder} onInput={(e) => set(e.currentTarget.value)} />
+              : f.kind === 'date'
+                ? <input id={`setup-${f.key}`} class="field" type="date" value={vals[f.key]} onInput={(e) => set(e.currentTarget.value)} />
+                : (
+                  <div class="setup-row">
+                    <input id={`setup-${f.key}`} class="field" value={vals[f.key]} placeholder={f.placeholder} maxLength={f.maxLength} onInput={(e) => set(e.currentTarget.value)} />
+                    {f.suggest && <button type="button" class="icon-btn dice" aria-label={`Random ${f.label.toLowerCase()}`} onClick={() => set(f.suggest!())}>🎲</button>}
+                  </div>
+                )}
+          </div>
+        );
+      })}
       <div style={{ display: 'flex', gap: '10px' }}>
         <button type="button" class="btn-ghost" onClick={onBack}>Back</button>
         <button class="btn-primary" style={{ flexGrow: 1 }}>Drop it</button>
