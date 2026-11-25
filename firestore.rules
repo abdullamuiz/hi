@@ -9,7 +9,8 @@ rules_version = '2';
 //   users/{uid}/contacts/{uid}                     private: my nickname for a contact, mute
 //   users/{uid}/blocked/{uid}                      private: people I blocked
 //   profiles/{uid}                                 public profile: name, photo, about, 24h note
-//   rooms/{roomId}                                 owner, members[<=2], invites[<=1], inviteCode?, lastMessage?, left?
+//   rooms/{roomId}                                 owner, members[<=2], invites[<=1], inviteCode?, lastMessage?, left?, streak?
+//   rooms/{roomId}/days/{YYYY-MM-DD}             uids: who sent something that day (streaks, Rewind)
 //     members/{uid}                                public profile, mood weather, lastRead per tab
 //     tabs/{tabId}                                 parallel conversations ("General" + more)
 //       messages/{id}                              chat messages (append-only)
@@ -87,10 +88,11 @@ service cloud.firestore {
       match /contacts/{cid} {
         allow read, delete: if signedIn() && me() == uid;
         allow create, update: if signedIn() && me() == uid
-          && onlyKeys(['nickname', 'muted', 'mutedUntil', 'dailyQuestion', 'updatedAt'])
+          && onlyKeys(['nickname', 'muted', 'mutedUntil', 'dailyQuestion', 'memories', 'updatedAt'])
           && str(incoming().get('nickname', ''), 0, 40)
           && incoming().get('muted', false) is bool
           && incoming().get('dailyQuestion', true) is bool
+          && incoming().get('memories', true) is bool
           && (incoming().get('mutedUntil', null) == null || incoming().mutedUntil is timestamp)
           && incoming().updatedAt == request.time;
       }
@@ -250,7 +252,58 @@ service cloud.firestore {
           && changedKeys().hasOnly(['lastMessage'])
           && validLastMessage()
         )
+        ||
+        // Hot streak (opt-in): one proposes, the other accepts; either can stop it.
+        (
+          me() in resource.data.members
+          && resource.data.members.size() == 2
+          && changedKeys().hasOnly(['streak'])
+          && validStreakChange()
+        )
       );
+
+      function validStreakChange() {
+        let before = resource.data.get('streak', null);
+        let after = incoming().get('streak', null);
+        return
+          // Stop: decline, withdraw or turn off.
+          (before != null && after == null)
+          // Propose.
+          || (before == null && after is map
+              && after.keys().hasOnly(['state', 'by', 'at'])
+              && after.state == 'proposed' && after.by == me() && after.at == request.time)
+          // Accept: only the other person, keeping who proposed it.
+          || (before != null && after is map && before.state == 'proposed' && before.by != me()
+              && after.keys().hasOnly(['state', 'by', 'at', 'since'])
+              && after.state == 'on' && after.by == before.by && after.at == before.at && after.since == request.time)
+          // Cache the count the phone worked out (for the chat list).
+          || (before != null && after is map && before.state == 'on'
+              && after.keys().hasOnly(['state', 'by', 'at', 'since', 'count', 'best', 'day'])
+              && after.state == 'on' && after.by == before.by && after.at == before.at && after.since == before.since
+              && after.count is int && after.count >= 0 && after.count <= 100000
+              && after.best is int && after.best >= after.count && after.best <= 100000
+              && after.day is string && after.day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+      }
+
+      // -------------------------------------------------------- activity days
+      // rooms/{id}/days/{YYYY-MM-DD}: who sent something that day (streaks, Rewind).
+      // Written with the message; you can only add yourself, and only for about today.
+      match /days/{day} {
+        function isDay(t) {
+          let p = day.split('-');
+          return int(p[0]) == t.year() && int(p[1]) == t.month() && int(p[2]) == t.day();
+        }
+        function aboutToday() {
+          return day.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && (isDay(request.time) || isDay(request.time - duration.value(1, 'd')) || isDay(request.time + duration.value(1, 'd')));
+        }
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId) && aboutToday() && onlyKeys(['uids']) && incoming().uids == [me()];
+        allow update: if isMember(roomId) && aboutToday() && onlyKeys(['uids'])
+          && (incoming().uids == resource.data.uids
+              || (!(me() in resource.data.uids) && incoming().uids == resource.data.uids.concat([me()])));
+        allow delete: if false;
+      }
       // The last person in a room can delete it: a chat nobody joined yet, or one the other person left.
       allow delete: if signedIn() && me() in resource.data.members && resource.data.members.size() == 1;
 
