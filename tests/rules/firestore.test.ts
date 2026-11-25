@@ -1003,12 +1003,11 @@ describe('streaks & activity days', () => {
 
 describe('sessions (Phase 9)', () => {
   const S = 's1';
-  const ses = (db: Firestore) => doc(db, 'rooms', ROOM, 'sessions', S);
   const priv = (db: Firestore, uid: string) => doc(db, 'rooms', ROOM, 'sessions', S, 'private', uid);
   const prog = (db: Firestore, uid: string) => doc(db, 'rooms', ROOM, 'sessions', S, 'users', uid);
   const answers = (db: Firestore, uid: string, done: boolean, a: Record<string, unknown> = { q1: 'a' }) =>
     setDoc(priv(db, uid), { uid, answers: a, done, updatedAt: serverTimestamp() });
-  const progress = (uid: string, done: boolean, extra: Record<string, unknown> = {}) =>
+  const progress = (_uid: string, done: boolean, extra: Record<string, unknown> = {}) =>
     ({ answered: done ? 4 : 1, total: 4, done, seenAt: serverTimestamp(), ...extra });
   async function finish(db: Firestore, uid: string) {
     const b = writeBatch(db);
