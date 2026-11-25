@@ -16,6 +16,7 @@ export const DROP_TITLES: Record<string, string> = {
   'time-capsule': 'a Time Capsule',
   'mood-check': 'a Mood Check',
   'daily-question': 'today’s question',
+  'session': 'a Session (Type Test)',
 };
 
 export interface MsgLike {
