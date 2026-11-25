@@ -233,6 +233,9 @@ rooms/{roomId}                      one chat: owner, members (max 2), invites [e
     locks/{uid}_{key}               public "I've locked {key}" marker
     entries/{id}                    public, append-only lines
     users/{uid}                     public per-person progress
+  sessions/{id}                     a Session (Type Test …); id = its Drop's id
+    private/{uid}                   my answers: PRIVATE until both have finished, then frozen
+    users/{uid}                     public progress, presence (seenAt) and, when done, my result code
 profiles/{uid}                      public profile: name, photo (small inline JPEG), about, note {text, emoji, at}
 users/{uid}                         theme, readReceipts, quiet {on, start, end, tz}; urgent {day, count} (server only)
   tokens/{fcmToken}                 push tokens (private)
@@ -390,6 +393,16 @@ The **+** tray has fifteen Drops: Feeling Map, Blind Reveal, Gap Slider, Tag-tea
 **Today's question** is dropped into General once a day (the same question on both phones, picked from about 60), with a banner at the top until you've both answered. Turn it off per chat in the contact's profile → **Daily question**.
 
 **Threads:** long-press a message → **Start a thread** for a side chat. It folds into a "3 replies · last from Sam" tile under the message, with a dot when there's something new; tap it to open the thread full screen. Replies push like messages ("💬 In a thread: …").
+
+### Sessions: the Type Test
+
+**+** → **Sessions** → **Type Test** starts a full-screen test for both of you and posts a card in the chat ("Alice started a Type Test · Join").
+- 32 quick A/B questions. Answer at your own pace: go back, stop, come back later and carry on where you left off. The header shows both people's progress, and "in it now" when the other person has it open.
+- Your answers stay **private until you've both finished**. The database rules enforce this, and finished answers can't be changed.
+- Then the reveal, one screen at a time: both four-letter types flip over, four scale bars (circle = you, square = them), where you match and differ, three conversation prompts (*Ask this* puts one in the message box), and *Pin result* · *Talk about it* · *Share as image* · *Retake*. Retakes keep your earlier results.
+- It's inspired by the four-letter personality types, with original questions, and is for fun and conversation, not a clinical or official assessment.
+
+New tests are a single JSON file: see [docs/ADDING_A_SESSION.md](docs/ADDING_A_SESSION.md).
 
 ### Streaks and memories
 

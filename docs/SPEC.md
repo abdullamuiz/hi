@@ -382,7 +382,13 @@ Profile · Quiet hours · Read receipts · Reduce motion override · Notificatio
    - Milestones are celebrated once per phone (stored on the device) and can be pinned by hand rather than pinned automatically.
    - On This Day is looked up by the app when a chat opens (no morning function) and shown above the composer, not posted as a message; it covers messages, photos, voice notes and Drops, not pins. Off per chat with the **Memories** switch.
    - Rewind (Drop #11): slides for this month / last month / this year from the chat's recent history (the same 2,000-message cap as search), a share image without photos, and last month's Rewind dropped into General by the first phone to open the chat in a new month.
-9. **Session framework + Type Test**: full-screen engine, JSON test format, Type Test with reveal sequence.
+9. **Session framework + Type Test** ✅ done: full-screen engine, JSON test format, Type Test with reveal sequence.
+   - Scoring runs on the phones, not in a Cloud Function: once both have finished, the rules let each person read the other's `private/{uid}` answers, and both phones score both. There is no `results/{uid}` collection; each person's result code is kept on their public `users/{uid}` progress doc (for the chat card and history). Works without Blaze.
+   - Presence is a `seenAt` heartbeat every 20 s while the session is open ("in it now" for 45 s).
+   - The engine supports A/B and Likert questions; card sort is left for a later test.
+   - Retake starts a new session (a new card); history lists your earlier result codes for the same test in this chat.
+   - A four-question **Mini Type Test** is offered only with the developer switch `localStorage['hi.sessions.dev'] = '1'` (used by the end-to-end test).
+   - The "session finished" push isn't sent; the chat card shows progress and "See results" instead.
 10. **Work mode**: Work tab style, Doc Drop (co-editing, comments, versions, export), Review Drop for PDFs/images.
 11. **Optional**: Ask Claude Drop (feature-flagged), Tasks strip, suggest mode, extra Session tests, Capacitor wrap for TestFlight/Play testing.
 

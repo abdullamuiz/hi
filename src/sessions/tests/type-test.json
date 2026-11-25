@@ -1,0 +1,586 @@
+{
+ "id": "type-test",
+ "version": 1,
+ "title": "Type Test",
+ "subtitle": "Inspired by the four-letter personality types",
+ "icon": "🧭",
+ "footer": "For fun and conversation, not a clinical or official assessment.",
+ "format": "ab",
+ "order": 1,
+ "dimensions": [
+  {
+   "id": "EI",
+   "name": "Energy",
+   "left": {
+    "code": "E",
+    "label": "Fills up with people"
+   },
+   "right": {
+    "code": "I",
+    "label": "Fills up in quiet"
+   },
+   "same": "You recharge the same way, so plans that suit one of you usually suit both.",
+   "differ": "One of you fills up around people, the other in quiet. Make room for both."
+  },
+  {
+   "id": "SN",
+   "name": "Focus",
+   "left": {
+    "code": "S",
+    "label": "Here and now"
+   },
+   "right": {
+    "code": "N",
+    "label": "What could be"
+   },
+   "same": "You take in the world the same way, so you rarely talk past each other.",
+   "differ": "One of you sees the details, the other the big picture. Together you see the whole thing."
+  },
+  {
+   "id": "TF",
+   "name": "Deciding",
+   "left": {
+    "code": "T",
+    "label": "Head first"
+   },
+   "right": {
+    "code": "F",
+    "label": "Heart first"
+   },
+   "same": "You make decisions the same way, which keeps things simple.",
+   "differ": "One leads with the head, the other with the heart. Say which one you need in the moment."
+  },
+  {
+   "id": "JP",
+   "name": "Pace",
+   "left": {
+    "code": "J",
+    "label": "Plans ahead"
+   },
+   "right": {
+    "code": "P",
+    "label": "Goes with it"
+   },
+   "same": "You agree on how much to plan, which saves a lot of arguments.",
+   "differ": "One likes a plan, the other likes options. Agree what's fixed and leave the rest open."
+  }
+ ],
+ "questions": [
+  {
+   "id": "ei1",
+   "dim": "EI",
+   "text": "After a long week, the best Friday night is…",
+   "a": {
+    "text": "Out with a group, the more the merrier",
+    "side": "left"
+   },
+   "b": {
+    "text": "A quiet night in, maybe with one close friend",
+    "side": "right"
+   }
+  },
+  {
+   "id": "sn1",
+   "dim": "SN",
+   "text": "When you learn something new, you prefer…",
+   "a": {
+    "text": "Clear steps and real examples",
+    "side": "left"
+   },
+   "b": {
+    "text": "The big idea first, details later",
+    "side": "right"
+   }
+  },
+  {
+   "id": "tf1",
+   "dim": "TF",
+   "text": "A friend shows you their big plan. You first…",
+   "a": {
+    "text": "Point out what might go wrong",
+    "side": "left"
+   },
+   "b": {
+    "text": "Tell them what you love about it",
+    "side": "right"
+   }
+  },
+  {
+   "id": "jp1",
+   "dim": "JP",
+   "text": "Your holidays are…",
+   "a": {
+    "text": "Planned day by day",
+    "side": "left"
+   },
+   "b": {
+    "text": "Made up as you go",
+    "side": "right"
+   }
+  },
+  {
+   "id": "ei2",
+   "dim": "EI",
+   "text": "At a party where you only know the host, you…",
+   "a": {
+    "text": "Find one person and talk to them all night",
+    "side": "right"
+   },
+   "b": {
+    "text": "Introduce yourself around the room",
+    "side": "left"
+   }
+  },
+  {
+   "id": "sn2",
+   "dim": "SN",
+   "text": "You'd rather read…",
+   "a": {
+    "text": "A story set in a world that doesn't exist",
+    "side": "right"
+   },
+   "b": {
+    "text": "A true story",
+    "side": "left"
+   }
+  },
+  {
+   "id": "tf2",
+   "dim": "TF",
+   "text": "Choosing between two places to live, what matters most is…",
+   "a": {
+    "text": "How it would feel to live there",
+    "side": "right"
+   },
+   "b": {
+    "text": "The numbers: rent, size, commute",
+    "side": "left"
+   }
+  },
+  {
+   "id": "jp2",
+   "dim": "JP",
+   "text": "A deadline two weeks away: you…",
+   "a": {
+    "text": "Do your best work in the last few days",
+    "side": "right"
+   },
+   "b": {
+    "text": "Start now and finish early",
+    "side": "left"
+   }
+  },
+  {
+   "id": "ei3",
+   "dim": "EI",
+   "text": "When you're working something out, you tend to…",
+   "a": {
+    "text": "Talk it through out loud",
+    "side": "left"
+   },
+   "b": {
+    "text": "Think it over on your own first",
+    "side": "right"
+   }
+  },
+  {
+   "id": "sn3",
+   "dim": "SN",
+   "text": "Planning a trip, you think first about…",
+   "a": {
+    "text": "Bookings, routes and what to pack",
+    "side": "left"
+   },
+   "b": {
+    "text": "The feel of the place and what might happen",
+    "side": "right"
+   }
+  },
+  {
+   "id": "tf3",
+   "dim": "TF",
+   "text": "In a disagreement, it matters more to be…",
+   "a": {
+    "text": "Fair",
+    "side": "left"
+   },
+   "b": {
+    "text": "Kind",
+    "side": "right"
+   }
+  },
+  {
+   "id": "jp3",
+   "dim": "JP",
+   "text": "Your room is usually…",
+   "a": {
+    "text": "Tidy, everything has a place",
+    "side": "left"
+   },
+   "b": {
+    "text": "Organised chaos",
+    "side": "right"
+   }
+  },
+  {
+   "id": "ei4",
+   "dim": "EI",
+   "text": "A free afternoon with no plans feels like…",
+   "a": {
+    "text": "A gift of time to yourself",
+    "side": "right"
+   },
+   "b": {
+    "text": "A chance to call people up",
+    "side": "left"
+   }
+  },
+  {
+   "id": "sn4",
+   "dim": "SN",
+   "text": "People would say you're more…",
+   "a": {
+    "text": "Imaginative",
+    "side": "right"
+   },
+   "b": {
+    "text": "Practical",
+    "side": "left"
+   }
+  },
+  {
+   "id": "tf4",
+   "dim": "TF",
+   "text": "When someone's upset, you tend to…",
+   "a": {
+    "text": "Listen and comfort them first",
+    "side": "right"
+   },
+   "b": {
+    "text": "Help them fix the problem",
+    "side": "left"
+   }
+  },
+  {
+   "id": "jp4",
+   "dim": "JP",
+   "text": "Plans changing at the last minute make you…",
+   "a": {
+    "text": "Curious what happens next",
+    "side": "right"
+   },
+   "b": {
+    "text": "A little stressed",
+    "side": "left"
+   }
+  },
+  {
+   "id": "ei5",
+   "dim": "EI",
+   "text": "In a busy group chat, you're usually…",
+   "a": {
+    "text": "One of the loudest voices",
+    "side": "left"
+   },
+   "b": {
+    "text": "Reading more than writing",
+    "side": "right"
+   }
+  },
+  {
+   "id": "sn5",
+   "dim": "SN",
+   "text": "In a conversation you most enjoy…",
+   "a": {
+    "text": "Swapping real experiences",
+    "side": "left"
+   },
+   "b": {
+    "text": "Wild what-ifs and theories",
+    "side": "right"
+   }
+  },
+  {
+   "id": "tf5",
+   "dim": "TF",
+   "text": "Honest feedback should be…",
+   "a": {
+    "text": "Direct, even if it stings",
+    "side": "left"
+   },
+   "b": {
+    "text": "Gentle, so it lands well",
+    "side": "right"
+   }
+  },
+  {
+   "id": "jp5",
+   "dim": "JP",
+   "text": "You go shopping with…",
+   "a": {
+    "text": "A list",
+    "side": "left"
+   },
+   "b": {
+    "text": "A rough idea",
+    "side": "right"
+   }
+  },
+  {
+   "id": "ei6",
+   "dim": "EI",
+   "text": "You recharge best by…",
+   "a": {
+    "text": "Having time alone",
+    "side": "right"
+   },
+   "b": {
+    "text": "Being around people",
+    "side": "left"
+   }
+  },
+  {
+   "id": "sn6",
+   "dim": "SN",
+   "text": "Giving directions, you'd say…",
+   "a": {
+    "text": "Head towards the sea, you'll spot it",
+    "side": "right"
+   },
+   "b": {
+    "text": "Left at the bakery, then 200 metres",
+    "side": "left"
+   }
+  },
+  {
+   "id": "tf6",
+   "dim": "TF",
+   "text": "A tough call at work: you go with…",
+   "a": {
+    "text": "What's best for the people involved",
+    "side": "right"
+   },
+   "b": {
+    "text": "What's most logical",
+    "side": "left"
+   }
+  },
+  {
+   "id": "jp6",
+   "dim": "JP",
+   "text": "You feel better when things are…",
+   "a": {
+    "text": "Open, with options",
+    "side": "right"
+   },
+   "b": {
+    "text": "Settled and decided",
+    "side": "left"
+   }
+  },
+  {
+   "id": "ei7",
+   "dim": "EI",
+   "text": "Meeting new people is…",
+   "a": {
+    "text": "Energising",
+    "side": "left"
+   },
+   "b": {
+    "text": "Nice, but tiring after a while",
+    "side": "right"
+   }
+  },
+  {
+   "id": "sn7",
+   "dim": "SN",
+   "text": "You trust…",
+   "a": {
+    "text": "What you've seen work",
+    "side": "left"
+   },
+   "b": {
+    "text": "Your hunches",
+    "side": "right"
+   }
+  },
+  {
+   "id": "tf7",
+   "dim": "TF",
+   "text": "You'd rather be known as…",
+   "a": {
+    "text": "Sharp",
+    "side": "left"
+   },
+   "b": {
+    "text": "Warm",
+    "side": "right"
+   }
+  },
+  {
+   "id": "jp7",
+   "dim": "JP",
+   "text": "Your weekends usually…",
+   "a": {
+    "text": "Have a rough schedule",
+    "side": "left"
+   },
+   "b": {
+    "text": "Just happen",
+    "side": "right"
+   }
+  },
+  {
+   "id": "ei8",
+   "dim": "EI",
+   "text": "When something exciting happens, you…",
+   "a": {
+    "text": "Sit with it for a bit before sharing",
+    "side": "right"
+   },
+   "b": {
+    "text": "Tell people straight away",
+    "side": "left"
+   }
+  },
+  {
+   "id": "sn8",
+   "dim": "SN",
+   "text": "With a new gadget, you…",
+   "a": {
+    "text": "Imagine everything you could do with it",
+    "side": "right"
+   },
+   "b": {
+    "text": "Learn how it works, then use it",
+    "side": "left"
+   }
+  },
+  {
+   "id": "tf8",
+   "dim": "TF",
+   "text": "When a film makes everyone cry, you…",
+   "a": {
+    "text": "Cry along with them",
+    "side": "right"
+   },
+   "b": {
+    "text": "Admire how well it was made",
+    "side": "left"
+   }
+  },
+  {
+   "id": "jp8",
+   "dim": "JP",
+   "text": "To-do lists are…",
+   "a": {
+    "text": "Things you write and then lose",
+    "side": "right"
+   },
+   "b": {
+    "text": "Life-savers",
+    "side": "left"
+   }
+  }
+ ],
+ "profiles": {
+  "ISTJ": {
+   "name": "The Steady Hand",
+   "blurb": "Reliable, thorough and quietly loyal. You keep your word and your promises."
+  },
+  "ISFJ": {
+   "name": "The Quiet Keeper",
+   "blurb": "Caring and dependable. You remember the little things that matter to people."
+  },
+  "INFJ": {
+   "name": "The Lantern",
+   "blurb": "Thoughtful and deep. You see what people need before they say it."
+  },
+  "INTJ": {
+   "name": "The Long Thinker",
+   "blurb": "Independent and strategic. You like a good plan and a better idea."
+  },
+  "ISTP": {
+   "name": "The Tinkerer",
+   "blurb": "Calm and hands-on. You figure things out by taking them apart."
+  },
+  "ISFP": {
+   "name": "The Gentle Maker",
+   "blurb": "Easy-going and creative. You live by your own quiet values."
+  },
+  "INFP": {
+   "name": "The Daydreamer",
+   "blurb": "Idealistic and kind. Your inner world is rich and full of meaning."
+  },
+  "INTP": {
+   "name": "The Puzzle Solver",
+   "blurb": "Curious and logical. You love working out how everything fits."
+  },
+  "ESTP": {
+   "name": "The Live Wire",
+   "blurb": "Bold and quick. You'd rather try it than talk about it."
+  },
+  "ESFP": {
+   "name": "The Spark",
+   "blurb": "Warm and playful. You turn an ordinary day into a good one."
+  },
+  "ENFP": {
+   "name": "The Firework",
+   "blurb": "Enthusiastic and imaginative. You see possibilities everywhere."
+  },
+  "ENTP": {
+   "name": "The Idea Machine",
+   "blurb": "Inventive and witty. You love a debate and a fresh angle."
+  },
+  "ESTJ": {
+   "name": "The Captain",
+   "blurb": "Organised and decisive. You get people and plans moving."
+  },
+  "ESFJ": {
+   "name": "The Host",
+   "blurb": "Friendly and generous. You make everyone feel looked after."
+  },
+  "ENFJ": {
+   "name": "The Rallying Cry",
+   "blurb": "Encouraging and warm. You bring out the best in people."
+  },
+  "ENTJ": {
+   "name": "The Strategist",
+   "blurb": "Confident and driven. You see the goal and the path to it."
+  }
+ },
+ "reveal": [
+  "types",
+  "scales",
+  "match",
+  "prompts",
+  "finish"
+ ],
+ "prompts": {
+  "EI": [
+   "What's your ideal free Saturday, and could we fit both of ours in?",
+   "When I go quiet, what does it usually mean?",
+   "How do you know when you need a break from people?"
+  ],
+  "SN": [
+   "Tell me about a detail I always seem to miss.",
+   "What's a big dream you haven't said out loud yet?",
+   "Do you like to hear about plans as steps or as the big idea?"
+  ],
+  "TF": [
+   "When you're upset, do you want solutions or a hug first?",
+   "What's a decision you made with your heart that you're glad about?",
+   "How should I give you honest feedback?"
+  ],
+  "JP": [
+   "What's one thing we should always plan, and one we should leave open?",
+   "How do last-minute changes really make you feel?",
+   "What's your perfect mix of plans and surprises for a trip?"
+  ],
+  "same": [
+   "Which result surprised you most?",
+   "What's something about you this test completely missed?",
+   "Do you think we've become more alike since we met?"
+  ]
+ }
+}

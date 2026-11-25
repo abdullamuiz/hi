@@ -72,6 +72,8 @@ export interface DropDefinition<C extends Record<string, unknown> = Record<strin
   content: C;
   /** Fields the sender can edit before dropping. Omit to drop straight away. */
   setup?: SetupField[];
+  /** Card title when it depends on the content (e.g. which Session test). Defaults to `title`. */
+  cardTitle?(content: C): string;
   /** Small grey line under the card title, e.g. "Hot take". */
   subtitle(content: C): string;
   /** Title shown in the scrapbook. Defaults to `title`. */

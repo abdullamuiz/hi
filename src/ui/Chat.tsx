@@ -42,6 +42,11 @@ import { nextMilestone, reachedMilestones, type Milestone } from '../lib/milesto
 import { rewindPeriod, type RewindPeriod } from '../lib/rewind';
 import { dayKeyIn } from '../lib/streak';
 import { OPEN_REWIND } from '../drops/rewind.drop';
+import { OPEN_SESSION } from '../drops/session.drop';
+import { SessionScreen } from './Session';
+import { startSession } from '../data/sessions';
+import { trayTests } from '../sessions/registry';
+import type { SessionTest } from '../sessions/types';
 import { ensureDailyQuestion } from '../data/daily';
 import { dayKey } from '../drops/logic';
 import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
@@ -131,6 +136,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [sheet, setSheet] = useState<Sheet>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const [thread, setThread] = useState<string | null>(null);
+  // Full-screen Session (Type Test …) by session id.
+  const [session, setSession] = useState<string | null>(null);
   const [toast, setToastState] = useState<Toast | null>(null);
   const [replyTo, setReplyTo] = useState<ReplyRef | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
@@ -188,6 +195,14 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     };
     addEventListener(OPEN_REWIND, open);
     return () => removeEventListener(OPEN_REWIND, open);
+  }, []);
+  useEffect(() => {
+    const open = (e: Event) => {
+      const id = (e as CustomEvent).detail?.sessionId;
+      if (typeof id === 'string' && id) setSession(id);
+    };
+    addEventListener(OPEN_SESSION, open);
+    return () => removeEventListener(OPEN_SESSION, open);
   }, []);
 
   // --- subscriptions ---------------------------------------------------------
@@ -488,6 +503,17 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
       await createDrop(room.id, activeTab, user.uid, def.type, content, def.initialEntries?.(content) || [], `a ${def.title}`);
     } catch (e: any) {
       flash(e?.message || 'Could not drop that.');
+    }
+  };
+
+  const beginSession = async (test: SessionTest) => {
+    setSheet(null);
+    if (!partnerUid) return flash('Sessions need two people. Invite someone first.');
+    if (!tabReady) return notReady();
+    try {
+      setSession(await startSession(room.id, activeTab, user.uid, test));
+    } catch (e: any) {
+      flash(e?.message || 'Could not start that.');
     }
   };
 
@@ -920,6 +946,14 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         <RewindScreen roomId={room.id} me={user.uid} them={partnerUid} myName={me.name} theirName={partner.name}
           tz={room.timezone} period={rewind.period} onToast={flash} onClose={() => setRewind(null)} />
       )}
+      {session && (
+        <SessionScreen key={session} roomId={room.id} sessionId={session}
+          me={{ uid: user.uid, name: me.name }} them={{ uid: partnerUid, name: partner.name }}
+          onToast={flash} onClose={() => setSession(null)}
+          onTalk={(text) => { setDraft(text); setTimeout(() => inputRef.current?.focus(), 50); }}
+          onPin={(title, detail, dropId) => pin({ title, detail, dropId })}
+          onRetake={(test) => beginSession(test)} />
+      )}
       {thread && byId(thread) && (
         <ThreadView roomId={room.id} root={byId(thread)!} me={user.uid} nameOf={nameOf} readOnly={left}
           onToast={flash} onClose={() => setThread(null)} />
@@ -939,7 +973,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         <div class="sheet-wrap">
           <button type="button" class="scrim" onClick={() => setSheet(null)} aria-label="Close" />
           <div class="sheet" role="dialog" aria-modal="true">
-            {sheet.kind === 'tray' && <TraySheet drops={drops.filter((d) => !d.hidden)} onPick={(d) => startDrop(d)} />}
+            {sheet.kind === 'tray' && <TraySheet drops={drops.filter((d) => !d.hidden)} onPick={(d) => startDrop(d)}
+              sessions={trayTests()} onSession={beginSession} />}
             {sheet.kind === 'setup' && (() => {
               const def = getDrop(sheet.type);
               return def ? <SetupSheet def={def} prefill={sheet.prefill} onDrop={(c) => dropIt(def, c)} onBack={() => setSheet({ kind: 'tray' })} /> : null;
