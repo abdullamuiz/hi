@@ -161,6 +161,11 @@ describe('rewind', () => {
     expect(s.biggestGapMs).toBe(27 * h);
     expect(gapLabel(s.biggestGapMs)).toBe('27 hours');
   });
+  it('leaves your names out of the top words', () => {
+    const msgs: RewindMessage[] = [{ id: 'a', tabId: 'g', uid: A, kind: 'text', text: 'bob bob beach', ms: 5 }];
+    const s = computeRewind(msgs, { from: 0, to: 10, label: '' }, A, B, {}, 'UTC', new Set(['bob']));
+    expect(s.topWords).toEqual([{ word: 'beach', n: 1 }]);
+  });
   it('builds month and year periods in the room zone', () => {
     const now = Date.parse('2026-01-10T12:00:00Z');
     expect(rewindPeriod('last-month', now, 'UTC').label).toBe('December 2025');

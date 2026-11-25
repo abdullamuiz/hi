@@ -84,7 +84,11 @@ const bump = <K>(m: Map<K, number>, k: K, by = 1) => m.set(k, (m.get(k) || 0) + 
  * Stats for the messages in `period`. `dropTypes` maps a Drop's id (message.dropId) to its type,
  * for "favourite Drop"; `tz` decides where days start.
  */
-export function computeRewind(all: RewindMessage[], period: RewindPeriod, me: string, them: string, dropTypes: Record<string, string>, tz?: string): RewindStats {
+export function computeRewind(
+  all: RewindMessage[], period: RewindPeriod, me: string, them: string, dropTypes: Record<string, string>, tz?: string,
+  /** Words to leave out of the top words (your names). */
+  skipWords: ReadonlySet<string> = new Set(),
+): RewindStats {
   const msgs = all
     .filter((m) => m.ms >= period.from && m.ms < period.to && !m.deleted && !m.hidden && m.kind !== 'system')
     .sort((a, b) => a.ms - b.ms);
@@ -102,7 +106,7 @@ export function computeRewind(all: RewindMessage[], period: RewindPeriod, me: st
     const m = msgs[i];
     perPerson[m.uid] = (perPerson[m.uid] || 0) + 1;
     emojisIn(m.text).forEach((e) => bump(emojis, e));
-    wordsIn(m.text).forEach((w) => bump(words, w));
+    wordsIn(m.text).forEach((w) => { if (!skipWords.has(w)) bump(words, w); });
     if (m.kind === 'drop') {
       drops++;
       const t = m.dropId ? dropTypes[m.dropId] : undefined;

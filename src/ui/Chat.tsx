@@ -472,7 +472,13 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
 
   const startDrop = (def: DropDefinition<any>, prefill?: Record<string, unknown>) => {
     if (def.setup?.length) setSheet({ kind: 'setup', type: def.type, prefill });
-    else dropIt(def, { ...def.content, ...(prefill || {}) });
+    else {
+      // No form to fill in: still let the Drop check or derive its content (e.g. Rewind's period).
+      const c = { ...def.content, ...(prefill || {}) };
+      const ready = def.prepare ? def.prepare(c) : c;
+      if (typeof ready === 'string') flash(ready);
+      else dropIt(def, ready);
+    }
   };
 
   const dropIt = async (def: DropDefinition<any>, content: Record<string, unknown>) => {
@@ -655,11 +661,13 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 <MoodIcon mood={partnerMember.mood} size={22} />
               </span>
             )}
-            {streak.state === 'on' && streak.result && (
-              <StreakChip count={streak.result.count} onClick={() => setSheet({ kind: 'streak' })} />
-            )}
           </div>
-          {left ? <div class="hdr-sub">Left this chat</div> : <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />}
+          {left ? <div class="hdr-sub">Left this chat</div> : (
+            <div class="hdr-sub-row">
+              {streak.state === 'on' && streak.result && <StreakChip count={streak.result.count} onClick={() => setSheet({ kind: 'streak' })} />}
+              <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
+            </div>
+          )}
         </div>
         <div class="hdr-actions">
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
@@ -703,19 +711,6 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         </>}
         tabName={currentTab && currentTab.id !== GENERAL ? currentTab.name : ''}
         banner={<>
-          {streak.state === 'proposed-to-me' && room.streak && !left && <StreakInvite room={room} name={partner.name} onToast={flash} />}
-          {milestone && (
-            <MilestoneCard m={milestone} onReplay={() => playScreen('confetti')}
-              onPin={() => pin({ title: `${milestone.emoji} ${milestone.title}`, detail: milestone.body })}
-              onClose={() => setMilestone(null)} />
-          )}
-          {activeTab === GENERAL && memory && (
-            <OnThisDayCard memory={memory} who={nameOf(memory.message.uid)}
-              tabName={memory.message.tabId !== GENERAL ? tabs.find((t) => t.id === memory.message.tabId)?.name || '' : ''}
-              onOpen={() => openFromSearch({ roomId: room.id, tabId: memory.message.tabId, msgId: memory.message.id, atMs: toMillis(memory.message.createdAt) })}
-              onPin={() => pin({ title: `On this day, ${memory.ago} ${memory.unit}${memory.ago === 1 ? '' : 's'} ago`, detail: snippetOf(memory.message, 'a Drop', 300), messageId: memory.message.id })}
-              onClose={dismissMemory} />
-          )}
           {activeTab === GENERAL && dailyOn && (
             <DailyBanner roomId={room.id} me={user.uid} partner={partnerUid} partnerName={partner.name} onOpen={jumpTo} />
           )}
@@ -852,6 +847,20 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           <button type="button" class="chip-btn danger-text" disabled={!selectedMsgs.length} onClick={() => setSheet({ kind: 'delete', ids: selectedMsgs.map((m) => m.id) })}>Delete</button>
         </footer>
       ) : (<>
+      {/* Above the composer, where it's seen: one at a time — a streak request, a milestone, or On this day. */}
+      {streak.state === 'proposed-to-me' && room.streak ? (
+        <StreakInvite room={room} name={partner.name} onToast={flash} />
+      ) : milestone ? (
+        <MilestoneCard m={milestone} onReplay={() => playScreen('confetti')}
+          onPin={() => pin({ title: `${milestone.emoji} ${milestone.title}`, detail: milestone.body })}
+          onClose={() => setMilestone(null)} />
+      ) : memory ? (
+        <OnThisDayCard memory={memory} who={nameOf(memory.message.uid)}
+          tabName={tabs.find((t) => t.id === memory.message.tabId)?.name || ''}
+          onOpen={() => openFromSearch({ roomId: room.id, tabId: memory.message.tabId, msgId: memory.message.id, atMs: toMillis(memory.message.createdAt) })}
+          onPin={() => pin({ title: `On this day, ${memory.ago} ${memory.unit}${memory.ago === 1 ? '' : 's'} ago`, detail: snippetOf(memory.message, 'a Drop', 300), messageId: memory.message.id })}
+          onClose={dismissMemory} />
+      ) : null}
       <ScheduledStrip
         items={scheduled}
         tabName={(id) => (id === activeTab ? '' : tabName(id))}

@@ -139,7 +139,8 @@ export interface RewindData {
 
 export async function loadRewind(roomId: string, period: RewindPeriod, me: string, them: string, tz: string): Promise<RewindData> {
   const [h, drops] = await Promise.all([
-    loadHistory(roomId),
+    // Fresh: Rewind is opened rarely and should include what was just said.
+    loadHistory(roomId, { fresh: true }),
     getDocs(query(collection(db, 'rooms', roomId, 'drops'),
       where('createdAt', '>=', Timestamp.fromMillis(period.from)), where('createdAt', '<', Timestamp.fromMillis(period.to)), limit(500))),
   ]);
@@ -156,11 +157,15 @@ export async function loadRewind(roomId: string, period: RewindPeriod, me: strin
   // Only part of the period may have been read (history is capped).
   const oldest = h.messages.length ? h.messages[h.messages.length - 1].createdAt?.toMillis() ?? 0 : 0;
   return {
-    stats: computeRewind(msgs, period, me, them, dropTypes, tz),
+    stats: computeRewind(msgs, period, me, them, dropTypes, tz, nameWords(h.names)),
     names: h.names, tabNames,
     truncated: h.truncated && oldest > period.from,
   };
 }
+
+/** Your names don't count as "your words". */
+const nameWords = (names: Record<string, string>) =>
+  new Set(Object.values(names).flatMap((n) => n.toLowerCase().split(/[^\p{L}\p{N}']+/u)).filter(Boolean));
 
 /** Doc id of the monthly Rewind (for the month it covers), shared by the Drop and its message. */
 export const rewindId = (month: string) => `rewind-${month}`;
