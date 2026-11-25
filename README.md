@@ -462,6 +462,10 @@ An installed (Home Screen) app has no address bar or reload button, so:
 - When a new version is published, a bar says **"A new version of Hi is ready · Update"**. The app checks on start, whenever it comes back to the foreground, and every 15 minutes. It compares `version.json`, which each build writes, with the build it's running.
 - **Settings → Reload app** always works and shows the running version's build time.
 
+## Scaling to more users
+
+The free tier fits roughly 25–35 heavy or 75–150 normal daily users. The parked plan to make Hi lighter on the database (less frequent presence updates, throttled typing, smaller message pages, no listeners for chats you aren't looking at) is in [`docs/SCALING.md`](docs/SCALING.md).
+
 ## 9. Later: native apps with Capacitor
 
 The app is built to wrap cleanly: relative asset paths (`base: './'`), no server rendering, and no router. Roughly:
