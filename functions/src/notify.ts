@@ -4,6 +4,17 @@ export const DROP_TITLES: Record<string, string> = {
   'blind-reveal': 'a Blind Reveal',
   'gap-slider': 'a Gap Slider',
   'tag-team-story': 'a Tag-team Story',
+  'two-truths': 'Two Truths & a Lie',
+  'predict-me': 'a Predict Me',
+  'rank-it': 'a Rank It',
+  'decision-wheel': 'a Decision Wheel',
+  'watch-party': 'a Watch Party',
+  'countdown': 'a Countdown',
+  'poll': 'a Poll',
+  'this-or-that': 'a This or That',
+  'time-capsule': 'a Time Capsule',
+  'mood-check': 'a Mood Check',
+  'daily-question': 'today’s question',
 };
 
 export interface MsgLike {
@@ -34,6 +45,12 @@ export function notificationBody(m: MsgLike): string {
     case 'drop': return `Dropped ${DROP_TITLES[m.dropType || ''] || 'a Drop'} — your move`;
     default: return 'New message';
   }
+}
+
+/** Push text for a reply in a thread (side discussion). */
+export function threadBody(text: string): string {
+  const t = (text || '').replace(/\s+/g, ' ').trim();
+  return `💬 In a thread: ${t.length > 120 ? t.slice(0, 119) + '…' : t || 'New reply'}`;
 }
 
 /** Where a tapped notification opens: the right chat and tab. */
