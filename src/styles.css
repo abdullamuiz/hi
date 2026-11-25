@@ -1246,3 +1246,15 @@ button.phrase-chip { cursor: pointer; }
 .cd-banner.done .cd-time, .cd-banner.done .cd-title { color: #2A2A2A; }
 .cd-arrow, .cd-x { width: 36px; height: 36px; border: 0; background: transparent; color: var(--muted); font-size: 20px; border-radius: 18px; display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
 @media (prefers-reduced-motion: reduce) { .scrapbook, .scrap-pop-card { animation: none; } .scrap { transition: none; } }
+
+/* ---------------------------------------------------------------- install */
+.install-banner {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 10px; padding: 10px 12px; border-radius: 14px;
+  background: var(--surface-2, var(--surface)); border: 1px solid var(--line, rgba(0,0,0,.08));
+  font-size: 14px;
+}
+.install-banner img { border-radius: 8px; flex-shrink: 0; }
+.install-banner span { flex: 1; min-width: 0; }
+.install-banner .btn-primary.small { height: 34px; padding: 0 14px; font-size: 14px; width: auto; flex-shrink: 0; }
+.install-steps { padding: 0 2px 8px; }

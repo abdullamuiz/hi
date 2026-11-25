@@ -1,9 +1,11 @@
 import { render } from 'preact';
 import { App } from './app';
 import { initTheme } from './lib/themes';
+import { captureInstallPrompt } from './lib/install';
 import './styles.css';
 
 initTheme();
+captureInstallPrompt();
 
 render(<App />, document.getElementById('app')!);
 
