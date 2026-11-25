@@ -179,7 +179,9 @@ To deploy only one part later: `npx firebase deploy --only hosting`, `--only fir
 4. Delete the downloaded `.json` file from your computer. GitHub keeps the only copy it needs. If it ever leaks, delete the key on the same Keys tab and repeat steps 2–3.
 5. **Run it.** Merge a pull request, or open **Actions → Test and deploy → Run workflow** (branch `main`). After about 3 minutes, https://hi-dropchat.web.app is live. The Actions tab shows each run, with a red ✗ and the reason if something failed.
 
-**After you move to Blaze:** to also deploy the Storage rules and Cloud Functions (photos, link previews, push), go to **Settings → Secrets and variables → Actions → Variables → New repository variable**, set `DEPLOY_BACKEND` = `true`, and give the `github-deploy` account three more roles: **Cloud Functions Admin**, **Service Account User** and **Cloud Scheduler Admin** (for `minuteJob`). The first Functions deploy can take about 5 minutes.
+**After you move to Blaze:** to also deploy the Storage rules and Cloud Functions (photos, link previews, push), go to **Settings → Secrets and variables → Actions → Variables → New repository variable**, set `DEPLOY_BACKEND` = `true`, and give the `github-deploy` account three more roles: **Cloud Functions Admin**, **Service Account User** and **Cloud Scheduler Admin** (for `minuteJob`). The first Functions deploy can take about 5 minutes. If it fails with *"Permission denied while using the Eventarc Service Agent"*, wait 5 minutes and run it again; Google is still setting up that account.
+
+**Storage needs to read Firestore.** The Storage rules check Firestore to see who's in a chat. A deploy from your own computer offers to grant this, but a GitHub deploy can't, so grant it once by hand: Google Cloud → **IAM** → **Grant access** → principal `service-PROJECT_NUMBER@gcp-sa-firebasestorage.iam.gserviceaccount.com` (for `hi-dropchat`, that's `service-760909245589@…`) → role **Firebase Rules Firestore Service Agent**. Without it, every photo and voice-note upload says *"permission refused"*.
 
 ## 7. Install on iPhone (and Android)
 
@@ -338,7 +340,7 @@ When the message box is empty, the Send button becomes a microphone.
 - Files go to `rooms/{roomId}/voice/{uid}/{id}.webm|m4a`. Members can read them; only the owner can create one (audio only, under 5 MB).
 - **Delete for everyone** clears the message, and the `deleteMessageFiles` function removes the audio file.
 
-> Voice notes and photos use Cloud Storage, which needs the **Blaze** plan (section 4) and `DEPLOY_BACKEND=true` so the Storage rules deploy. Until then, sending one says "Voice notes need the Blaze plan — see README".
+> Voice notes and photos use Cloud Storage, which needs the **Blaze** plan (section 4) and `DEPLOY_BACKEND=true` so the Storage rules deploy. Until then, sending one says Storage isn't set up. If uploads say *"permission refused"* after that, grant the Storage service agent the **Firebase Rules Firestore Service Agent** role (see the deploy section).
 
 ## Tabs
 

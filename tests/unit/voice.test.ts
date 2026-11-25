@@ -70,9 +70,11 @@ describe('voice gestures and markers', () => {
 });
 
 describe('friendlyStorageError', () => {
-  it('explains Storage failures (no Blaze plan yet)', () => {
-    expect(friendlyStorageError({ code: 'storage/unauthorized' }, 'Voice notes').message).toBe('Voice notes need the Blaze plan — see README');
-    expect(friendlyStorageError({ code: 'storage/unknown' }, 'Photos').message).toBe('Photos need the Blaze plan — see README');
+  it('names the real cause of a Storage failure', () => {
+    expect(friendlyStorageError({ code: 'storage/unauthorized' }, 'Voice notes').message).toMatch(/voice note: permission refused/);
+    expect(friendlyStorageError({ code: 'storage/bucket-not-found' }, 'Photos').message).toMatch(/Photos aren't set up/);
+    expect(friendlyStorageError({ code: 'storage/unknown' }, 'Photos').message).toBe("Couldn't upload the photo (unknown). Try again.");
+    expect(friendlyStorageError({ code: 'storage/canceled', message: 'x' }, 'Photos').message).not.toMatch(/upload/);
   });
   it('leaves other errors alone', () => {
     expect(friendlyStorageError({ code: 'storage/canceled', message: 'x' }, 'Photos').message).not.toContain('Blaze');
