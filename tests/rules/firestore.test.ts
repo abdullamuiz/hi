@@ -1321,3 +1321,57 @@ describe('your move & thread dot (room fields)', () => {
     await assertFails(getDoc(doc(alice(), 'invitePushes', 'x')));
   });
 });
+
+describe('devices & signing out other devices', () => {
+  const NOW = Math.floor(Date.now() / 1000);
+  const aliceAt = (t: number) => env.authenticatedContext('alice', { email: 'alice@example.com', email_verified: true, auth_time: t }).firestore() as unknown as Firestore;
+  const device = (extra: Record<string, unknown> = {}) => ({
+    label: 'Chrome on Mac', kind: 'computer', status: 'active', createdAt: serverTimestamp(), lastActiveAt: serverTimestamp(), signedInAt: NOW, ...extra,
+  });
+
+  it('only I can see and change my devices', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice', 'devices', 'devAAAAAAAAA'), device()));
+    await assertFails(getDoc(doc(bob(), 'users', 'alice', 'devices', 'devAAAAAAAAA')));
+    await assertFails(setDoc(doc(bob(), 'users', 'alice', 'devices', 'devBBBBBBBBB'), device()));
+    await assertSucceeds(updateDoc(doc(alice(), 'users', 'alice', 'devices', 'devAAAAAAAAA'), { customName: 'Work laptop' }));
+    await assertSucceeds(updateDoc(doc(alice(), 'users', 'alice', 'devices', 'devAAAAAAAAA'), { status: 'signedOut' }));
+    await assertFails(updateDoc(doc(alice(), 'users', 'alice', 'devices', 'devAAAAAAAAA'), { status: 'admin' }));
+    await assertFails(updateDoc(doc(alice(), 'users', 'alice', 'devices', 'devAAAAAAAAA'), { secret: 1 }));
+  });
+
+  it('with protection on, a new device must start as pending', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'alice'), { deviceProtection: true, primaryDevice: 'primaryDev01' });
+    });
+    await assertFails(setDoc(doc(alice(), 'users', 'alice', 'devices', 'newDevice001'), device()));
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice', 'devices', 'newDevice001'), device({ status: 'pending' })));
+    // The primary itself is never held back.
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice', 'devices', 'primaryDev01'), device()));
+  });
+
+  it('primary device and protection are mine to set; the cut-off is server-only', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice'), { primaryDevice: 'devAAAAAAAAA', deviceProtection: true }, { merge: true }));
+    await assertFails(setDoc(doc(bob(), 'users', 'alice'), { primaryDevice: 'devBBBBBBBBB' }, { merge: true }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice'), { deviceProtection: 'yes' }, { merge: true }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice'), { sessionsValidAfter: 0 }, { merge: true }));
+  });
+
+  it('after "sign out all other devices", older sign-ins are refused; a fresh one is not', async () => {
+    await seedRoom();
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'users', 'alice'), { sessionsValidAfter: NOW });
+    });
+    const old = aliceAt(NOW - 3600);
+    const fresh = aliceAt(NOW + 5);
+    await assertFails(getDoc(doc(old, 'rooms', ROOM)));
+    await assertFails(getDocs(msgs(old)));
+    await assertFails(setDoc(doc(msgs(old)), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(old, 'users', 'alice', 'devices', 'devAAAAAAAAA'), device()));
+    // It can't lift the cut-off either.
+    await assertFails(deleteDoc(doc(old, 'users', 'alice')));
+    await assertSucceeds(getDoc(doc(fresh, 'rooms', ROOM)));
+    await assertSucceeds(getDocs(msgs(fresh)));
+    // Bob is unaffected.
+    await assertSucceeds(getDoc(doc(bob(), 'rooms', ROOM)));
+  });
+});
