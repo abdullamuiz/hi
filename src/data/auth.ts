@@ -2,10 +2,11 @@ import {
   GoogleAuthProvider, isSignInWithEmailLink, sendSignInLinkToEmail, signInWithEmailLink,
   signInWithPopup, signInWithRedirect, signOut as fbSignOut,
 } from 'firebase/auth';
-import { clearIndexedDbPersistence, terminate } from 'firebase/firestore';
+import { clearIndexedDbPersistence, doc, terminate, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { clearMediaCache } from '../lib/mediaCache';
 import { isStandalone } from './push';
+import { deviceId } from '../lib/device';
 
 const EMAIL_KEY = 'drops.emailForSignIn';
 
@@ -50,7 +51,18 @@ export async function finishEmailLink(email: string, link: string) {
  * Sign out and wipe what this account left on the device: the offline copy of the chats
  * (Firestore's IndexedDB cache) and cached photos. The page reloads so the app starts clean.
  */
-export async function signOut() {
+let signingOut = false;
+export async function signOut(opts: { remote?: boolean } = {}) {
+  if (signingOut) return;
+  signingOut = true;
+  // Mark this device signed out (unless it was signed out from elsewhere and can't write any more).
+  const uid = auth.currentUser?.uid;
+  if (uid && !opts.remote) {
+    await Promise.race([
+      updateDoc(doc(db, 'users', uid, 'devices', deviceId()), { status: 'signedOut' }).catch(() => {}),
+      new Promise((r) => setTimeout(r, 2500)),
+    ]);
+  }
   await fbSignOut(auth);
   await clearLocalData();
   location.reload();

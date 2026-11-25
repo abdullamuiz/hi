@@ -1446,3 +1446,38 @@ div.tod-card { opacity: .55; }
 .row-btns { display: flex; gap: 10px; justify-content: flex-end; }
 .row-btns .btn-primary, .row-btns .btn-ghost { width: auto; flex: 1; }
 @media (prefers-reduced-motion: reduce) { .photo-draft-card img { transition: none; } }
+
+/* ---------------------------------------------------------------- devices */
+.devices-panel {
+  position: fixed; inset: 0; max-width: 520px; margin: 0 auto; z-index: 40; display: flex; flex-direction: column;
+  background: var(--ground); animation: slide-in 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.devices-body { flex: 1; overflow-y: auto; padding: 14px 14px calc(24px + var(--safe-bottom, 0px)); display: flex; flex-direction: column; gap: 14px; }
+.device-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.device-row { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.device-row.flash { animation: invite-flash 1.6s ease-out 2; }
+.device-main { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 14px; border: none; background: none; text-align: left; color: var(--ink); font: inherit; cursor: pointer; }
+.device-icon { font-size: 24px; width: 32px; text-align: center; flex-shrink: 0; }
+.device-text { display: flex; flex-direction: column; min-width: 0; }
+.device-name { font-weight: 600; overflow-wrap: anywhere; }
+.device-tag { font-weight: 500; font-size: 12px; color: var(--muted); }
+.device-meta { font-size: 12.5px; color: var(--muted); }
+.device-actions { padding: 0 14px 12px 58px; display: flex; flex-direction: column; gap: 10px; }
+.device-buttons, .device-approve { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.device-buttons .link-btn { min-height: 44px; }
+.btn-primary.small, .btn-ghost.small, .btn-soft.small { height: 38px; width: auto; padding: 0 16px; font-size: 14px; }
+.danger-bg { background: var(--danger); color: #fff; }
+.switch { position: relative; width: 50px; height: 30px; border-radius: 15px; border: none; background: var(--line-2); padding: 0; flex-shrink: 0; cursor: pointer; transition: background .2s; }
+.switch span { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+.switch.on { background: var(--me); }
+.switch.on span { transform: translateX(20px); }
+.pending-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; padding: 32px 24px; }
+.pending-pulse { font-size: 46px; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.12); opacity: .75; } }
+.approval-banner {
+  position: fixed; left: 50%; top: calc(10px + var(--safe-top, 0px)); transform: translateX(-50%); z-index: 50;
+  width: min(500px, calc(100% - 20px)); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0,0,0,.18);
+}
+.approval-banner > span { flex: 1; min-width: 160px; }
+@media (prefers-reduced-motion: reduce) { .devices-panel, .pending-pulse, .device-row.flash { animation: none; } .switch, .switch span { transition: none; } }
