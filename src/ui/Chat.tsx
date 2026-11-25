@@ -36,6 +36,12 @@ import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Schedu
 import { DropCard } from './DropCard';
 import { ThreadTile, ThreadView } from './Thread';
 import { DailyBanner } from './Daily';
+import { MilestoneCard, OnThisDayCard, RewindScreen, StreakChip, StreakInvite, StreakSheet, useStreak } from './Memories';
+import { countMessages, ensureMonthlyRewind, findOnThisDay, setRoomZone, type Memory } from '../data/memories';
+import { nextMilestone, reachedMilestones, type Milestone } from '../lib/milestones';
+import { rewindPeriod, type RewindPeriod } from '../lib/rewind';
+import { dayKeyIn } from '../lib/streak';
+import { OPEN_REWIND } from '../drops/rewind.drop';
 import { ensureDailyQuestion } from '../data/daily';
 import { dayKey } from '../drops/logic';
 import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
@@ -67,7 +73,8 @@ type Sheet =
   | { kind: 'effects' }
   | { kind: 'schedule'; id?: string }
   | { kind: 'search'; filter?: SearchFilter }
-  | { kind: 'export' };
+  | { kind: 'export' }
+  | { kind: 'streak' };
 
 interface Toast { text: string; undo?: () => void }
 
@@ -129,6 +136,10 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [editing, setEditing] = useState<Message | null>(null);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [highlight, setHighlight] = useState('');
+  // Full-screen Rewind (null = closed; a period when opened from a Rewind Drop).
+  const [rewind, setRewind] = useState<{ period: RewindPeriod | null } | null>(null);
+  const [memory, setMemory] = useState<Memory | null>(null);
+  const [milestone, setMilestone] = useState<Milestone | null>(null);
   // Effects: the one chosen for the next message, a dismissed suggestion, and replay counters.
   const [fx, setFx] = useState<EffectCode | null>(null);
   const [fxDismissed, setFxDismissed] = useState<EffectCode | null>(null);
@@ -165,6 +176,19 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     name: partnerUid ? displayName(prefs?.nickname, partnerProfile?.name, partnerMember?.name, 'Them') : room.invites[0] ? firstName(room.invites[0], 'Them') : 'Just you',
     isMe: false,
   }), [partnerUid, prefs?.nickname, partnerProfile?.name, partnerMember?.name, room.invites[0]]);
+
+  // --- streak & memories -------------------------------------------------------
+  useEffect(() => { setRoomZone(room.id, room.timezone); }, [room.id, room.timezone]);
+  const streak = useStreak(room, user.uid, partnerUid);
+  const memoriesOn = !!partnerUid && !left && prefs?.memories !== false;
+  useEffect(() => {
+    const open = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d && typeof d.from === 'number') setRewind({ period: { from: d.from, to: d.to, label: String(d.label || 'Rewind') } });
+    };
+    addEventListener(OPEN_REWIND, open);
+    return () => removeEventListener(OPEN_REWIND, open);
+  }, []);
 
   // --- subscriptions ---------------------------------------------------------
   useEffect(() => {
@@ -289,6 +313,58 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
       .then((id) => { if (id) { try { localStorage.setItem(key, today); } catch { /* ignore */ } } })
       .catch(() => {});
   }, [dailyOn, generalReady, room.id]);
+  // On This Day: once a day per chat, look for something from this date in past years.
+  const tabsLoaded = tabs.length > 0;
+  useEffect(() => {
+    setMemory(null);
+    if (!memoriesOn || !tabsLoaded) return;
+    const today = dayKeyIn(Date.now(), room.timezone);
+    try { if (localStorage.getItem(`hi.otd.${room.id}`) === today) return; } catch { /* ignore */ }
+    let alive = true;
+    findOnThisDay(room.id, tabs, user.uid, room.timezone).then((m) => { if (alive) setMemory(m); }).catch(() => {});
+    return () => { alive = false; };
+  }, [memoriesOn, tabsLoaded, room.id]);
+  const dismissMemory = () => {
+    try { localStorage.setItem(`hi.otd.${room.id}`, dayKeyIn(Date.now(), room.timezone)); } catch { /* ignore */ }
+    setMemory(null);
+  };
+
+  // Last month's Rewind, dropped into General once (by whichever phone opens the chat first).
+  useEffect(() => {
+    if (!memoriesOn || !generalReady) return;
+    const p = rewindPeriod('last-month', Date.now(), room.timezone);
+    const month = dayKeyIn(p.from + 12 * 3_600_000, room.timezone).slice(0, 7);
+    const key = `hi.rewind.${room.id}`;
+    try { if (localStorage.getItem(key) === month || localStorage.getItem('hi.rewind.off') === '1') return; } catch { /* ignore */ }
+    if (room.createdAt && room.createdAt.toMillis() > p.to) return;
+    ensureMonthlyRewind(room.id, user.uid, tabs, p, month)
+      .finally(() => { try { localStorage.setItem(key, month); } catch { /* ignore */ } })
+      .catch(() => {});
+  }, [memoriesOn, generalReady, room.id]);
+
+  // Milestones: streak lengths, message counts and the chat's anniversary — each celebrated once per phone.
+  const [msgCount, setMsgCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!partnerUid || left || !tabsLoaded) return;
+    countMessages(room.id, tabs).then(setMsgCount).catch(() => {});
+  }, [room.id, tabsLoaded, !!partnerUid]);
+  useEffect(() => {
+    if (!partnerUid || left) return;
+    const reached = reachedMilestones({
+      streak: streak.result?.count ?? 0, runStart: streak.result?.runStart ?? '', messages: msgCount,
+      startedOn: room.createdAt ? dayKeyIn(room.createdAt.toMillis(), room.timezone) : '',
+      todayKey: dayKeyIn(Date.now(), room.timezone), partner: partner.name,
+    });
+    const key = `hi.milestones.${room.id}`;
+    let seen = new Set<string>();
+    try { seen = new Set(JSON.parse(localStorage.getItem(key) || '[]')); } catch { /* ignore */ }
+    const { show, mark } = nextMilestone(reached, seen);
+    if (!show) return;
+    try { localStorage.setItem(key, JSON.stringify([...seen, ...mark].slice(-100))); } catch { /* ignore */ }
+    setMilestone(show);
+    if (motionOn()) playScreen('confetti');
+  }, [streak.result?.count, streak.result?.runStart, msgCount, partnerUid, left]);
+
   const notReady = () => { flash('One moment — setting up your room…'); };
 
   // If you hit send before a brand-new tab has loaded, keep the message and send it
@@ -396,7 +472,13 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
 
   const startDrop = (def: DropDefinition<any>, prefill?: Record<string, unknown>) => {
     if (def.setup?.length) setSheet({ kind: 'setup', type: def.type, prefill });
-    else dropIt(def, { ...def.content, ...(prefill || {}) });
+    else {
+      // No form to fill in: still let the Drop check or derive its content (e.g. Rewind's period).
+      const c = { ...def.content, ...(prefill || {}) };
+      const ready = def.prepare ? def.prepare(c) : c;
+      if (typeof ready === 'string') flash(ready);
+      else dropIt(def, ready);
+    }
   };
 
   const dropIt = async (def: DropDefinition<any>, content: Record<string, unknown>) => {
@@ -580,7 +662,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               </span>
             )}
           </div>
-          {left ? <div class="hdr-sub">Left this chat</div> : <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />}
+          {left ? <div class="hdr-sub">Left this chat</div> : (
+            <div class="hdr-sub-row">
+              {streak.state === 'on' && streak.result && <StreakChip count={streak.result.count} onClick={() => setSheet({ kind: 'streak' })} />}
+              <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
+            </div>
+          )}
         </div>
         <div class="hdr-actions">
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
@@ -760,6 +847,20 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           <button type="button" class="chip-btn danger-text" disabled={!selectedMsgs.length} onClick={() => setSheet({ kind: 'delete', ids: selectedMsgs.map((m) => m.id) })}>Delete</button>
         </footer>
       ) : (<>
+      {/* Above the composer, where it's seen: one at a time — a streak request, a milestone, or On this day. */}
+      {streak.state === 'proposed-to-me' && room.streak ? (
+        <StreakInvite room={room} name={partner.name} onToast={flash} />
+      ) : milestone ? (
+        <MilestoneCard m={milestone} onReplay={() => playScreen('confetti')}
+          onPin={() => pin({ title: `${milestone.emoji} ${milestone.title}`, detail: milestone.body })}
+          onClose={() => setMilestone(null)} />
+      ) : memory ? (
+        <OnThisDayCard memory={memory} who={nameOf(memory.message.uid)}
+          tabName={tabs.find((t) => t.id === memory.message.tabId)?.name || ''}
+          onOpen={() => openFromSearch({ roomId: room.id, tabId: memory.message.tabId, msgId: memory.message.id, atMs: toMillis(memory.message.createdAt) })}
+          onPin={() => pin({ title: `On this day, ${memory.ago} ${memory.unit}${memory.ago === 1 ? '' : 's'} ago`, detail: snippetOf(memory.message, 'a Drop', 300), messageId: memory.message.id })}
+          onClose={dismissMemory} />
+      ) : null}
       <ScheduledStrip
         items={scheduled}
         tabName={(id) => (id === activeTab ? '' : tabName(id))}
@@ -815,6 +916,10 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
       </footer>
       </>)}
 
+      {rewind && partnerUid && (
+        <RewindScreen roomId={room.id} me={user.uid} them={partnerUid} myName={me.name} theirName={partner.name}
+          tz={room.timezone} period={rewind.period} onToast={flash} onClose={() => setRewind(null)} />
+      )}
       {thread && byId(thread) && (
         <ThreadView roomId={room.id} root={byId(thread)!} me={user.uid} nameOf={nameOf} readOnly={left}
           onToast={flash} onClose={() => setThread(null)} />
@@ -944,6 +1049,9 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 }} />
               ) : null;
             })()}
+            {sheet.kind === 'streak' && (
+              <StreakSheet room={room} me={user.uid} name={partner.name} view={streak} onToast={flash} onClose={() => setSheet(null)} />
+            )}
             {sheet.kind === 'contact' && partnerUid && (
               <ContactSheet
                 name={partner.name}
@@ -963,6 +1071,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                   try { if (left) await deleteRoom(room.id); else await leaveRoom(room.id, user.uid); onBack(); } catch (e: any) { flash(e.message); }
                 }}
                 onExport={() => setSheet({ kind: 'export' })}
+                streak={left ? undefined : streak.state === 'on' ? `On · ${streak.result?.count ?? 0} ${streak.result?.count === 1 ? 'day' : 'days'}` : streak.state === 'off' ? 'Off' : streak.state === 'proposed-by-me' ? `Waiting for ${partner.name}` : `${partner.name} asked`}
+                onStreak={() => setSheet({ kind: 'streak' })}
+                onRewind={() => { setSheet(null); setRewind({ period: null }); }}
+                memories={prefs?.memories !== false}
+                onMemories={(on) => setContact(user.uid, partnerUid, { memories: on }).then(() => flash(on ? 'Memories on' : 'Memories off')).catch((e) => flash(e.message))}
                 onMedia={() => setSheet({ kind: 'search', filter: 'photos' })}
                 onBlock={async () => {
                   setSheet(null);

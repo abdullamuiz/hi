@@ -446,7 +446,7 @@ try {
 
   step('The tray lists every Drop');
   await alice.getByRole('button', { name: 'Add a Drop' }).click();
-  for (const t of ['Two Truths & a Lie', 'Predict Me', 'Rank It', 'Decision Wheel', 'Watch Party', 'Countdown', 'Poll', 'This or That', 'Time Capsule', 'Mood Check']) {
+  for (const t of ['Two Truths & a Lie', 'Predict Me', 'Rank It', 'Decision Wheel', 'Watch Party', 'Countdown', 'Poll', 'This or That', 'Time Capsule', 'Mood Check', 'Rewind']) {
     await alice.locator('.tray-item', { hasText: t }).waitFor();
   }
   assert.equal(await alice.locator('.tray-item', { hasText: 'Today’s question' }).count(), 0, 'the daily question isn’t in the tray');
@@ -1061,6 +1061,162 @@ try {
   await alice.emulateMedia({ media: 'screen' });
   await alice.evaluate(() => dispatchEvent(new Event('afterprint')));
   await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+
+  step('Hot streak: Alice proposes, Bob accepts, both send → 🔥1');
+  {
+    const ensureChat = async (page, name) => {
+      if (!(await page.getByRole('button', { name: 'Back to chats' }).count())) await page.locator('.chat-open', { hasText: name }).first().click();
+      await page.getByRole('textbox', { name: 'Message' }).waitFor();
+    };
+    await ensureChat(alice, 'Bobby');
+    await ensureChat(bob, 'alice');
+  }
+  await alice.getByRole('button', { name: 'Bobby 🐻’s profile' }).click();
+  await alice.getByRole('button', { name: /^Hot streak/ }).click();
+  await alice.getByRole('button', { name: 'Start a streak with Bobby 🐻' }).click();
+  await bob.getByText('alice wants to start a hot streak').waitFor();
+  await bob.waitForTimeout(500); // let the sheet / slide settle
+  await shot(bob, 'streak-invite');
+  await bob.locator('.streak-invite').getByRole('button', { name: 'Start' }).click();
+  await alice.getByRole('textbox', { name: 'Message' }).fill('Streak day one 🔥');
+  await alice.keyboard.press('Enter');
+  await bob.getByText('Streak day one 🔥').waitFor();
+  await bob.getByRole('textbox', { name: 'Message' }).fill('Let’s keep it going');
+  await bob.keyboard.press('Enter');
+  await alice.getByRole('button', { name: 'Hot streak: 1 day' }).waitFor();
+  await bob.getByRole('button', { name: 'Hot streak: 1 day' }).waitFor();
+  await alice.getByRole('button', { name: 'Hot streak: 1 day' }).click();
+  await alice.getByText('You ✓ · Bobby 🐻 ✓').waitFor();
+  await alice.waitForTimeout(500); // let the sheet / slide settle
+  await shot(alice, 'streak-sheet');
+  await alice.keyboard.press('Escape');
+
+  step('A week of history (seeded) → 🔥7, a one-time milestone card, and 🔥 in the chat list');
+  const stRoom = await alice.evaluate(() => localStorage.getItem('hi.room'));
+  const ST_DB = `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents`;
+  const ST_H = { Authorization: 'Bearer owner', 'Content-Type': 'application/json' };
+  const roomDoc = await (await fetch(`${ST_DB}/rooms/${stRoom}`, { headers: ST_H })).json();
+  const uids = roomDoc.fields.members.arrayValue.values.map((v) => v.stringValue);
+  const stTz = 'Indian/Maldives';
+  const keyOf = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: stTz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+  for (let d = 1; d <= 6; d++) {
+    const res = await fetch(`${ST_DB}/rooms/${stRoom}/days/${keyOf(Date.now() - d * 86400000)}`, {
+      method: 'PATCH', headers: ST_H, body: JSON.stringify({ fields: { uids: { arrayValue: { values: uids.map((u) => ({ stringValue: u })) } } } }),
+    });
+    assert.equal(res.status, 200);
+  }
+  {
+    // The streak was turned on six days ago.
+    const res = await fetch(`${ST_DB}/rooms/${stRoom}?updateMask.fieldPaths=streak.since`, {
+      method: 'PATCH', headers: ST_H,
+      body: JSON.stringify({ fields: { streak: { mapValue: { fields: { since: { timestampValue: new Date(Date.now() - 6 * 86400000).toISOString() } } } } } }),
+    });
+    assert.equal(res.status, 200);
+  }
+  await alice.getByRole('button', { name: 'Hot streak: 7 days' }).waitFor();
+  await alice.locator('.memory-card.milestone', { hasText: '7-day streak' }).waitFor();
+  await alice.waitForTimeout(500); // let the sheet / slide settle
+  await shot(alice, 'milestone');
+  await bob.locator('.memory-card.milestone', { hasText: '7-day streak' }).waitFor();
+  await alice.locator('.memory-card.milestone').getByRole('button', { name: 'Dismiss' }).click();
+
+  step('On This Day: a message from a year ago shows at the top of General');
+  {
+    const ago = new Date(Date.now() - 365 * 86400000);
+    // Noon in the room's zone on the same calendar day last year.
+    const k = keyOf(Date.now());
+    const lastYear = `${Number(k.slice(0, 4)) - 1}${k.slice(4)}`;
+    const at = new Date(`${lastYear}T07:00:00Z`);
+    assert.ok(Math.abs(at - ago) < 3 * 86400000);
+    const res = await fetch(`${ST_DB}/rooms/${stRoom}/tabs/general/messages?documentId=old-beach`, {
+      method: 'POST', headers: ST_H,
+      body: JSON.stringify({ fields: { uid: { stringValue: uids.find((u) => u !== uids[0]) || uids[0] }, kind: { stringValue: 'text' }, text: { stringValue: 'Remember the beach bonfire? 🔥' }, createdAt: { timestampValue: at.toISOString() } } }),
+    });
+    assert.equal(res.status, 200);
+  }
+  // The chat looks when it opens: go back to the list (🔥 shows there too) and open it again.
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await alice.locator('.chat-open', { hasText: 'Bobby' }).locator('.row-streak', { hasText: '7' }).waitFor();
+  assert.match(await alice.locator('.chat-open', { hasText: 'Bobby' }).getAttribute('aria-label'), /7-day streak/);
+  await shot(alice, 'chats-streak');
+  await alice.locator('.chat-open', { hasText: 'Bobby' }).click();
+  const otd = alice.locator('.memory-card.otd');
+  await otd.getByText('On this day, 1 year ago').waitFor();
+  await otd.getByText('Remember the beach bonfire? 🔥').waitFor();
+  assert.equal(await alice.locator('.memory-card.milestone').count(), 0, 'a milestone is celebrated once');
+  await alice.waitForTimeout(500); // let the sheet / slide settle
+  await shot(alice, 'on-this-day');
+  await otd.getByRole('button', { name: 'Show' }).click();
+  await alice.locator('.msg.flash', { hasText: 'Remember the beach bonfire?' }).waitFor();
+  await otd.getByRole('button', { name: 'Dismiss On this day' }).click();
+  await otd.waitFor({ state: 'detached' });
+
+  step('Rewind: slides from the profile, swipe, share as an image; and the Rewind Drop');
+  await alice.getByRole('button', { name: 'Bobby 🐻’s profile' }).click();
+  await alice.getByRole('button', { name: 'Rewind', exact: true }).click();
+  const rw = alice.getByRole('dialog', { name: /^Rewind/ });
+  await rw.locator('.rewind-title', { hasText: 'You and Bobby 🐻' }).waitFor({ timeout: 30_000 });
+  await alice.waitForTimeout(500); // let the sheet / slide settle
+  await shot(alice, 'rewind-cover');
+  await rw.getByRole('button', { name: 'Next slide' }).click();
+  await rw.locator('.rewind-kicker', { hasText: 'Who said more' }).waitFor();
+  await alice.waitForTimeout(500); // let the sheet / slide settle
+  await shot(alice, 'rewind-who');
+  await alice.keyboard.press('ArrowRight');
+  await rw.getByRole('region', { name: /^Slide 3 of/ }).waitFor();
+  await rw.locator('.rewind-kicker', { hasText: 'Top emoji' }).waitFor();
+  // Swipe left for the next slide, right to go back.
+  {
+    const box = await rw.locator('.rewind-stage').boundingBox();
+    const y = box.y + box.height / 2;
+    await alice.mouse.move(box.x + box.width * 0.8, y);
+    await alice.mouse.down();
+    await alice.mouse.move(box.x + box.width * 0.2, y, { steps: 5 });
+    await alice.mouse.up();
+    await rw.getByRole('region', { name: /^Slide 4 of/ }).waitFor();
+    await alice.mouse.move(box.x + box.width * 0.2, y);
+    await alice.mouse.down();
+    await alice.mouse.move(box.x + box.width * 0.8, y, { steps: 5 });
+    await alice.mouse.up();
+    await rw.getByRole('region', { name: /^Slide 3 of/ }).waitFor();
+  }
+  const [rwImg] = await Promise.all([
+    alice.waitForEvent('download', { timeout: 30_000 }),
+    rw.getByRole('button', { name: 'Share as image' }).click(),
+  ]);
+  assert.match(rwImg.suggestedFilename(), /^hi-rewind-.+\.png$/);
+  {
+    const buf = await (await import('node:fs/promises')).readFile(await rwImg.path());
+    assert.equal(buf.subarray(1, 4).toString(), 'PNG');
+  }
+  await rw.getByRole('radio', { name: 'This year' }).click();
+  await rw.locator('.rewind-kicker', { hasText: /Rewind · \d{4}/ }).waitFor();
+  await rw.getByRole('button', { name: 'Close Rewind' }).click();
+  await rw.waitFor({ state: 'detached' });
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+  // The Rewind Drop: Bob watches it from the card.
+  await alice.getByRole('button', { name: 'Add a Drop' }).click();
+  await alice.locator('.tray-item', { hasText: 'Rewind' }).click();
+  const rwCard = bob.getByRole('region', { name: 'Rewind' }).last();
+  await rwCard.getByText(/with alice/).waitFor();
+  await rwCard.getByText(/messages/).waitFor({ timeout: 30_000 });
+  await bob.waitForTimeout(500); // let the sheet / slide settle
+  await shot(bob, 'rewind-drop');
+  await rwCard.getByRole('button', { name: 'Watch Rewind' }).click();
+  const rwBob = bob.getByRole('dialog', { name: /^Rewind/ });
+  await rwBob.locator('.rewind-title', { hasText: 'You and alice' }).waitFor({ timeout: 30_000 });
+  await bob.goBack();
+  await rwBob.waitFor({ state: 'detached' });
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+
+  // Every send above went through (the activity day rides in the same batch as each message).
+  assert.equal(await alice.locator('.msg.failed').count(), 0, 'no unsent messages (alice)');
+  assert.equal(await bob.locator('.msg.failed').count(), 0, 'no unsent messages (bob)');
+
+  step('Streak off');
+  await bob.getByRole('button', { name: /^Hot streak: \d+ days?$/ }).click();
+  await bob.getByRole('button', { name: 'Turn off streak' }).click();
+  await alice.locator('.streak-chip').waitFor({ state: 'detached' });
 
   step('Delete account (Eve, who has no chats)');
   await eve.getByRole('button', { name: 'Settings' }).click();

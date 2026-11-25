@@ -933,3 +933,70 @@ describe('more Drops, daily question, threads (Phase 7)', () => {
     await assertSucceeds(setDoc(doc(alice(), 'rooms', ROOM, 'drops', 'tc'), { type: 'time-capsule', createdBy: 'alice', createdAt: serverTimestamp(), content: { openOn: '2099-01-01', openAtMs: 4070908800000 } }));
   });
 });
+
+describe('streaks & activity days', () => {
+  const utcDay = (offsetDays = 0) => new Date(Date.now() + offsetDays * 86400000).toISOString().slice(0, 10);
+  const day = (db: Firestore, key = utcDay()) => doc(db, 'rooms', ROOM, 'days', key);
+  const roomRef = (db: Firestore) => doc(db, 'rooms', ROOM);
+
+  it('members add only themselves to about-today’s activity day', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(day(alice()), { uids: arrayUnion('alice') }, { merge: true }));
+    await assertSucceeds(setDoc(day(bob()), { uids: arrayUnion('bob') }, { merge: true }));
+    // Writing yourself again is a harmless no-op.
+    await assertSucceeds(setDoc(day(bob()), { uids: arrayUnion('bob') }, { merge: true }));
+    // Not someone else, not removing anyone, not an old or far-off day, not outsiders.
+    await assertFails(setDoc(day(alice(), utcDay(1)), { uids: ['bob'] }));
+    await assertFails(updateDoc(day(alice()), { uids: arrayRemove('bob') }));
+    await assertFails(setDoc(day(alice(), utcDay(-5)), { uids: ['alice'] }));
+    await assertFails(setDoc(day(alice(), '2026-13-40'), { uids: ['alice'] }));
+    await assertFails(setDoc(day(eve(), utcDay(1)), { uids: ['eve'] }));
+    await assertFails(getDoc(day(eve())));
+    await assertSucceeds(getDoc(day(bob())));
+    // A zone ahead of UTC is already on tomorrow.
+    await assertSucceeds(setDoc(day(alice(), utcDay(1)), { uids: ['alice'] }));
+    await assertFails(deleteDoc(day(alice())));
+  });
+
+  it('a message and its activity day commit together', async () => {
+    await seedRoom();
+    const db = alice();
+    const b = writeBatch(db);
+    b.set(doc(msgs(db), 'm1'), { uid: 'alice', kind: 'text', text: 'hi', createdAt: serverTimestamp() });
+    b.update(doc(db, 'rooms', ROOM, 'tabs', 'general'), { lastMessageAt: serverTimestamp() });
+    b.set(day(db), { uids: arrayUnion('alice') }, { merge: true });
+    await assertSucceeds(b.commit());
+  });
+
+  it('one proposes a streak, only the other accepts, either stops it', async () => {
+    await seedRoom();
+    // Can't start it already "on", or in someone else's name.
+    await assertFails(updateDoc(roomRef(alice()), { streak: { state: 'on', by: 'alice', at: serverTimestamp(), since: serverTimestamp() } }));
+    await assertFails(updateDoc(roomRef(alice()), { streak: { state: 'proposed', by: 'bob', at: serverTimestamp() } }));
+    await assertSucceeds(updateDoc(roomRef(alice()), { streak: { state: 'proposed', by: 'alice', at: serverTimestamp() } }));
+    const proposed = (await getDoc(roomRef(alice()))).data()!.streak;
+    // The proposer can't accept their own proposal; outsiders can't touch it.
+    await assertFails(updateDoc(roomRef(alice()), { streak: { state: 'on', by: 'alice', at: proposed.at, since: serverTimestamp() } }));
+    await assertFails(updateDoc(roomRef(eve()), { streak: deleteField() }));
+    await assertSucceeds(updateDoc(roomRef(bob()), { streak: { state: 'on', by: 'alice', at: proposed.at, since: serverTimestamp() } }));
+    const on = (await getDoc(roomRef(alice()))).data()!.streak;
+    // The cached count for the chat list: sane numbers only, same start.
+    await assertSucceeds(updateDoc(roomRef(alice()), { streak: { ...on, count: 3, best: 5, day: '2026-01-02' } }));
+    await assertFails(updateDoc(roomRef(alice()), { streak: { ...on, count: 6, best: 5, day: '2026-01-02' } }));
+    await assertFails(updateDoc(roomRef(alice()), { streak: { ...on, count: 1, best: 1, day: 'today' } }));
+    await assertFails(updateDoc(roomRef(alice()), { streak: { ...on, since: serverTimestamp(), count: 1, best: 1, day: '2026-01-02' } }));
+    // Streak changes go alone, never with other room fields.
+    await assertFails(updateDoc(roomRef(bob()), { streak: deleteField(), invites: [] }));
+    await assertSucceeds(updateDoc(roomRef(bob()), { streak: deleteField() }));
+  });
+
+  it('no streak in a chat with one person', async () => {
+    await seedRoom(['alice']);
+    await assertFails(updateDoc(roomRef(alice()), { streak: { state: 'proposed', by: 'alice', at: serverTimestamp() } }));
+  });
+
+  it('the Memories switch is a private contact setting', async () => {
+    await assertSucceeds(setDoc(doc(alice(), 'users', 'alice', 'contacts', 'bob'), { memories: false, updatedAt: serverTimestamp() }, { merge: true }));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice', 'contacts', 'bob'), { memories: 'no', updatedAt: serverTimestamp() }, { merge: true }));
+  });
+});

@@ -81,3 +81,12 @@ export function expiryMs(tab: { disappearing?: unknown; ttlHours?: unknown } | u
   const h = [24, 168, 2160].includes(tab.ttlHours as number) ? (tab.ttlHours as number) : 24;
   return now + h * 3_600_000;
 }
+
+/** "YYYY-MM-DD" for `ms` in the room's zone (the activity day a message counts for). */
+export function dayKeyIn(ms: number, tz?: string): string {
+  let f: Intl.DateTimeFormat;
+  try { f = new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'Indian/Maldives', year: 'numeric', month: '2-digit', day: '2-digit' }); }
+  catch { f = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }); }
+  const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}

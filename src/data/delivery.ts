@@ -1,3 +1,4 @@
+import { markActivityTx } from './memories';
 import {
   collection, deleteDoc, doc, getDocs, onSnapshot, query, runTransaction, serverTimestamp, setDoc, Timestamp,
   updateDoc, where, writeBatch,
@@ -173,6 +174,7 @@ export async function deliverScheduled(s: Scheduled): Promise<boolean> {
     tx.update(doc(db, 'rooms', s.roomId), {
       lastMessage: { id: s.id, uid: s.senderId, tabId: s.tabId, text: snippetOf({ kind: 'text', text } as any).slice(0, 160), at: serverTimestamp() },
     });
+    markActivityTx(tx, s.roomId, s.senderId);
     return true;
   });
 }

@@ -21,6 +21,8 @@ export type SetupField =
  * people have locked the same key.
  */
 export interface DropApi {
+  /** The chat this Drop is in. */
+  roomId: string;
   me: Person;
   /** The other person in the room (a placeholder until they join). */
   partner: Person;

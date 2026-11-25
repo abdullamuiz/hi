@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision } from '../src/delivery';
+import { dayKeyIn, due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision } from '../src/delivery';
 
 const utc = (h: number, m = 0) => Date.UTC(2026, 10, 24, h, m);
 
@@ -85,5 +85,14 @@ describe('expiryMs (scheduled delivery into a disappearing tab)', () => {
   it('is null for tabs that keep messages', () => {
     expect(expiryMs({ disappearing: false, ttlHours: 168 }, now)).toBeNull();
     expect(expiryMs(undefined, now)).toBeNull();
+  });
+});
+
+describe('dayKeyIn (activity day for streaks)', () => {
+  it('files a message under the room zone\'s day', () => {
+    const ms = Date.parse('2026-03-01T20:30:00Z');
+    expect(dayKeyIn(ms, 'Indian/Maldives')).toBe('2026-03-02');
+    expect(dayKeyIn(ms, 'America/New_York')).toBe('2026-03-01');
+    expect(dayKeyIn(ms, 'Not/AZone')).toBe('2026-03-01');
   });
 });
