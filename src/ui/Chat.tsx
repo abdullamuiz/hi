@@ -9,7 +9,10 @@ import { takeJump, type Jump } from '../lib/jump';
 import { SearchSheet } from './Search';
 import { ExportSheet } from './Export';
 import type { SearchFilter } from '../lib/search';
-import { addPin, watchPins } from '../data/pins';
+import { addPin, moveTopPinToScrapbook, pinToTop, unpinFromTop, watchCountdowns, watchPins, type CountdownDrop, type NewPin } from '../data/pins';
+import { topOrder } from '../lib/scrapbook';
+import { Scrapbook } from './Scrapbook';
+import { CountdownBanner, PinFullSheet, PinnedBar } from './TopBars';
 import { GENERAL, createTab, ensureGeneralTab, updateTab, watchTabs } from '../data/tabs';
 import { cancelScheduled, deliverScheduled, markRead, readUpTo, scheduleMessage, updateScheduled, useDeliveryPrefs, useMyReads } from '../data/delivery';
 import { parseFailed, statuses, type Failed } from '../lib/delivery';
@@ -32,7 +35,7 @@ import { blockContact, deleteRoom, leaveRoom, setContact, unblock, type Blocked,
 import { displayName, noteLabel } from '../lib/profile';
 import { Avatar, ContactSheet, DeleteAccountSheet, ProfileForm, useProfile } from './Profile';
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
-import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab } from '../types';
+import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab, TopPin } from '../types';
 import { DropCard } from './DropCard';
 import { ThreadTile, ThreadView } from './Thread';
 import { DailyBanner } from './Daily';
@@ -52,7 +55,7 @@ import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
 import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
 import { loadPlayed, motionOn, pickArrival, previewFor, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
-import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
+import { MoodSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
 import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
 
@@ -61,7 +64,7 @@ type Sheet =
   | { kind: 'tray' }
   | { kind: 'mood' }
   | { kind: 'settings' }
-  | { kind: 'scrap' }
+  | { kind: 'pin-full'; msgId: string }
   | { kind: 'setup'; type: string; prefill?: Record<string, unknown> }
   | { kind: 'tab-new' }
   | { kind: 'tab-edit'; tabId: string }
@@ -129,6 +132,10 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const setActiveTab = (id: string) => { setWindowFrom(null); setActiveTabState(id); };
   const [members, setMembers] = useState<Record<string, Member>>({});
   const [pins, setPins] = useState<Pin[]>([]);
+  const [countdowns, setCountdowns] = useState<CountdownDrop[]>([]);
+  const [scrapOpen, setScrapOpen] = useState(false);
+  // A Drop opened on its own (from the countdown banner), as a pop-up.
+  const [dropPop, setDropPop] = useState<string | null>(null);
   // dropId → Drop type, reported by each Drop card (for reply / pin / list previews).
   const [dropTypes, setDropTypes] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState('');
@@ -216,6 +223,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
       }, (e) => flash(e.message)),
       watchMembers(room.id, setMembers, (e) => console.warn('members', e)),
       watchPins(room.id, setPins, (e) => console.warn('pins', e)),
+      watchCountdowns(room.id, setCountdowns, (e) => console.warn('countdowns', e)),
     ];
     return () => unsubs.forEach((u) => u());
   }, [room.id, user.uid]);
@@ -283,6 +291,13 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
   }, [!!sheet, !!selected]);
+
+  useEffect(() => {
+    if (!dropPop) return;
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setDropPop(null); };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  }, [dropPop]);
 
   const toastTimer = useRef<number | null>(null);
   function showToast(t: Toast | null, ms = 4000) {
@@ -517,8 +532,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     }
   };
 
-  const pin = (p: { title: string; detail: string; dropId?: string; messageId?: string }) =>
-    addPin(room.id, user.uid, { ...p, tabId: activeTab }).then(() => flash('Pinned to scrapbook')).catch((e) => flash(e.message));
+  const pin = (p: NewPin) =>
+    addPin(room.id, user.uid, { tabId: activeTab, ...p, order: topOrder(pins) }).then(() => flash('Pinned to scrapbook')).catch((e) => flash(e.message));
+  /** A message (or photo) as a scrap. */
+  const scrapOf = (m: Message): NewPin => m.kind === 'photo' && m.photo
+    ? { title: `Photo from ${nameOf(m.uid)}`, detail: m.text || 'No caption', messageId: m.id, tabId: m.tabId || activeTab, kind: 'photo', photoPath: m.photo.path, senderId: m.uid }
+    : { title: nameOf(m.uid), detail: snip(m), messageId: m.id, tabId: m.tabId || activeTab, kind: 'message', senderId: m.uid };
 
   const turnOnPush = async () => {
     try {
@@ -625,9 +644,28 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const pinMsgs = async (ms: Message[]) => {
     const todo = ms.filter((m) => !m.deleted && m.kind !== 'drop' && !pinnedMsgs.has(m.id));
     try {
-      await Promise.all(todo.map((m) => addPin(room.id, user.uid, { title: nameOf(m.uid), detail: snip(m), messageId: m.id, tabId: activeTab })));
+      const base = topOrder(pins);
+      await Promise.all(todo.map((m, i) => addPin(room.id, user.uid, { ...scrapOf(m), order: base + todo.length - i })));
       flash(todo.length ? 'Pinned to scrapbook' : 'Already pinned');
     } catch (e: any) { flash(e.message); }
+  };
+  // --- pinned to the top of the chat (max 3) ---------------------------------------
+  const topPins = room.pinned || [];
+  const topOf = (m: Message): Omit<TopPin, 'at' | 'by'> => ({ msgId: m.id, tabId: m.tabId || activeTab, uid: m.uid, text: snip(m).slice(0, 160) });
+  const pinTop = async (m: Message) => {
+    setSheet(null);
+    try {
+      const r = await pinToTop(room.id, topOf(m), user.uid);
+      if (r === 'full') setSheet({ kind: 'pin-full', msgId: m.id });
+      else flash(r === 'already' ? 'Already pinned' : 'Pinned to the top');
+    } catch (e: any) { flash(e?.message || 'Could not pin that.'); }
+  };
+  const topToScrapbook = (p: TopPin) =>
+    moveTopPinToScrapbook(room.id, user.uid, p, nameOf(p.uid), topOrder(pins)).then(() => flash('Moved to Scrapbook')).catch((e) => flash(e.message));
+  const openPinnedMessage = (tabId: string | null, msgId: string) => {
+    const tab = tabId || activeTab;
+    if (tab === activeTab && messages?.some((x) => x.id === msgId)) return jumpTo(msgId);
+    openFromSearch({ roomId: room.id, tabId: tab, msgId, atMs: 0 });
   };
   const react = (m: Message, code: ReactionCode, on: boolean) =>
     setReaction(room.id, m, user.uid, code, on).catch((e) => flash(e.message));
@@ -705,7 +743,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'settings' })} aria-label="Settings">
             <SettingsIcon />
           </button>
-        <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'scrap' })} aria-label="Open scrapbook">
+        <button type="button" class="icon-btn" onClick={() => { setSheet(null); setScrapOpen(true); }} aria-label="Open scrapbook">
           <BookmarkIcon />
           {pins.length > 0 && <span class="badge">{pins.length}</span>}
           </button>
@@ -725,6 +763,13 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         onUnreadTotal={setUnreadTotal}
         onSearch={() => setSheet({ kind: 'search' })}
       />
+      {topPins.length > 0 && (
+        <PinnedBar pins={topPins} nameOf={(uid) => (uid === user.uid ? 'You' : partner.name)}
+          onJump={(p) => openPinnedMessage(p.tabId, p.msgId)}
+          onUnpin={(p) => unpinFromTop(room.id, p.msgId).then(() => flash('Unpinned')).catch((e) => flash(e.message))}
+          onToScrapbook={topToScrapbook} />
+      )}
+      <CountdownBanner items={countdowns} onOpen={setDropPop} />
 
       <Feed
         messages={shown}
@@ -828,7 +873,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 me={me}
                 partner={partner}
                 pinned={pinnedDrops.has(dropId)}
-                onPin={(title, detail) => pin({ title, detail, dropId })}
+                onPin={(title, detail) => pin({ title, detail, dropId, kind: 'drop' })}
                 onType={(type) => setDropTypes((t) => (t[dropId] === type ? t : { ...t, [dropId]: type }))}
               />
             );
@@ -965,9 +1010,28 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           startId={viewer}
           nameOf={(uid) => (uid === user.uid ? 'You' : partner.name)}
           isPinned={(id) => pinnedMsgs.has(id)}
-          onPin={(m) => pin({ title: `Photo from ${nameOf(m.uid)}`, detail: m.text || 'No caption', messageId: m.id })}
+          onPin={(m) => pin(scrapOf(m))}
           onClose={() => setViewer(null)}
         />
+      )}
+
+      {scrapOpen && (
+        <Scrapbook roomId={room.id} pins={pins} me={me} partner={partner} nameOf={nameOf} tabName={tabName}
+          onToast={flash} onClose={() => setScrapOpen(false)}
+          onOpenMessage={(p) => {
+            // The panel is closing (back through its history entry); jump once it's gone.
+            setTimeout(() => openPinnedMessage(p.tabId, p.messageId!), 120);
+          }} />
+      )}
+      {dropPop && (
+        <div class="scrap-pop chat-pop" role="dialog" aria-modal="true" aria-label="Countdown">
+          <button type="button" class="scrim" onClick={() => setDropPop(null)} aria-label="Close" />
+          <div class="scrap-pop-card">
+            <button type="button" class="scrap-pop-x" onClick={() => setDropPop(null)} aria-label="Close Drop"><XIcon /></button>
+            <DropCard roomId={room.id} dropId={dropPop} me={me} partner={partner} pinned={pinnedDrops.has(dropPop)}
+              onPin={(title, detail) => pin({ title, detail, dropId: dropPop, kind: 'drop' })} />
+          </div>
+        </div>
       )}
 
       {sheet && (
@@ -1000,7 +1064,20 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 onToast={flash}
               />
             )}
-            {sheet.kind === 'scrap' && <ScrapSheet pins={pins} nameOf={nameOf} tabName={tabName} />}
+            {sheet.kind === 'pin-full' && (() => {
+              const m = byId(sheet.msgId);
+              const oldest = topPins[0];
+              if (!m || !oldest) return null;
+              return (
+                <PinFullSheet oldest={oldest} nameOf={(uid) => (uid === user.uid ? 'you' : partner.name)}
+                  onMoveOldest={async () => {
+                    setSheet(null);
+                    try { await moveTopPinToScrapbook(room.id, user.uid, oldest, nameOf(oldest.uid), topOrder(pins)); await pinTop(m); } catch (e: any) { flash(e.message); }
+                  }}
+                  onToScrapbook={() => { setSheet(null); pinMsgs([m]); }}
+                  onCancel={() => setSheet(null)} />
+              );
+            })()}
             {sheet.kind === 'tab-new' && <TabSheet onSave={saveNewTab} />}
             {sheet.kind === 'tab-edit' && (() => {
               const t = tabs.find((x) => x.id === sheet.tabId);
@@ -1058,6 +1135,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                   threadLabel={m.thread?.count ? 'Open thread' : 'Start a thread'}
                   onCopy={() => { setSheet(null); copyMsgs([m]); }}
                   onPin={() => { setSheet(null); pinMsgs([m]); }}
+                  onPinTop={m.kind !== 'system' && !left ? () => pinTop(m) : undefined}
+                  pinnedTop={topPins.some((x) => x.msgId === m.id)}
                   onEdit={() => startEdit(m)}
                   onSelect={() => { setSheet(null); setSelected(new Set([m.id])); }}
                   onDelete={() => setSheet({ kind: 'delete', ids: [m.id] })}

@@ -279,13 +279,30 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 
 ### Message actions
 
-Long-press a message (or right-click / the ⋯ button on a computer) for **Reply · React · Copy · Pin · Edit · Select · Delete**:
+Long-press a message (or right-click / the ⋯ button on a computer) for **Reply · React · Copy · Pin to top · Pin to scrapbook · Edit · Select · Delete**:
 
 - **Reply** quotes the message above the composer and in the sent bubble. Tap the quote to jump to the original.
 - **React** with ❤️ 😂 😮 😢 👍 🔥. Chips under the bubble show counts; tap one to add or remove yours. **Phrase react**: tap the first and last word, then a reaction. The phrase is underlined with a small chip.
-- **Edit** your own text for 15 minutes ("edited" shows on the bubble). **Copy** and **Pin** (to the scrapbook) work on single messages or a selection.
+- **Edit** your own text for 15 minutes ("edited" shows on the bubble). **Copy** and **Pin to scrapbook** work on single messages or a selection; **Pin to top** keeps up to 3 above the chat.
 - **Delete for me** hides it on your devices (5-second Undo). **Delete for everyone** (your own messages, after a second confirmation) clears the content for both of you and leaves "Message deleted"; a Cloud Function also deletes the photo file.
 - The rules enforce each of these: only the sender edits (within 15 minutes) or deletes for everyone, and reactions, phrase reactions and "delete for me" can only add or remove your own uid.
+
+### Scrapbook, pinned messages and countdowns
+
+- **Scrapbook** (the bookmark in the header) opens full screen, sliding in from the right. ← or the back gesture closes it.
+  - It's a two-column board of everything you've both kept: Drops (a mini card), messages, photos, and **notes** written right here with **+ Note**.
+  - Filter with All · Notes · Photos · Messages · Drops. Each scrap shows who pinned it and when.
+  - **Tap a scrap:** a Drop opens as a pop-up (still the real, playable card), a photo opens the viewer, a message jumps to it in the chat, and a note opens the editor.
+  - **Notes:** either of you can edit or delete a note (it shows "edited by …").
+  - **Reordering:** press and hold a scrap, then drag it; or ⋯ → Move earlier / later. The order is shared, and each move is one write (`order`, placed halfway between its neighbours).
+  - Pinned photos keep their Storage path on the scrap, so a future media clean-up can skip them.
+- **Pin to top:** long-press a message → **Pin to top** keeps up to 3 messages in a bar above the chat.
+  - Tap the bar to jump to the message, then again for the next one. ⋯ offers Unpin or Move to Scrapbook.
+  - Pinning a 4th asks whether to move the oldest to the scrapbook or keep this one there instead.
+  - Stored as `room.pinned` (at most 3, enforced by the rules).
+- **Countdowns:** every Countdown Drop that hasn't happened yet shows as a live strip above the chat (e.g. "Movie night · 12d 4h 33m"). Tap it to open the Drop.
+  - At zero it plays confetti once and says "It's here! 🎉" for a day, until dismissed.
+  - With several countdowns, the soonest shows; swipe or use the arrows for the rest.
 
 ### Delivery: ticks, scheduled messages, quiet hours
 

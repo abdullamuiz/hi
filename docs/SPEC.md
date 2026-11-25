@@ -202,6 +202,8 @@ Each user sets Sunny / Cloudy / Foggy / Stormy (with short descriptions from the
 ### 3.16 Scrapbook
 Room-wide board of pinned messages, photos, Drop results and doc snapshots, each labelled with its tab and date. Grid view with filters; tap opens the source. Monthly **Rewind** card (see Drops) draws from it.
 
+*Built:* a full-screen board that slides in from the right. It holds notes written in the scrapbook (either person edits them), press-and-hold drag to reorder (a shared order), and Drops that open as a pop-up. Up to 3 messages can also be **pinned to the top** of the chat; a 4th offers to move the oldest into the scrapbook. Upcoming Countdown Drops show as a live banner above the chat.
+
 ### 3.17 Hot streak
 - A day counts when **both** members send at least one message or Drop/Session action in any tab (room timezone).
 - Streak survives up to 2 consecutive missed days; on the **3rd consecutive missed day** it resets to 0 (keep `best`).
