@@ -385,11 +385,20 @@ Long-press **Send → Effects…** to pick one for the next message, or tap the 
 
 ### Drops, today's question and threads
 
-The **+** tray has fourteen Drops: Feeling Map, Blind Reveal, Gap Slider, Tag-team Story, Two Truths & a Lie, Predict Me, Rank It, Decision Wheel, Watch Party, Countdown, Poll, This or That, Time Capsule and Mood Check. Anything private (a lie, a vote, a ranking, a mood, a sealed message) uses the hidden-answer flow, so the other person can't read it until both have answered. A **Time Capsule** can't be opened before its date: the rules check the date, not just the app.
+The **+** tray has fifteen Drops: Feeling Map, Blind Reveal, Gap Slider, Tag-team Story, Two Truths & a Lie, Predict Me, Rank It, Decision Wheel, Watch Party, Countdown, Rewind, Poll, This or That, Time Capsule and Mood Check. Anything private (a lie, a vote, a ranking, a mood, a sealed message) uses the hidden-answer flow, so the other person can't read it until both have answered. A **Time Capsule** can't be opened before its date: the rules check the date, not just the app.
 
 **Today's question** is dropped into General once a day (the same question on both phones, picked from about 60), with a banner at the top until you've both answered. Turn it off per chat in the contact's profile → **Daily question**.
 
 **Threads:** long-press a message → **Start a thread** for a side chat. It folds into a "3 replies · last from Sam" tile under the message, with a dot when there's something new; tap it to open the thread full screen. Replies push like messages ("💬 In a thread: …").
+
+### Streaks and memories
+
+- **Hot streak (opt-in):** contact profile → **Hot streak** → *Start a streak*. It turns on when the other person taps **Start**; either of you can turn it off. A day counts when you both send something (in the chat's time zone). One missed day a week is skipped for free; two in a row start it again. The count shows as 🔥 under their name and in the chat list; tap it for current, best and today's status. No reminder notifications.
+- **Milestones:** 7, 30, 100 and 365-day streaks, 100 / 1,000 / 10,000 messages and the chat's yearly anniversary get a card (with confetti) once per phone. Pin it to the scrapbook if you like.
+- **On this day:** when you open a chat, something from the same date 1–5 years ago shows above the message box. *Show* jumps to it; *Pin* keeps it. To try it without waiting a year, run `localStorage.setItem('hi.otd.unit', 'month')` in the browser console (it then looks months back).
+- **Rewind:** contact profile → **Rewind**, or drop the **Rewind** Drop. Story slides for this month, last month or this year: who said more, top emoji and words, Drops, longest run of days, busiest day, the first message and photos. **Share as image** makes a summary picture (no photos in it). Last month's Rewind is also dropped into General once a month, when the chat had at least 10 messages.
+- **Memories** in the contact profile turns On this day and the monthly Rewind off for that chat (just for you).
+- Activity is stored per day in `rooms/{id}/days/{YYYY-MM-DD}` (who sent something), written with the message. Streaks, milestones and Rewind are worked out on the phone; nothing needs Cloud Functions.
 
 ## Icons and themes
 
