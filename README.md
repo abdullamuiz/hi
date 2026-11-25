@@ -82,7 +82,7 @@ This runs three suites:
 | `npm run test:rules` | **Firestore + Storage security rules** against the emulators: only members can read/write, you can only write your own answers, a hidden answer can't be read until both lock in, locked answers are frozen, a third person can never join, photo and voice uploads limited to your own folder and 5 MB, voice notes' played marks and timed reactions are your own only |
 | `npm --prefix functions test` | Open Graph parsing, SSRF protection for link previews, push text never leaking answers |
 
-There is also a full end-to-end run: two browsers sign in, pair up, chat, send a photo, and play all four Drops against the emulators.
+There is also a full end-to-end run: two browsers sign in, pair up, chat, send a photo, play the Drops (including Poll, Two Truths & a Lie, Decision Wheel and Today's question) and use a thread, against the emulators.
 
 ```bash
 npm run test:e2e
@@ -382,6 +382,14 @@ Long-press **Send → Effects…** to pick one for the next message, or tap the 
 - **Bubble effects:** Shout, Whisper (blurred until tapped), Slow reveal, Spotlight, Sealed (an envelope to open) and Echo. Sealed and whispered words stay out of the chat-list preview and the push notification.
 - **Settings → Play effects** turns them off on this phone; phones set to reduce motion get a "Sent with Confetti" label instead. Effects are drawn on a canvas or in CSS, with no libraries.
 - The effect is stored on the message as `effect`; the rules accept only the ten names above, on text and link messages.
+
+### Drops, today's question and threads
+
+The **+** tray has fourteen Drops: Feeling Map, Blind Reveal, Gap Slider, Tag-team Story, Two Truths & a Lie, Predict Me, Rank It, Decision Wheel, Watch Party, Countdown, Poll, This or That, Time Capsule and Mood Check. Anything private (a lie, a vote, a ranking, a mood, a sealed message) uses the hidden-answer flow, so the other person can't read it until both have answered. A **Time Capsule** can't be opened before its date: the rules check the date, not just the app.
+
+**Today's question** is dropped into General once a day (the same question on both phones, picked from about 60), with a banner at the top until you've both answered. Turn it off per chat in the contact's profile → **Daily question**.
+
+**Threads:** long-press a message → **Start a thread** for a side chat. It folds into a "3 replies · last from Sam" tile under the message, with a dot when there's something new; tap it to open the thread full screen. Replies push like messages ("💬 In a thread: …").
 
 ## Icons and themes
 
