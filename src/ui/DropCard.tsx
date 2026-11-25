@@ -57,11 +57,12 @@ export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }:
 
   const content = withDefaults(def, s.drop.content);
   const Renderer = def.Renderer;
-  const pin = () => onPin(def.pinTitle ? def.pinTitle(content) : def.title, def.pinDetail(content, api));
+  const title = def.cardTitle ? def.cardTitle(content) : def.title;
+  const pin = () => onPin(def.pinTitle ? def.pinTitle(content) : title, def.pinDetail(content, api));
 
   return (
-    <section class="drop" aria-label={def.title}>
-      <Head title={def.title} sub={def.subtitle(content)} from={createdBy} />
+    <section class="drop" aria-label={title}>
+      <Head title={title} sub={def.subtitle(content)} from={createdBy} />
       <Renderer content={content} api={api} />
       <div class="drop-foot">
         {pinned

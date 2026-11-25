@@ -1060,3 +1060,86 @@ button.phrase-chip { cursor: pointer; }
 .rewind-foot { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 16px calc(14px + var(--safe-bottom, 0px)); }
 .rewind-foot .fine { color: inherit; opacity: 0.75; text-align: center; }
 .rewind-foot .btn-primary { background: #F2EFE6; color: #232B47; }
+
+/* ---------------------------------------------------------------- sessions (Type Test …) */
+.session-card .session-prog { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; color: var(--muted, inherit); }
+.session-codes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.session-codes span { display: flex; flex-direction: column; align-items: center; padding: 8px; border-radius: 12px; background: var(--chip, rgba(127, 127, 127, 0.12)); }
+.session-codes small { font-size: 12px; opacity: 0.75; }
+.session-codes b { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 24px; letter-spacing: 0.04em; }
+.here-dot { font-style: normal; font-weight: 600; }
+.here-dot::before { content: ''; display: inline-block; width: 7px; height: 7px; margin: 0 4px 1px 2px; border-radius: 50%; background: #3BB273; }
+.session-item .tray-name { white-space: nowrap; }
+
+.session {
+  position: absolute; inset: 0; z-index: 22; display: flex; flex-direction: column;
+  background: linear-gradient(170deg, #1E7F93 0%, #232B47 100%); color: #F2EFE6;
+}
+.session .icon-btn { color: #F2EFE6; }
+.session .btn-ghost { color: #F2EFE6; border-color: rgba(242, 239, 230, 0.45); }
+.session .btn-primary { background: #F2EFE6; color: #232B47; }
+.session .link-btn { color: #F2EFE6; text-decoration: underline; }
+.session-top { display: flex; align-items: center; gap: 8px; padding: calc(10px + var(--safe-top, 0px)) 10px 6px; }
+.session-head { min-width: 0; }
+.session-title { font-weight: 700; font-size: 16px; }
+.session-progress { font-size: 13px; opacity: 0.9; }
+.session-bar { height: 4px; margin: 0 16px; border-radius: 2px; background: rgba(242, 239, 230, 0.25); overflow: hidden; }
+.session-bar i { display: block; height: 100%; background: #F2EFE6; transition: width 0.25s ease; }
+.session-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 16px 18px calc(18px + var(--safe-bottom, 0px)); }
+.session-center { margin: auto; max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 12px; text-align: center; }
+.session-center h2, .session-q h2 { margin: 0; font-family: 'Space Grotesk', Inter, sans-serif; }
+.session-center p { margin: 0; line-height: 1.5; }
+.session-big { font-size: 56px; }
+.session-fine { font-size: 12px; opacity: 0.75; }
+.session-kicker { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.8; }
+.session-q { margin: auto; max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 16px; animation: rewind-in 0.25s ease-out; }
+.session-qtext { font-size: 26px; line-height: 1.25; }
+.session-options { display: flex; flex-direction: column; gap: 10px; }
+.session-opt {
+  min-height: 56px; padding: 12px 16px; border-radius: 16px; text-align: left; font: inherit; font-size: 16px; cursor: pointer;
+  border: 2px solid rgba(242, 239, 230, 0.4); background: rgba(242, 239, 230, 0.08); color: inherit;
+}
+.session-opt.on { background: #F2EFE6; color: #232B47; border-color: #F2EFE6; font-weight: 600; }
+.session-opt:focus-visible { outline: 3px solid #F2A15F; outline-offset: 2px; }
+.session-back { align-self: flex-start; }
+
+.session-reveal { flex: 1; display: flex; flex-direction: column; gap: 12px; max-width: 480px; width: 100%; margin: 0 auto; }
+.session-reveal .rewind-dots { padding: 0; }
+.session-slide { flex: 1; display: flex; flex-direction: column; gap: 12px; animation: rewind-in 0.35s ease-out; }
+.session-slide p { margin: 0; line-height: 1.5; }
+.session-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-size: 13px; }
+.session-hero { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 30px; font-weight: 700; line-height: 1.2; }
+.session-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.session-history { display: flex; flex-direction: column; gap: 4px; font-size: 14px; padding: 10px 12px; border-radius: 12px; background: rgba(242, 239, 230, 0.1); }
+
+.type-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; perspective: 900px; }
+.type-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 10px; border-radius: 18px; text-align: center;
+  background: #F2EFE6; color: #232B47; transform-origin: center; animation: type-flip 0.7s cubic-bezier(.2,.8,.2,1) both;
+}
+.type-card + .type-card { background: #F2A15F; }
+.type-who { font-size: 13px; font-weight: 600; opacity: 0.75; }
+.type-code { font-family: 'Space Grotesk', Inter, sans-serif; font-size: 40px; font-weight: 700; letter-spacing: 0.04em; }
+.type-name { font-weight: 700; }
+.type-blurb { font-size: 13px; line-height: 1.4; }
+@keyframes type-flip { from { transform: rotateY(90deg); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.scale-legend { display: flex; gap: 16px; font-size: 14px; }
+.scale-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.scales { display: flex; flex-direction: column; gap: 14px; }
+.scale-name { font-weight: 700; }
+.scale-ends { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; opacity: 0.85; }
+.scale-track { position: relative; height: 10px; margin: 8px 9px 4px; border-radius: 5px; background: rgba(242, 239, 230, 0.3); }
+.mk { display: inline-block; width: 16px; height: 16px; border: 2px solid #232B47; box-sizing: border-box; }
+.mk.me { border-radius: 50%; background: #F2EFE6; }
+.mk.them { border-radius: 3px; background: #F2A15F; }
+.scale-track .mk { position: absolute; top: 50%; transform: translate(-50%, -50%); animation: rewind-in 0.5s ease-out both; }
+.scale-track .mk.them { width: 14px; height: 14px; }
+.match-card, .prompt-card { padding: 12px 14px; border-radius: 14px; background: rgba(242, 239, 230, 0.12); }
+.match-card.differ { background: rgba(242, 161, 95, 0.22); }
+.match-card b { display: block; margin-bottom: 2px; }
+.prompt-card { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .type-card, .scale-track .mk, .session-slide, .session-q { animation: none; }
+  .session-bar i { transition: none; }
+}

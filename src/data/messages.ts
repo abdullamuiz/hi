@@ -129,13 +129,16 @@ export async function sendVoice(roomId: string, tabId: string, uid: string, rec:
 /** Creates a Drop and the chat message that carries it, atomically. */
 export async function createDrop(
   roomId: string, tabId: string, uid: string, type: string, content: Record<string, unknown>, firstEntries: string[] = [], title = 'a Drop',
+  /** A fixed Drop id and extra writes for the same batch (e.g. a Session's own doc). */
+  opts: { id?: string; extra?(b: WriteBatch): void } = {},
 ) {
   const b = writeBatch(db);
-  const dropRef = doc(collection(db, 'rooms', roomId, 'drops'));
+  const dropRef = opts.id ? doc(db, 'rooms', roomId, 'drops', opts.id) : doc(collection(db, 'rooms', roomId, 'drops'));
   b.set(dropRef, { type, createdBy: uid, createdAt: serverTimestamp(), content });
   firstEntries.forEach((text) => {
     b.set(doc(collection(dropRef, 'entries')), { uid, text: text.slice(0, 280), createdAt: serverTimestamp() });
   });
+  opts.extra?.(b);
   addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id }, snippetOf({ kind: 'drop', text: '' }, title));
   await b.commit();
   return dropRef.id;

@@ -10,9 +10,10 @@ describe('Drop registry', async () => {
     expect(drops.map((d) => d.type)).toEqual([
       'feeling-map', 'blind-reveal', 'gap-slider', 'tag-team-story', 'two-truths', 'predict-me', 'rank-it',
       'decision-wheel', 'watch-party', 'countdown', 'rewind', 'poll', 'this-or-that', 'time-capsule', 'mood-check', 'daily-question',
+      'session',
     ]);
-    // The daily question is dropped by the app, not from the tray.
-    expect(drops.filter((d) => d.hidden).map((d) => d.type)).toEqual(['daily-question']);
+    // The daily question is dropped by the app; Sessions have their own tray section.
+    expect(drops.filter((d) => d.hidden).map((d) => d.type)).toEqual(['daily-question', 'session']);
   });
 
   it('every Drop can describe itself for the scrapbook before anyone answers', () => {

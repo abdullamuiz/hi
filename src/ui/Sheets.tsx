@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import type { User } from 'firebase/auth';
 import type { DropDefinition } from '../drops/types';
+import type { SessionTest } from '../sessions/types';
 import type { PushStatus } from '../data/push';
 import { signOut } from '../data/auth';
 import { disablePush } from '../data/push';
@@ -14,7 +15,10 @@ import { BlockedList } from './Profile';
 import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
 
-export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void }) {
+export function TraySheet({ drops, onPick, sessions = [], onSession }: {
+  drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void;
+  sessions?: SessionTest[]; onSession?(t: SessionTest): void;
+}) {
   return (
     <div class="stack" style={{ gap: '14px' }}>
       <div>
@@ -29,6 +33,22 @@ export function TraySheet({ drops, onPick }: { drops: DropDefinition<any>[]; onP
           </button>
         ))}
       </div>
+      {sessions.length > 0 && onSession && (
+        <>
+          <div>
+            <div class="field-label">Sessions</div>
+            <div class="sheet-sub">Full screen, at your own pace. Revealed together when you've both finished.</div>
+          </div>
+          <div class="tray-grid">
+            {sessions.map((t) => (
+              <button type="button" key={t.id} class="tray-item session-item" onClick={() => onSession(t)}>
+                <span class="tray-name"><span aria-hidden="true">{t.icon} </span>{t.title}</span>
+                <span class="tray-desc">{t.subtitle}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       <div class="fine">New Drops show up here once they're added to the app.</div>
     </div>
   );
