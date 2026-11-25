@@ -14,6 +14,7 @@ import { EffectsSetting } from './Effects';
 import { BlockedList } from './Profile';
 import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
+import { InstallRow } from './Install';
 
 export function TraySheet({ drops, onPick, sessions = [], onSession, self = false }: {
   drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void;
@@ -228,6 +229,7 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = []
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</span>
           <button type="button" class="link-btn" onClick={async () => { await disablePush(user.uid); await signOut(); }}>Sign out</button>
         </div>
+        <InstallRow />
         <div class="settings-row">
           <span>App version · {buildLabel()}</span>
           <button type="button" class="link-btn" onClick={() => reloadApp()}>Reload app</button>

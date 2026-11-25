@@ -1256,3 +1256,15 @@ button.phrase-chip { cursor: pointer; }
 }
 .self-row .chat-name { font-weight: 700; }
 .self-offer { padding-top: 6px; border-top: 1px solid var(--line, color-mix(in srgb, var(--ink) 10%, transparent)); }
+
+/* ---------------------------------------------------------------- install */
+.install-banner {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 10px; padding: 10px 12px; border-radius: 14px;
+  background: var(--surface-2, var(--surface)); border: 1px solid var(--line, rgba(0,0,0,.08));
+  font-size: 14px;
+}
+.install-banner img { border-radius: 8px; flex-shrink: 0; }
+.install-banner span { flex: 1; min-width: 0; }
+.install-banner .btn-primary.small { height: 34px; padding: 0 14px; font-size: 14px; width: auto; flex-shrink: 0; }
+.install-steps { padding: 0 2px 8px; }
