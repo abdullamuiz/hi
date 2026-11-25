@@ -30,7 +30,9 @@ rules_version = '2';
 // lock marker for the same key, which itself can only exist if the reader's own
 // sealed doc is locked. A locked sealed doc can never be changed again.
 //
-// Every room is exactly two people. A person can be in many rooms (one per contact).
+// A "Notes to self" room (self: true) is one person forever: it can never be joined or invited to.
+//
+// Every other room is exactly two people. A person can be in many rooms (one per contact).
 // Someone joins a room either with an invited, verified e-mail, or with the room's
 // secret invite code from a share link. Non-members can never read a room.
 service cloud.firestore {
@@ -65,9 +67,25 @@ service cloud.firestore {
     // ---------------------------------------------------------------- users
     match /users/{uid} {
       allow read, delete: if signedIn() && me() == uid;
+      // selfRoom points at my own Notes to self room (one I own, alone, with self: true).
+      // getAfter: the pointer is written in the same batch that creates the room.
+      function validSelfRoom() {
+        let r = incoming().get('selfRoom', null);
+        return r == null || (
+          r is string && r.matches('^[A-Za-z0-9_-]{1,64}$')
+          && selfRoomOk(getAfter(/databases/$(database)/documents/rooms/$(r)))
+        );
+      }
+      function selfRoomOk(room) {
+        return room != null
+          && room.data.owner == uid
+          && room.data.members == [uid]
+          && room.data.get('self', false) == true;
+      }
       // The urgent-message count is kept by the server (Cloud Function) only.
-      allow create: if signedIn() && me() == uid && !incoming().keys().hasAny(['urgent']);
-      allow update: if signedIn() && me() == uid && !changedKeys().hasAny(['urgent']);
+      allow create: if signedIn() && me() == uid && !incoming().keys().hasAny(['urgent']) && validSelfRoom();
+      allow update: if signedIn() && me() == uid && !changedKeys().hasAny(['urgent'])
+        && (!changedKeys().hasAny(['selfRoom']) || validSelfRoom());
 
       // My own "read up to" times. Kept here too, so unread counts work with read receipts off.
       match /reads/{rid} {
@@ -156,8 +174,17 @@ service cloud.firestore {
       }
       allow get, list: if canSeeRoom();
 
+      // Notes to self: only at rooms/self_{my uid}, with no invite of any kind. And no
+      // ordinary room may take a self_ id (so nobody can squat someone else's).
+      function validSelfFlag() {
+        let isSelf = incoming().get('self', false);
+        return (isSelf == false && !roomId.matches('^self_.*'))
+          || (isSelf == true && roomId == 'self_' + me()
+              && incoming().invites == [] && !incoming().keys().hasAny(['inviteCode']));
+      }
       allow create: if signedIn()
-        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'inviteCode', 'timezone', 'createdAt'])
+        && onlyKeys(['owner', 'ownerName', 'members', 'invites', 'inviteCode', 'timezone', 'createdAt', 'self'])
+        && validSelfFlag()
         && (incoming().get('timezone', 'Indian/Maldives') is string && incoming().get('timezone', 'Indian/Maldives').size() <= 64)
         && incoming().owner == me()
         && incoming().members == [me()]
@@ -198,6 +225,7 @@ service cloud.firestore {
       // Nobody can join a chat someone has left, or the chat of someone who blocked them.
       function joinable() {
         return resource.data.get('left', null) == null
+          && resource.data.get('self', false) != true
           && !exists(/databases/$(database)/documents/users/$(resource.data.owner)/blocked/$(me()));
       }
 
@@ -261,10 +289,24 @@ service cloud.firestore {
           resource.data.owner == me()
           && resource.data.members.size() == 1
           && resource.data.get('left', null) == null
+          && resource.data.get('self', false) != true
           && changedKeys().hasOnly(['invites', 'inviteCode'])
           && validInvites(incoming().invites)
           && (incoming().get('inviteCode', null) == null || validCode(incoming().inviteCode))
           && !(string(request.auth.token.get('email', '')).lower() in incoming().invites)
+        )
+        ||
+        // The owner turns a chat nobody has joined into their Notes to self. Any invite
+        // and share-link code go in the same write; it can never be joined after this.
+        (
+          resource.data.owner == me()
+          && resource.data.members == [me()]
+          && resource.data.get('left', null) == null
+          && resource.data.get('self', false) != true
+          && changedKeys().hasOnly(['self', 'invites', 'inviteCode'])
+          && incoming().self == true
+          && incoming().invites == []
+          && !incoming().keys().hasAny(['inviteCode'])
         )
         ||
         // A member leaves (remove contact / block). Only their own uid goes, and the

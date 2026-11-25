@@ -69,6 +69,7 @@ Rules of thumb:
 - **Setup field kinds:** `text`, `lines` (one item per line) and `date` (a date picker, stored as `"YYYY-MM-DD"`).
 - **`prepare(content)`** runs when the sender taps *Drop it*: return an error message to stop, or the content to store (e.g. Countdown turns the date into `atMs`).
 - **`hidden: true`** keeps a Drop out of the tray (Today's question is dropped by the app itself).
+- **`solo: true`** marks a Drop that works with nobody else in the chat, so it's offered in **Notes to self** too (Countdown, Time Capsule, Decision Wheel). Leave it off for anything that needs the other person (hidden answers, guessing, comparing). `api.partner.uid` is empty in Notes to self, so a solo Drop can adjust its wording (see `time-capsule.drop.tsx`).
 - Pure helpers shared by Drops live in `src/drops/logic.ts` (unit-tested) and small UI parts in `src/drops/parts.tsx` (`Options`, `RevealPair`). Only `*.drop.tsx` files are registered.
 
 ## Styling

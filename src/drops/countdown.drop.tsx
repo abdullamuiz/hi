@@ -11,6 +11,7 @@ export default defineDrop<Content>({
   title: 'Countdown',
   trayDescription: 'Count down to something together',
   order: 10,
+  solo: true,
   content: { title: 'Our trip', date: '', atMs: 0 },
   setup: [
     { key: 'title', label: 'Counting down to', kind: 'text', maxLength: 80 },

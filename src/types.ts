@@ -24,6 +24,8 @@ export interface Room {
   streak: RoomStreak | null;
   /** Up to 3 messages pinned to the top of the chat (oldest first). */
   pinned: TopPin[];
+  /** Notes to self: one person forever, never joined or invited to. */
+  self: boolean;
 }
 
 /** room.pinned[]: a message pinned to the top of the chat. */

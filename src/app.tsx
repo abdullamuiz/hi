@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { getRedirectResult, onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import { watchInvites, watchMyRooms } from './data/rooms';
+import { createSelfRoom, watchInvites, watchMyRooms } from './data/rooms';
 import { syncThemeFromAccount } from './data/prefs';
 import type { Room } from './types';
 import { SignIn } from './ui/SignIn';
@@ -52,6 +52,7 @@ function Screen() {
   const [nonce, setNonce] = useState(0);
   const decided = useRef(false);
   const roomsRef = useRef<Room[] | null>(null);
+  const roomsServer = useRef(false);
   roomsRef.current = rooms;
   // A chat I just joined isn't listed until the server confirms it: open it when it shows up.
   const [awaiting, setAwaiting] = useState<string | null>(null);
@@ -63,13 +64,13 @@ function Screen() {
 
   useEffect(() => {
     getRedirectResult(auth).catch((e) => setErr(e?.message || String(e)));
-    return onAuthStateChanged(auth, (u) => { setUser(u); setRooms(null); setInvites([]); decided.current = false; setOpenId(null); });
+    return onAuthStateChanged(auth, (u) => { roomsServer.current = false; setUser(u); setRooms(null); setInvites([]); decided.current = false; setOpenId(null); });
   }, []);
 
   useEffect(() => {
     if (!user) return;
     syncThemeFromAccount(user.uid);
-    const unsubs = [watchMyRooms(user.uid, setRooms, (e) => setErr(e.message))];
+    const unsubs = [watchMyRooms(user.uid, (r, server) => { setRooms(r); if (server) roomsServer.current = true; }, (e) => setErr(e.message))];
     if (user.email && user.emailVerified) unsubs.push(watchInvites(user.email, user.uid, setInvites, (e) => setErr(e.message)));
     unsubs.push(watchContacts(user.uid, setContacts), watchBlocked(user.uid, setBlocked));
     return () => unsubs.forEach((u) => u());
@@ -136,8 +137,9 @@ function Screen() {
       target = history.state.hiChat;
     } else {
       const last = lastRoom();
+      const chats = rooms.filter((r) => !r.self);
       if (last && rooms.some((r) => r.id === last)) target = last;
-      else if (rooms.length === 1) target = rooms[0].id;
+      else if (chats.length === 1) target = chats[0].id;
     }
     if (target) {
       // Keep a list entry underneath, so "back" lands on the chat list instead of leaving the app.
@@ -145,6 +147,15 @@ function Screen() {
       open(target);
     }
   }, [rooms]);
+
+  // Everyone has a Notes to self chat: made once, the first time the server says there's none.
+  const selfTried = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || !rooms || !myProfile || !roomsServer.current || selfTried.current === user.uid) return;
+    if (rooms.some((r) => r.self && r.owner === user.uid)) return;
+    selfTried.current = user.uid;
+    createSelfRoom(user).catch(() => { /* already there (another phone made it) */ });
+  }, [user?.uid, rooms, myProfile]);
 
   const loading = user === undefined || (!!user && ((rooms === null && !err) || myProfile === undefined));
   useEffect(() => { if (!loading) splashReady(); }, [loading]);

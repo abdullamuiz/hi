@@ -86,6 +86,8 @@ export interface DropDefinition<C extends Record<string, unknown> = Record<strin
   order?: number;
   /** Not offered in the tray (e.g. the Daily question, which the app drops itself). */
   hidden?: boolean;
+  /** Works with nobody else in the chat, so it's offered in Notes to self too. */
+  solo?: boolean;
   /**
    * Last chance to check or derive content before dropping (e.g. turn a date into
    * a timestamp). Return an error message to stop, or the content to store.

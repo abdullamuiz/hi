@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { FlameIcon, listStreak } from './Memories';
 import type { User } from 'firebase/auth';
-import { declineInvite, joinRoom, watchMembers } from '../data/rooms';
+import { declineInvite, joinRoom, makeSelfRoom, watchMembers } from '../data/rooms';
 import { sendNoteReply } from '../data/messages';
 import { setContact, unblock, type Blocked, type ContactPrefs, type Profile as ProfileT } from '../data/profile';
 import { readUpTo, useMyReads } from '../data/delivery';
@@ -51,6 +51,8 @@ type Sheet =
 
 const ms = (t: { toMillis(): number } | null | undefined) => (t ? t.toMillis() : 0);
 const sortKey = (r: Room) => ms(r.lastMessage?.at) || ms(r.createdAt) || Date.now();
+/** Notes to self first, then the newest chats. */
+export const sortChats = (rooms: Room[]) => [...rooms].sort((a, b) => (Number(b.self) - Number(a.self)) || (sortKey(b) - sortKey(a)));
 
 /** Home: every chat (one per contact), invitations, and "+ Add contact". */
 export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen }: Props) {
@@ -65,7 +67,8 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
   useEffect(() => onThemeChange((p) => setTheme(p)), []);
   useEffect(() => { pushStatus().then(setPush); }, []);
 
-  const sorted = useMemo(() => [...rooms].sort((a, b) => sortKey(b) - sortKey(a)), [rooms]);
+  const sorted = useMemo(() => sortChats(rooms), [rooms]);
+  const contactCount = rooms.filter((r) => !r.self).length;
   // People I already have a full chat with (to avoid a second chat with them).
   const partnerOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -89,6 +92,7 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
   }
 
   const partners = useMemo(() => sorted
+    .filter((r) => !r.self)
     .map((r) => ({ roomId: r.id, uid: r.members.find((u) => u !== user.uid) || '' }))
     .filter((x) => x.uid), [sorted, user.uid]);
 
@@ -152,7 +156,7 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
             );
           })}
 
-          {sorted.length === 0 && invites.length === 0 && (
+          {contactCount === 0 && invites.length === 0 && (
             <div class="card">
               <h2>Start your first chat</h2>
               <p class="lede">Add a contact and send them the invite link. Each chat is private, just the two of you.</p>
@@ -194,7 +198,8 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
             <SearchSheet
               me={user.uid}
               global
-              scope={rooms.filter((r) => r.members.length === 2 || r.left).map((r) => {
+              scope={rooms.filter((r) => r.self || r.members.length === 2 || r.left).map((r) => {
+                if (r.self) return { roomId: r.id, name: 'Notes to self' };
                 const uid = r.members.find((u) => u !== user.uid) || (r.left && r.left !== user.uid ? r.left : '');
                 return { roomId: r.id, name: (uid && contacts[uid]?.nickname) || '' };
               })}
@@ -213,7 +218,8 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
               onOpenChat={(id) => { setSheet(null); onOpen(id); }} />
           )}
           {sheet.kind === 'invite' && managed && (
-            <AddContactSheet user={user} room={managed} onToast={flash} onClose={() => setSheet(null)} />
+            <AddContactSheet user={user} room={managed} onToast={flash} onClose={() => setSheet(null)}
+              onMakeSelf={async () => { await makeSelfRoom(managed, user.uid); flash('This is now your Notes to self'); }} />
           )}
           {sheet.kind === 'settings' && (
             <SettingsSheet
@@ -306,7 +312,35 @@ interface RowProps {
   onMute(uid: string, name: string): void;
 }
 
-function ChatRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: RowProps) {
+function ChatRow(props: RowProps) {
+  return props.room.self ? <SelfRow {...props} /> : <ContactRow {...props} />;
+}
+
+/** My Notes to self: always at the top, never anyone else in it. */
+function SelfRow({ room, me, onOpen }: RowProps) {
+  const myProfile = useProfile(me);
+  const last = room.lastMessage;
+  const sub = last ? last.text : 'Notes, photos and reminders only you see';
+  return (
+    <li class="chat-row self-row">
+      <button type="button" class="chat-open" onClick={onOpen} aria-label={`Notes to self. ${sub}`}>
+        <span class="self-avatar" aria-hidden="true">
+          <Avatar profile={myProfile} name={myProfile?.name || '?'} />
+          <span class="self-badge">📝</span>
+        </span>
+        <span class="chat-text" aria-hidden="true">
+          <span class="chat-top">
+            <span class="chat-name">Notes to self</span>
+            <span class="chat-time">{timeLabel(ms(last?.at))}</span>
+          </span>
+          <span class="chat-sub">{sub}</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function ContactRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: RowProps) {
   const [members, setMembers] = useState<Record<string, Member>>({});
   useEffect(() => watchMembers(room.id, setMembers, () => {}), [room.id]);
   const partnerUid = room.members.find((u) => u !== me) || (room.left && room.left !== me ? room.left : '');

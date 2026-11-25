@@ -395,3 +395,5 @@ Profile · Quiet hours · Read receipts · Reduce motion override · Notificatio
 11. **Optional**: Ask Claude Drop (feature-flagged), Tasks strip, suggest mode, extra Session tests, Capacitor wrap for TestFlight/Play testing.
 
 For each PR: summary, screenshots at 390×844, what the owner must configure, and any decisions taken where this spec was silent.
+
+> **Notes to self (added after the spec):** each person has a one-member chat (`rooms/{id}` with `self: true`) at the top of Chats. It can never be joined or invited to, it hides partner-only features, and it offers only `solo` Drops. See README → *Notes to self*.

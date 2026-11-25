@@ -19,7 +19,7 @@ import { parseFailed, statuses, type Failed } from '../lib/delivery';
 import { isMuted, muteFor, urgentLeft as urgentLeftOf, whenLabel } from '../lib/schedule';
 import { FailedRow, ScheduledStrip, ScheduleSheet, SendOptionsSheet, StatusMark } from './Delivery';
 import { Timestamp } from 'firebase/firestore';
-import { ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
+import { ensureMember, heartbeat, makeSelfRoom, setMood, setTyping, watchMembers } from '../data/rooms';
 import { AddContactSheet } from './AddContactSheet';
 import { ActionSheet, DeleteSheet, PhraseSheet, PhraseText, ReactionChips, ReplyQuote, useLongPress } from './MessageActions';
 import { canEdit, copyText, snippetOf, visibleTo } from '../lib/messages';
@@ -28,7 +28,7 @@ import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
 import { currentPrefs, onThemeChange, type ThemePrefs } from '../lib/themes';
 import { ModeToggle } from './ModeToggle';
-import { drops, getDrop } from '../drops/registry';
+import { drops, getDrop, trayDrops } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
 import { firstName } from '../lib/names';
 import { blockContact, deleteRoom, leaveRoom, setContact, unblock, type Blocked, type ContactPrefs } from '../data/profile';
@@ -81,7 +81,8 @@ type Sheet =
   | { kind: 'schedule'; id?: string }
   | { kind: 'search'; filter?: SearchFilter }
   | { kind: 'export' }
-  | { kind: 'streak' };
+  | { kind: 'streak' }
+  | { kind: 'self-info' };
 
 interface Toast { text: string; undo?: () => void }
 
@@ -177,6 +178,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   // After the other person left (removed the contact) the room only lists me; their profile stays readable.
   const partnerUid = room.members.find((u) => u !== user.uid) || (room.left && room.left !== user.uid ? room.left : '');
   const left = !!room.left;
+  // Notes to self: just me, forever. No partner things (typing, ticks, mood, invites, Today's question).
+  const isSelf = room.self;
   const meMember = members[user.uid];
   const partnerMember = partnerUid ? members[partnerUid] : undefined;
   const partnerProfile = useProfile(partnerUid || null);
@@ -186,9 +189,9 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const me = useMemo<Person>(() => ({ uid: user.uid, name: firstName(myProfile?.name || meMember?.name || user.displayName || user.email, 'You'), isMe: true }), [user.uid, myProfile?.name, meMember?.name, user.displayName, user.email]);
   const partner = useMemo<Person>(() => ({
     uid: partnerUid,
-    name: partnerUid ? displayName(prefs?.nickname, partnerProfile?.name, partnerMember?.name, 'Them') : room.invites[0] ? firstName(room.invites[0], 'Them') : 'Just you',
+    name: partnerUid ? displayName(prefs?.nickname, partnerProfile?.name, partnerMember?.name, 'Them') : room.self ? 'Notes to self' : room.invites[0] ? firstName(room.invites[0], 'Them') : 'Just you',
     isMe: false,
-  }), [partnerUid, prefs?.nickname, partnerProfile?.name, partnerMember?.name, room.invites[0]]);
+  }), [partnerUid, prefs?.nickname, partnerProfile?.name, partnerMember?.name, room.invites[0], room.self]);
 
   // --- streak & memories -------------------------------------------------------
   useEffect(() => { setRoomZone(room.id, room.timezone); }, [room.id, room.timezone]);
@@ -319,7 +322,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     setDraft(v);
     if (!v) { stopTyping(); return; }
     const now = Date.now();
-    if (v && now - lastTypingWrite.current > 3000) {
+    if (v && !room.self && now - lastTypingWrite.current > 3000) {
       lastTypingWrite.current = now;
       setTyping(room.id, user.uid, activeTab, true).catch(() => {});
     }
@@ -610,10 +613,10 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   // Ticks: read only when we both share read receipts.
   const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
   const ticks = useMemo(() => statuses(
-    (shown || []).map((m) => ({ id: m.id, uid: m.uid, createdMs: m.pending ? null : m.createdAt ? m.createdAt.toMillis() : null, pending: m.pending, deleted: m.deleted })),
+    (isSelf ? [] : shown || []).map((m) => ({ id: m.id, uid: m.uid, createdMs: m.pending ? null : m.createdAt ? m.createdAt.toMillis() : null, pending: m.pending, deleted: m.deleted })),
     user.uid,
     partnerRead ? partnerRead.toMillis() : null,
-  ), [shown, user.uid, partnerRead?.toMillis()]);
+  ), [shown, user.uid, partnerRead?.toMillis(), isSelf]);
   const byId = (id: string) => messages?.find((m) => m.id === id);
   const dropTitle = (m: Message) => `a ${(m.dropId && dropTypes[m.dropId] && getDrop(dropTypes[m.dropId])?.title) || 'Drop'}`;
   // Sealed/whisper text stays hidden in reply quotes and pins, as in the chat list and pushes.
@@ -714,9 +717,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     <div class="app">
       <header class="hdr">
         <button type="button" class="back-btn" onClick={onBack} aria-label="Back to chats"><BackIcon /></button>
-        <button type="button" class="hdr-who" disabled={!partnerUid} onClick={() => setSheet({ kind: 'contact' })}
-          aria-label={partnerUid ? `${partner.name}’s profile` : undefined}>
-          <Avatar profile={partnerUid ? partnerProfile : null} fallbackPhoto={partnerMember?.photoURL} name={partner.name} />
+        <button type="button" class="hdr-who" disabled={!partnerUid && !isSelf} onClick={() => setSheet({ kind: isSelf ? 'self-info' : 'contact' })}
+          aria-label={isSelf ? 'About Notes to self' : partnerUid ? `${partner.name}’s profile` : undefined}>
+          {isSelf
+            ? <span class="self-avatar"><Avatar profile={myProfile} name={me.name} /><span class="self-badge" aria-hidden="true">📝</span></span>
+            : <Avatar profile={partnerUid ? partnerProfile : null} fallbackPhoto={partnerMember?.photoURL} name={partner.name} />}
         </button>
         <div class="hdr-text">
           <div class="hdr-name-row">
@@ -727,7 +732,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               </span>
             )}
           </div>
-          {left ? <div class="hdr-sub">Left this chat</div> : (
+          {isSelf ? <div class="hdr-sub">Only you can see this</div> : left ? <div class="hdr-sub">Left this chat</div> : (
             <div class="hdr-sub-row">
               {streak.state === 'on' && streak.result && <StreakChip count={streak.result.count} onClick={() => setSheet({ kind: 'streak' })} />}
               <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
@@ -735,10 +740,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           )}
         </div>
         <div class="hdr-actions">
-          <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
-            aria-label={`Your mood weather: ${MOODS.find((m) => m.id === myMood)?.label}. Change it`}>
-            <MoodIcon mood={myMood} size={24} />
-          </button>
+          {!isSelf && (
+            <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
+              aria-label={`Your mood weather: ${MOODS.find((m) => m.id === myMood)?.label}. Change it`}>
+              <MoodIcon mood={myMood} size={24} />
+            </button>
+          )}
           <ModeToggle uid={user.uid} />
           <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'settings' })} aria-label="Settings">
             <SettingsIcon />
@@ -791,7 +798,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               <span>{room.left === user.uid ? 'You left this chat.' : `${partner.name} left this chat. You can read it, but you can’t send messages here any more.`}</span>
             </div>
           )}
-          {!partnerUid && (
+          {!partnerUid && !isSelf && (
             <div class="sys-card">
               <span>{room.invites[0]
                 ? `Waiting for ${room.invites[0]} to join. Send them the link so they can sign in with that e-mail.`
@@ -1038,8 +1045,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         <div class="sheet-wrap">
           <button type="button" class="scrim" onClick={() => setSheet(null)} aria-label="Close" />
           <div class="sheet" role="dialog" aria-modal="true">
-            {sheet.kind === 'tray' && <TraySheet drops={drops.filter((d) => !d.hidden)} onPick={(d) => startDrop(d)}
-              sessions={trayTests()} onSession={beginSession} />}
+            {sheet.kind === 'tray' && <TraySheet drops={trayDrops(drops, isSelf)} onPick={(d) => startDrop(d)}
+              sessions={isSelf ? [] : trayTests()} onSession={beginSession} self={isSelf} />}
             {sheet.kind === 'setup' && (() => {
               const def = getDrop(sheet.type);
               return def ? <SetupSheet def={def} prefill={sheet.prefill} onDrop={(c) => dropIt(def, c)} onBack={() => setSheet({ kind: 'tray' })} /> : null;
@@ -1099,7 +1106,21 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               ) : null;
             })()}
             {sheet.kind === 'invite' && (
-              <AddContactSheet user={user} room={room} onToast={flash} onClose={() => setSheet(null)} />
+              <AddContactSheet user={user} room={room} onToast={flash} onClose={() => setSheet(null)}
+                onMakeSelf={async () => { await makeSelfRoom(room, user.uid); flash('This is now your Notes to self'); }} />
+            )}
+            {sheet.kind === 'self-info' && (
+              <div class="stack">
+                <div>
+                  <div class="sheet-title">📝 Notes to self</div>
+                  <div class="sheet-sub">Messages, photos, voice notes and reminders only you can see. Nobody can be invited here.</div>
+                </div>
+                <button type="button" class="btn-ghost" onClick={() => setSheet({ kind: 'search' })}>Search</button>
+                <button type="button" class="btn-ghost" onClick={() => setSheet({ kind: 'search', filter: 'photos' })}>Photos and media</button>
+                <button type="button" class="btn-ghost" onClick={() => { setSheet(null); setScrapOpen(true); }}>Scrapbook</button>
+                <button type="button" class="btn-ghost" onClick={() => setSheet({ kind: 'export' })}>Export</button>
+                <div class="fine">Tip: long-press Send → Schedule… to remind yourself later.</div>
+              </div>
             )}
             {sheet.kind === 'search' && (
               <SearchSheet me={user.uid} scope={[{ roomId: room.id, name: partner.name }]} initialFilter={sheet.filter} onOpen={openFromSearch} />

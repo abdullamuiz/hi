@@ -13,6 +13,8 @@ interface Props {
   /** Manage the invite of an existing chat I'm still alone in. Omit to add a new contact. */
   room?: Room | null;
   onOpenChat?(roomId: string): void;
+  /** Offer "Make this my Notes to self" (a chat nobody has joined). */
+  onMakeSelf?(): Promise<void>;
   onToast(msg: string): void;
   onClose(): void;
 }
@@ -21,7 +23,7 @@ interface Props {
  * Add a contact: makes a private two-person chat with a secret share link. The e-mail is
  * optional: no e-mail is sent, it only lets that address accept from inside the app.
  */
-export function AddContactSheet({ user, room, onOpenChat, onToast, onClose }: Props) {
+export function AddContactSheet({ user, room, onOpenChat, onMakeSelf, onToast, onClose }: Props) {
   const [email, setEmail] = useState(room?.invites[0] || '');
   const [savedEmail, setSavedEmail] = useState(room?.invites[0] || '');
   const [roomId, setRoomId] = useState(room?.id || '');
@@ -133,6 +135,12 @@ export function AddContactSheet({ user, room, onOpenChat, onToast, onClose }: Pr
         <div class="fine">{savedEmail ? `${savedEmail} can also accept from inside Hi. No e-mail is sent, so share the link too.` : 'No e-mail is sent. Adding one lets that address accept from inside Hi.'}</div>
       </form>
       {!room && onOpenChat && <button type="button" class="btn-ghost" onClick={() => onOpenChat(roomId)}>Open the chat</button>}
+      {room && onMakeSelf && (
+        <div class="stack self-offer" style={{ gap: '6px' }}>
+          <div class="fine">Rather keep this chat for yourself? It becomes your Notes to self: messages, photos and reminders only you see. The link stops working.</div>
+          <button type="button" class="btn-ghost" disabled={busy} onClick={() => run(async () => { await onMakeSelf(); onClose(); })}>📝 Make this my Notes to self</button>
+        </div>
+      )}
       <div class="settings-row">
         <button type="button" class="link-btn" disabled={busy} onClick={resetLink}>Make a new link</button>
         <button type="button" class="link-btn danger-text" disabled={busy} onClick={remove}>Remove invite</button>

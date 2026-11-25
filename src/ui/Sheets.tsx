@@ -16,15 +16,17 @@ import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
 import { InstallRow } from './Install';
 
-export function TraySheet({ drops, onPick, sessions = [], onSession }: {
+export function TraySheet({ drops, onPick, sessions = [], onSession, self = false }: {
   drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void;
   sessions?: SessionTest[]; onSession?(t: SessionTest): void;
+  /** Notes to self: only the Drops that work alone. */
+  self?: boolean;
 }) {
   return (
     <div class="stack" style={{ gap: '14px' }}>
       <div>
         <div class="sheet-title">Drop something</div>
-        <div class="sheet-sub">Interactive cards you both play with, right in the chat</div>
+        <div class="sheet-sub">{self ? 'The Drops that work just for you: countdowns, a capsule for future you, a wheel to decide' : 'Interactive cards you both play with, right in the chat'}</div>
       </div>
       <div class="tray-grid">
         {drops.map((d) => (

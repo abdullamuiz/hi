@@ -13,6 +13,7 @@ export default defineDrop<Content>({
   title: 'Decision Wheel',
   trayDescription: 'Add options, spin to decide',
   order: 8,
+  solo: true,
   content: { question: 'Where should we eat?' },
   setup: [{ key: 'question', label: 'What are you deciding?', kind: 'text', maxLength: 100 }],
   subtitle: () => 'Let the wheel decide',

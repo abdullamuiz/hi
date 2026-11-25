@@ -77,3 +77,15 @@ describe('Rewind Drop', async () => {
     expect(def.pinDetail(c, {} as any)).toBe(`${c.label} recap`);
   });
 });
+
+describe('Notes to self tray', () => {
+  it('offers only solo Drops in Notes to self, and every visible Drop elsewhere', async () => {
+    const { drops, trayDrops } = await import('../../src/drops/registry');
+    const solo = trayDrops(drops, true).map((d) => d.type).sort();
+    expect(solo).toEqual(['countdown', 'decision-wheel', 'time-capsule']);
+    expect(trayDrops(drops, false).length).toBe(drops.filter((d) => !d.hidden).length);
+    // Nothing hidden ever shows, and no hidden-answer game is offered alone.
+    expect(trayDrops(drops, true).some((d) => d.hidden)).toBe(false);
+    expect(solo).not.toContain('blind-reveal');
+  });
+});
