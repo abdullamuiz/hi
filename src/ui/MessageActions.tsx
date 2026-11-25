@@ -208,7 +208,7 @@ export function PhraseSheet({ text, onReact }: { text: string; onReact(start: nu
 
 export function ReplyQuote({ reply, name, mine, onJump }: { reply: ReplyRef; name: string; mine: boolean; onJump(): void }) {
   return (
-    <button type="button" class={`quote${mine ? ' on-mine' : ''}`} onClick={(e) => { e.stopPropagation(); onJump(); }}
+    <button type="button" class={`quote${mine ? '' : ' on-accent'}`} onClick={(e) => { e.stopPropagation(); onJump(); }}
       aria-label={`Reply to ${name}: ${reply.snippet}. Show the original`}>
       <span class="quote-name">{name}</span>
       <span class="quote-text">{reply.snippet}</span>

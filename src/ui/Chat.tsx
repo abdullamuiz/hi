@@ -836,7 +836,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               <div key={`fx${run}`} class={`bubble ${mine ? 'mine' : 'theirs'}${m.effect ? ` fx-${m.effect}` : ''}${run && motion ? ' fx-go' : ''}`}>
                 {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={mine} onJump={() => jumpTo(m.replyTo!.msgId)} />}
                 {m.replyToNote && (
-                  <div class={`quote note-reply${mine ? ' on-mine' : ''}`}>
+                  <div class={`quote note-reply${mine ? '' : ' on-accent'}`}>
                     <span class="quote-name">{mine ? `Replied to ${partner.name}’s note` : 'Replied to your note'}</span>
                     <span class="quote-text">{noteLabel({ ...m.replyToNote, atMs: null })}</span>
                   </div>
