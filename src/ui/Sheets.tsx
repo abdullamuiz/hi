@@ -16,6 +16,7 @@ import { BlockedList } from './Profile';
 import type { Blocked } from '../data/profile';
 import { setSplashStyle, splashStyle, type SplashStyle } from '../lib/splash';
 import { InstallRow } from './Install';
+import { openDevices } from '../lib/devicesUi';
 
 export function TraySheet({ drops, onPick, sessions = [], onSession, self = false }: {
   drops: DropDefinition<any>[]; onPick(d: DropDefinition<any>): void;
@@ -251,6 +252,10 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = []
             <button type="button" class="link-btn" onClick={onEditProfile}>Edit profile</button>
           </div>
         )}
+        <div class="settings-row">
+          <span>Devices</span>
+          <button type="button" class="link-btn" onClick={() => openDevices()}>Manage devices</button>
+        </div>
         <div class="settings-row">
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.email}</span>
           <button type="button" class="link-btn" onClick={async () => { await disablePush(user.uid); await signOut(); }}>Sign out</button>

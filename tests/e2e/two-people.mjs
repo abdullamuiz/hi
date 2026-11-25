@@ -73,6 +73,27 @@ async function person(email, startUrl = APP) {
 
 const step = (s) => console.log('•', s);
 
+/** Signs an existing account in on a new browser (a second device): no profile setup this time. */
+async function signInAgain(email) {
+  const ctx = await browser.newContext({ ...phone });
+  await ctx.addInitScript(() => { localStorage.setItem('hi.daily.off', '1'); localStorage.setItem('hi.splash', 'still'); });
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.error(`[${email}#2] pageerror`, e.message));
+  await page.goto(APP);
+  await page.getByRole('button', { name: /Use e-mail instead/ }).click();
+  await page.getByLabel('E-mail me a sign-in link').fill(email);
+  await page.getByRole('button', { name: 'Send link' }).click();
+  await page.getByText(`Link sent to ${email}`).waitFor();
+  await page.goto(await latestLink(email));
+  return page;
+}
+async function latestLink(email) {
+  const { oobCodes } = await (await fetch(`${AUTH}/emulator/v1/projects/${PROJECT}/oobCodes`)).json();
+  const code = oobCodes.filter((c) => c.email === email).pop();
+  return `${APP}?mode=signIn&oobCode=${new URL(code.oobLink).searchParams.get('oobCode')}&apiKey=demo-key&lang=en`;
+}
+
+
 // A small, colourful square for the profile photo.
 const AVATAR_PNG = await (async () => {
   const p = await (await browser.newContext()).newPage();
@@ -1753,6 +1774,62 @@ try {
   await bob.getByRole('button', { name: /^Hot streak: \d+ days?$/ }).click();
   await bob.getByRole('button', { name: 'Turn off streak' }).click();
   await alice.locator('.streak-chip').waitFor({ state: 'detached' });
+
+  step('Devices: a second sign-in, rename, primary, remote sign-out, protection + approval, sign out all others');
+  {
+    const a2 = await signInAgain('alice@example.com');
+    // Signed in: the chat list or a chat (whichever the app opens) is showing.
+    await a2.locator('header.hdr').first().waitFor({ timeout: 20000 });
+    await alice.getByRole('button', { name: 'Settings' }).first().click();
+    await alice.getByRole('button', { name: 'Manage devices' }).click();
+    const panel = alice.getByRole('dialog', { name: 'Devices' });
+    await panel.locator('.device-row').nth(1).waitFor();
+    assert.equal(await panel.locator('.device-row').count(), 2, 'both of Alice’s devices are listed');
+    await panel.getByText('This device').waitFor();
+    await shot(alice, 'devices-list');
+    // Rename the other device.
+    const other = panel.locator('.device-row').filter({ hasNotText: 'This device' });
+    await other.locator('.device-main').click();
+    await other.getByRole('button', { name: 'Rename' }).click();
+    await other.getByLabel('Device name').fill('Work laptop');
+    await other.getByRole('button', { name: 'Save' }).click();
+    await panel.getByText('Work laptop').waitFor();
+    // This device becomes primary.
+    const mine = panel.locator('.device-row').filter({ hasText: 'This device' });
+    await mine.locator('.device-main').click();
+    await mine.getByRole('button', { name: 'Make primary' }).click();
+    await mine.getByText('⭐ Primary').waitFor();
+    // Sign the laptop out from here: it lands on the sign-in screen.
+    await other.locator('.device-main').click();
+    await other.getByRole('button', { name: 'Sign out' }).click();
+    await a2.getByRole('button', { name: /Use e-mail instead/ }).waitFor({ timeout: 20000 });
+    await panel.locator('.device-row').nth(1).waitFor({ state: 'detached' });
+
+    // Device protection: a new sign-in waits for the primary's approval.
+    await panel.getByRole('switch', { name: 'Device protection' }).click();
+    await alice.waitForFunction(() => document.querySelector('[aria-label="Device protection"]')?.getAttribute('aria-checked') === 'true');
+    const a3 = await signInAgain('alice@example.com');
+    await a3.getByText(/Waiting for approval on/).waitFor({ timeout: 20000 });
+    assert.equal(await a3.locator('header.hdr').count(), 0, 'a pending device sees no chats');
+    await shot(a3, 'device-pending');
+    await alice.locator('.approval-banner').waitFor();
+    await shot(alice, 'device-approval-banner');
+    await alice.locator('.approval-banner').getByRole('button', { name: 'Approve' }).click();
+    await a3.locator('header.hdr').first().waitFor({ timeout: 20000 });
+    await panel.getByRole('switch', { name: 'Device protection' }).click();
+
+    // Sign out all other devices (enforced): Alice confirms by e-mail link, then a3 is cut off.
+    await panel.getByRole('button', { name: 'Sign out all other devices' }).click();
+    await panel.getByRole('button', { name: 'Sign out other devices' }).click();
+    await panel.getByText(/We sent a link to alice@example.com/).waitFor();
+    await alice.goto(await latestLink('alice@example.com'));
+    await alice.getByText('Signed out 1 other device.').first().waitFor({ timeout: 20000 });
+    await a3.getByRole('button', { name: /Use e-mail instead/ }).waitFor({ timeout: 20000 });
+    await shot(alice, 'devices-after-signout-all');
+    await alice.keyboard.press('Escape');
+    await a2.context().close();
+    await a3.context().close();
+  }
 
   step('Delete account (Eve, who has no chats)');
   await eve.getByRole('button', { name: 'Settings' }).click();

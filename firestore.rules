@@ -4,7 +4,8 @@ rules_version = '2';
 //
 // Data model (see docs/ARCHITECTURE.md):
 //   users/{uid}                                   private: theme, read receipts, quiet hours, urgent count (server)
-//   users/{uid}/tokens/{fcmToken}                 private: push tokens
+//   users/{uid}/tokens/{fcmToken}                 private: push tokens (deviceId: which device)
+//   users/{uid}/devices/{deviceId}                 private: my signed-in devices (label, status, last active)
 //   users/{uid}/reads/{roomId}                     private: my own "read up to" per tab
 //   users/{uid}/contacts/{uid}                     private: my nickname for a contact, mute
 //   users/{uid}/blocked/{uid}                      private: people I blocked
@@ -41,10 +42,16 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
     function roomData(roomId) { return get(/databases/$(database)/documents/rooms/$(roomId)).data; }
-    function isMember(roomId) { return signedIn() && me() in roomData(roomId).members; }
+    // "Sign out all other devices" records a cut-off on users/{uid} (server-only). Any sign-in
+    // older than it (auth_time, seconds) is refused everywhere a membership check happens.
+    function sessionOk() {
+      let u = get(/databases/$(database)/documents/users/$(me()));
+      return u == null || request.auth.token.auth_time >= u.data.get('sessionsValidAfter', 0);
+    }
+    function isMember(roomId) { return signedIn() && me() in roomData(roomId).members && sessionOk(); }
     // For writes made in the same batch that creates the room (room + profile + General tab).
     function isMemberAfter(roomId) {
-      return signedIn() && me() in getAfter(/databases/$(database)/documents/rooms/$(roomId)).data.members;
+      return signedIn() && me() in getAfter(/databases/$(database)/documents/rooms/$(roomId)).data.members && sessionOk();
     }
     function verifiedEmail() {
       return signedIn()
@@ -66,7 +73,9 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------- users
     match /users/{uid} {
-      allow read, delete: if signedIn() && me() == uid;
+      function mine() { return signedIn() && me() == uid; }
+      allow read: if mine();
+      allow delete: if mine() && sessionOk();
       // selfRoom points at my own Notes to self room (one I own, alone, with self: true).
       // getAfter: the pointer is written in the same batch that creates the room.
       function validSelfRoom() {
@@ -82,10 +91,47 @@ service cloud.firestore {
           && room.data.members == [uid]
           && room.data.get('self', false) == true;
       }
-      // The urgent-message count is kept by the server (Cloud Function) only.
-      allow create: if signedIn() && me() == uid && !incoming().keys().hasAny(['urgent']) && validSelfRoom();
-      allow update: if signedIn() && me() == uid && !changedKeys().hasAny(['urgent'])
-        && (!changedKeys().hasAny(['selfRoom']) || validSelfRoom());
+      // Device security: which device approves new sign-ins, and whether it must.
+      function validSecurity() {
+        let p = incoming().get('primaryDevice', null);
+        return (p == null || (p is string && p.matches('^[A-Za-z0-9_-]{8,40}$')))
+          && incoming().get('deviceProtection', false) is bool;
+      }
+      // Kept by the server (Cloud Functions) only: the urgent-message count and the session cut-off.
+      allow create: if mine() && !incoming().keys().hasAny(['urgent', 'sessionsValidAfter']) && validSelfRoom() && validSecurity();
+      allow update: if mine() && sessionOk() && !changedKeys().hasAny(['urgent', 'sessionsValidAfter'])
+        && (!changedKeys().hasAny(['selfRoom']) || validSelfRoom())
+        && (!changedKeys().hasAny(['primaryDevice', 'deviceProtection']) || validSecurity());
+
+      // My signed-in devices. Only I can see or change them (any of my devices can approve or
+      // sign out another: they're all the same account). A device that signs in while device
+      // protection is on starts as "pending" until another device approves it.
+      match /devices/{did} {
+        function sameDevice() { return incoming().diff(resource.data).affectedKeys(); }
+        function validDevice() {
+          let d = incoming();
+          return d.keys().hasOnly(['label', 'kind', 'customName', 'status', 'createdAt', 'lastActiveAt', 'signedInAt', 'pushToken'])
+            && str(d.label, 1, 60)
+            && d.kind in ['phone', 'tablet', 'computer']
+            && str(d.get('customName', ''), 0, 40)
+            && d.status in ['active', 'pending', 'signedOut']
+            && d.signedInAt is int
+            && (d.get('pushToken', null) == null || str(d.pushToken, 1, 300));
+        }
+        function startStatus() {
+          let u = get(/databases/$(database)/documents/users/$(uid));
+          let guarded = u != null && u.data.get('deviceProtection', false) == true
+            && u.data.get('primaryDevice', null) != null && u.data.primaryDevice != did;
+          return !guarded || incoming().status == 'pending';
+        }
+        allow read: if mine();
+        allow delete: if mine() && sessionOk();
+        allow create: if mine() && sessionOk() && did.matches('^[A-Za-z0-9_-]{8,40}$')
+          && validDevice() && incoming().createdAt == request.time && startStatus();
+        allow update: if mine() && sessionOk() && validDevice()
+          && !sameDevice().hasAny(['createdAt', 'kind'])
+          && (!sameDevice().hasAny(['lastActiveAt']) || incoming().lastActiveAt == request.time);
+      }
 
       // My own "read up to" times. Kept here too, so unread counts work with read receipts off.
       match /reads/{rid} {
@@ -99,9 +145,10 @@ service cloud.firestore {
       match /tokens/{token} {
         allow read, delete: if signedIn() && me() == uid;
         allow create, update: if signedIn() && me() == uid
-          && onlyKeys(['token', 'ua', 'updatedAt'])
+          && onlyKeys(['token', 'ua', 'deviceId', 'updatedAt'])
           && incoming().token == token
           && str(incoming().ua, 0, 300)
+          && str(incoming().get('deviceId', ''), 0, 40)
           && incoming().updatedAt == request.time;
       }
 
@@ -167,7 +214,7 @@ service cloud.firestore {
     // ---------------------------------------------------------------- rooms
     match /rooms/{roomId} {
       function canSeeRoom() {
-        return signedIn() && (
+        return signedIn() && sessionOk() && (
           me() in resource.data.members
           || (verifiedEmail() && myEmail() in resource.data.invites)
         );

@@ -4,6 +4,7 @@ import { app, db, usingEmulators } from '../firebase';
 // Loaded on demand: keeps the messaging SDK out of the first paint.
 const fcm = () => import('firebase/messaging');
 import { vapidKey } from '../firebase-config';
+import { deviceId } from '../lib/device';
 
 export type PushStatus = 'unsupported' | 'needs-install' | 'default' | 'granted' | 'denied';
 
@@ -31,7 +32,10 @@ export async function enablePush(uid: string): Promise<void> {
   const { getMessaging, getToken } = await fcm();
   const token = await getToken(getMessaging(app), { vapidKey, serviceWorkerRegistration: reg });
   if (!token) throw new Error('Could not get a push token.');
-  await setDoc(doc(db, 'users', uid, 'tokens', token), { token, ua: navigator.userAgent.slice(0, 300), updatedAt: serverTimestamp() });
+  await setDoc(doc(db, 'users', uid, 'tokens', token), { token, ua: navigator.userAgent.slice(0, 300), deviceId: deviceId(), updatedAt: serverTimestamp() });
+  // So the server can reach this device alone (new sign-in alerts) or drop it when signed out.
+  const { linkPushToken } = await import('./devices');
+  linkPushToken(uid, token);
   try { localStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
 }
 

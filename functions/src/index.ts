@@ -14,6 +14,7 @@ import { notificationBody, openUrl, threadBody } from './notify.js';
 import { exhaustedOnce, filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
 import { sendInvitePushes } from './invites.js';
+import { alertPayload, alertTargets, emailApprovalOk, Refused, signOutOthersPlan, tokensOfDevice, type DeviceDoc, type TokenDoc } from './devices.js';
 import { dayKeyIn, due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
 
 initializeApp();
@@ -291,4 +292,88 @@ export const deleteAccount = onCall({ timeoutSeconds: 120 }, async (req) => {
   await getAuth().deleteUser(uid);
   logger.info('account deleted', { left: plan.leave.length, removed: plan.remove.length });
   return { left: plan.leave.length, removed: plan.remove.length };
+});
+
+// ---------------------------------------------------------------- devices
+
+/** Push to some of one person's tokens; forgets tokens that no longer work. */
+async function pushToTokens(uid: string, tokens: string[], data: Record<string, string>) {
+  if (!tokens.length) return;
+  const db = getFirestore();
+  const res = await getMessaging().sendEachForMulticast({ tokens, webpush: { headers: { Urgency: 'high', TTL: '86400' }, data } });
+  const dead = res.responses
+    .map((r, i) => ({ r, t: tokens[i] }))
+    .filter(({ r }) => !r.success && /registration-token-not-registered|invalid-registration-token|invalid-argument/.test(r.error?.code || ''));
+  await Promise.all(dead.map(({ t }) => db.doc(`users/${uid}/tokens/${t}`).delete()));
+}
+
+async function tokenDocs(uid: string): Promise<TokenDoc[]> {
+  const snap = await getFirestore().collection(`users/${uid}/tokens`).get();
+  return snap.docs.map((d) => ({ id: d.id, deviceId: d.data().deviceId }));
+}
+
+/**
+ * A new device signed in: tell the primary device (or all the others). A device signed out
+ * remotely loses its push tokens straight away, so nothing more arrives there.
+ */
+export const onDeviceWrite = onDocumentWritten('users/{uid}/devices/{deviceId}', async (event) => {
+  const { uid, deviceId } = event.params;
+  const before = event.data?.before?.data() as DeviceDoc | undefined;
+  const after = event.data?.after?.data() as DeviceDoc | undefined;
+  const db = getFirestore();
+  if (!before && after) {
+    const user = (await db.doc(`users/${uid}`).get()).data() || {};
+    const targets = alertTargets(deviceId, user.primaryDevice, await tokenDocs(uid));
+    await pushToTokens(uid, targets, alertPayload(deviceId, after));
+    return;
+  }
+  if (after?.status === 'signedOut' && before?.status !== 'signedOut') {
+    const gone = tokensOfDevice(deviceId, after, await tokenDocs(uid));
+    await Promise.all(gone.map((t) => db.doc(`users/${uid}/tokens/${t}`).delete()));
+    if (after.pushToken) await event.data!.after!.ref.update({ pushToken: null });
+  }
+});
+
+/** "Sign out all other devices" (and "That wasn't me"): see signOutOthersPlan. */
+export const signOutOthers = onCall(async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+  const callerDevice = String(req.data?.deviceId || '');
+  const db = getFirestore();
+  const snap = await db.collection(`users/${uid}/devices`).get();
+  let plan;
+  try {
+    plan = signOutOthersPlan(callerDevice, Number(req.auth!.token.auth_time), Math.floor(Date.now() / 1000),
+      snap.docs.map((d) => ({ id: d.id, ...(d.data() as DeviceDoc) })));
+  } catch (e) {
+    if (e instanceof Refused) throw new HttpsError('failed-precondition', e.message, { reason: e.code });
+    throw e;
+  }
+  const batch = db.batch();
+  batch.set(db.doc(`users/${uid}`), { sessionsValidAfter: plan.cutoff }, { merge: true });
+  for (const id of plan.signOut) batch.update(db.doc(`users/${uid}/devices/${id}`), { status: 'signedOut', pushToken: null });
+  await batch.commit();
+  // Their push tokens go too, so nothing more arrives on them.
+  const keep = new Set((await tokenDocs(uid)).filter((t) => t.deviceId === callerDevice).map((t) => t.id));
+  const all = await tokenDocs(uid);
+  await Promise.all(all.filter((t) => !keep.has(t.id)).map((t) => db.doc(`users/${uid}/tokens/${t.id}`).delete()));
+  logger.info('signed out other devices', { count: plan.signOut.length });
+  return { count: plan.signOut.length };
+});
+
+/** Lost the primary device: a fresh e-mail-link sign-in on the new device approves it (and makes it primary). */
+export const approveDeviceByEmail = onCall(async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+  if (!emailApprovalOk(req.auth!.token as any, Math.floor(Date.now() / 1000))) {
+    throw new HttpsError('failed-precondition', 'Open the e-mail link on this device first.');
+  }
+  const id = String(req.data?.deviceId || '');
+  if (!/^[A-Za-z0-9_-]{8,40}$/.test(id)) throw new HttpsError('invalid-argument', 'Unknown device.');
+  const db = getFirestore();
+  const ref = db.doc(`users/${uid}/devices/${id}`);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Unknown device.');
+  await ref.update({ status: 'active' });
+  await db.doc(`users/${uid}`).set({ primaryDevice: id }, { merge: true });
+  return { ok: true };
 });

@@ -468,6 +468,16 @@ An installed (Home Screen) app has no address bar or reload button, so:
 - When a new version is published, a bar says **"A new version of Hi is ready · Update"**. The app checks on start, whenever it comes back to the foreground, and every 15 minutes. It compares `version.json`, which each build writes, with the build it's running.
 - **Settings → Reload app** always works and shows the running version's build time.
 
+## Devices and signing in
+
+**Settings → Manage devices** lists every browser or installed app signed in to your account: its type ("Chrome on Mac", "Hi app on iPhone"), when it first signed in, when it was last active (updated at most every 10 minutes), and a ⭐ on the primary device.
+
+- **Rename** a device ("Work laptop"), make it **primary**, or **sign it out**. A device signed out from elsewhere signs itself out as soon as it notices, and its push tokens are removed by `onDeviceWrite` straight away.
+- **New sign-in alert:** when a device signs in for the first time, the primary device (or every other device, if there is no primary) gets a push, "New sign-in: Chrome on Windows". It opens Devices with **That was me** / **That wasn't me**.
+- **Sign out all other devices** (also behind "That wasn't me") is enforced. This device first confirms it's you, with a Google pop-up or an e-mail link. Then the `signOutOthers` function writes `users/{uid}.sessionsValidAfter`, and the Firestore rules refuse every sign-in older than that, wherever membership is checked. Storage downloads use their own download links, so they aren't affected.
+- **Device protection** (optional): a new device waits on "Waiting for approval…" until the primary taps Approve. If the primary is lost, **Approve by e-mail** sends a link; opening it on the waiting device approves it and makes it primary (`approveDeviceByEmail`). This is a lock inside Hi. The database identifies the *account*, not the device, so the real protection is Google's [2-Step Verification](https://myaccount.google.com/signinoptions/two-step-verification).
+- No location is collected.
+
 ## Scaling to more users
 
 The free tier fits roughly 25–35 heavy or 75–150 normal daily users. The parked plan to make Hi lighter on the database (less frequent presence updates, throttled typing, smaller message pages, no listeners for chats you aren't looking at) is in [`docs/SCALING.md`](docs/SCALING.md).
