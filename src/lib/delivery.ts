@@ -31,6 +31,8 @@ export interface Failed {
   replyTo: { msgId: string; snippet: string; senderId: string } | null;
   /** The effect it was sent with, if any. */
   effect?: string | null;
+  /** It was sent as Urgent (kept on retry). */
+  urgent?: boolean;
   at: number;
   error: string;
 }

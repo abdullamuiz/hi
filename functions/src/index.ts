@@ -108,10 +108,16 @@ async function notifyMembers(roomId: string, tabId: string, msg: Record<string, 
       let breakThrough = false;
       if (msg.urgent === true) {
         // Count the sender's urgent messages for today; the 4th and later wait too.
+        // The real count lives in urgentCounts/{uid}, which no client can touch (the
+        // sender could delete and re-create users/{uid}); users/{uid}.urgent is a copy
+        // for the app's "N left today".
         breakThrough = await db.runTransaction(async (tx) => {
-          const ref = db.doc(`users/${msg.uid}`);
-          const d = urgentDecision((await tx.get(ref)).data()?.urgent, now);
-          if (d.allowed) tx.set(ref, { urgent: d.next }, { merge: true });
+          const ref = db.doc(`urgentCounts/${msg.uid}`);
+          const d = urgentDecision((await tx.get(ref)).data(), now);
+          if (d.allowed) {
+            tx.set(ref, d.next);
+            tx.set(db.doc(`users/${msg.uid}`), { urgent: d.next }, { merge: true });
+          }
           return d.allowed;
         });
       }
@@ -148,6 +154,14 @@ export const minuteJob = onSchedule({ schedule: 'every 1 minutes', timeoutSecond
         if (!cur.exists) return;
         const tab = await tx.get(roomRef.collection('tabs').doc(s.tabId));
         const room = await tx.get(roomRef);
+        // Same as the rules for a message from the app: only a member, in a chat nobody
+        // has left. Otherwise (left, blocked, account deleted) the scheduled one is dropped.
+        const rd = room.data();
+        const members: unknown[] = Array.isArray(rd?.members) ? rd!.members : [];
+        if (!rd || rd.left != null || !members.includes(s.senderId)) {
+          tx.delete(d.ref);
+          return;
+        }
         const { message, preview } = scheduledToMessage(cur.data() as any);
         const at = FieldValue.serverTimestamp();
         const exp = expiryMs(tab.data(), Date.now());
@@ -196,6 +210,17 @@ export const deleteRemovedFiles = onDocumentDeleted(MESSAGE, async (event) => {
   logger.info('deleted files of removed message', { roomId: event.params.roomId, count: paths.length });
 });
 
+/**
+ * A chat deleted from the app (the last person in it removes it): the app can only
+ * delete the room doc, so its tabs, messages and the rest are removed here. Each
+ * deleted message then has its files removed by deleteRemovedFiles.
+ */
+export const deleteRoomData = onDocumentDeleted({ document: 'rooms/{roomId}', timeoutSeconds: 120 }, async (event) => {
+  const db = getFirestore();
+  await db.recursiveDelete(db.doc(`rooms/${event.params.roomId}`));
+  logger.info('deleted data of removed chat', { roomId: event.params.roomId });
+});
+
 /** "Delete for everyone": removes the message's photo from Storage too. */
 export const deleteMessageFiles = onDocumentUpdated(MESSAGE, async (event) => {
   const paths = filesToDelete(event.data?.before.data(), event.data?.after.data(), event.params.roomId);
@@ -222,6 +247,7 @@ export const deleteAccount = onCall({ timeoutSeconds: 120 }, async (req) => {
   }
   for (const id of plan.remove) await db.recursiveDelete(db.doc(`rooms/${id}`));
   await db.recursiveDelete(db.doc(`users/${uid}`));
+  await db.doc(`urgentCounts/${uid}`).delete();
   await db.doc(`profiles/${uid}`).delete();
   await getAuth().deleteUser(uid);
   logger.info('account deleted', { left: plan.leave.length, removed: plan.remove.length });

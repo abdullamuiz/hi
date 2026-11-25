@@ -47,12 +47,11 @@ import { SessionScreen } from './Session';
 import { startSession } from '../data/sessions';
 import { trayTests } from '../sessions/registry';
 import type { SessionTest } from '../sessions/types';
-import { ensureDailyQuestion } from '../data/daily';
-import { dayKey } from '../drops/logic';
+import { ensureDailyQuestion, roomDayKey } from '../data/daily';
 import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
 import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
-import { loadPlayed, motionOn, pickArrival, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
+import { loadPlayed, motionOn, pickArrival, previewFor, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
 import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
 import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
@@ -319,12 +318,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   useEffect(() => {
     if (!dailyOn || !generalReady) return;
     const key = `hi.daily.${room.id}`;
-    const today = dayKey();
+    const today = roomDayKey(new Date(), room.timezone);
     try {
       // hi.daily.off: a per-device switch (the end-to-end test keeps it off until it tests it).
       if (localStorage.getItem(key) === today || localStorage.getItem('hi.daily.off') === '1') return;
     } catch { /* ignore */ }
-    ensureDailyQuestion(room.id, user.uid)
+    ensureDailyQuestion(room.id, user.uid, room.timezone)
       .then((id) => { if (id) { try { localStorage.setItem(key, today); } catch { /* ignore */ } } })
       .catch(() => {});
   }, [dailyOn, generalReady, room.id]);
@@ -393,14 +392,15 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   }, [tabReady, activeTab]);
 
   /** The server refused a message: keep it here as "Not sent · Tap to retry". */
-  const keepFailed = (tabId: string, text: string, reply: ReplyRef | null, e: any, effect: EffectCode | null = null) => {
-    setFailed((cur) => [...cur, { localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tabId, text, replyTo: reply, effect, at: Date.now(), error: String(e?.message || e) }]);
+  const keepFailed = (tabId: string, text: string, reply: ReplyRef | null, e: any, effect: EffectCode | null = null, urgent = false) => {
+    setFailed((cur) => [...cur, { localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tabId, text, replyTo: reply, effect, ...(urgent ? { urgent: true } : {}), at: Date.now(), error: String(e?.message || e) }]);
     flash('Message not sent. Tap it to try again.');
   };
   const retry = (f: Failed) => {
     setFailed((cur) => cur.filter((x) => x.localId !== f.localId));
     const effect = (f.effect as EffectCode | null | undefined) ?? null;
-    sendText(room.id, f.tabId, user.uid, f.text, f.replyTo, { effect }).catch((e) => keepFailed(f.tabId, f.text, f.replyTo, e, effect));
+    const urgent = f.urgent === true;
+    sendText(room.id, f.tabId, user.uid, f.text, f.replyTo, { effect, urgent }).catch((e) => keepFailed(f.tabId, f.text, f.replyTo, e, effect, urgent));
   };
 
   const send = (opts: { urgent?: boolean } = {}) => {
@@ -423,7 +423,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     setFx(null);
     setFxDismissed(null);
     const tab = activeTab;
-    sendText(room.id, tab, user.uid, t, reply, { ...opts, effect }).catch((e) => keepFailed(tab, t, reply, e, effect));
+    sendText(room.id, tab, user.uid, t, reply, { ...opts, effect }).catch((e) => keepFailed(tab, t, reply, e, effect, opts.urgent === true));
   };
 
   // --- scheduled messages ------------------------------------------------------
@@ -597,7 +597,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   ), [shown, user.uid, partnerRead?.toMillis()]);
   const byId = (id: string) => messages?.find((m) => m.id === id);
   const dropTitle = (m: Message) => `a ${(m.dropId && dropTypes[m.dropId] && getDrop(dropTypes[m.dropId])?.title) || 'Drop'}`;
-  const snip = (m: Message) => snippetOf(m, dropTitle(m));
+  // Sealed/whisper text stays hidden in reply quotes and pins, as in the chat list and pushes.
+  const snip = (m: Message) => previewFor(snippetOf(m, dropTitle(m)), (m as any).effect);
   const isEditable = (m: Message) => canEdit({ ...m, createdMs: toMillis(m.createdAt) }, user.uid);
 
   const openActions = (m: Message) => { if (!selected) setSheet({ kind: 'actions', msgId: m.id }); };
@@ -738,7 +739,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         tabName={currentTab && currentTab.id !== GENERAL ? currentTab.name : ''}
         banner={<>
           {activeTab === GENERAL && dailyOn && (
-            <DailyBanner roomId={room.id} me={user.uid} partner={partnerUid} partnerName={partner.name} onOpen={jumpTo} />
+            <DailyBanner roomId={room.id} tz={room.timezone} me={user.uid} partner={partnerUid} partnerName={partner.name} onOpen={jumpTo} />
           )}
           {left && (
             <div class="sys-card" role="status">

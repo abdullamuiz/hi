@@ -270,7 +270,10 @@ export function useScheduledDelivery(uid: string | undefined, rooms: Room[] | nu
 
   useEffect(() => {
     if (!uid || !ids) { setByRoom({}); return; }
-    const unsubs = ids.split(',').map((roomId) => watchScheduled(roomId, uid, (list) => {
+    const list = ids.split(',');
+    // Drop chats I'm no longer in (left, removed), or their old entries keep being retried.
+    setByRoom((cur) => Object.fromEntries(Object.entries(cur).filter(([roomId]) => list.includes(roomId))));
+    const unsubs = list.map((roomId) => watchScheduled(roomId, uid, (list) => {
       setByRoom((cur) => ({ ...cur, [roomId]: list }));
     }, () => {}));
     return () => unsubs.forEach((u) => u());

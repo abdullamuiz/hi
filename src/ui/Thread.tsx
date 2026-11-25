@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import type { Message, ReactionCode } from '../types';
 import { deleteReply, markThreadSeen, reactToReply, sendReply, threadUnread, watchReplies, type Reply } from '../data/threads';
 import { REACTIONS, snippetOf } from '../lib/messages';
+import { previewFor } from '../lib/effects';
 import { closeOverlay, forgetOverlay, openOverlay } from '../lib/overlay';
 import { ReactionChips } from './MessageActions';
 import { BackIcon, SendIcon } from './icons';
@@ -75,7 +76,7 @@ export function ThreadView({ roomId, root, me, nameOf, readOnly, onToast, onClos
       <div class="thread-list" ref={list}>
         <div class="thread-root">
           <div class="thread-root-who">{root.uid === me ? 'You' : nameOf(root.uid)}</div>
-          <div class="thread-root-text">{snippetOf(root, 'a Drop', 400)}</div>
+          <div class="thread-root-text">{previewFor(snippetOf(root, 'a Drop', 400), (root as any).effect)}</div>
         </div>
         <div class="thread-sep" role="status">{replies.length ? `${replies.length} ${replies.length === 1 ? 'reply' : 'replies'}` : 'No replies yet. Start the side chat.'}</div>
         {replies.map((r) => {

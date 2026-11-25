@@ -186,7 +186,7 @@ export async function deleteAccount(user: User): Promise<void> {
     if (members.length <= 1) await deleteDoc(r.ref);
     else await leaveRoom(r.id, user.uid);
   }
-  for (const sub of ['contacts', 'blocked', 'tokens']) {
+  for (const sub of ['contacts', 'blocked', 'tokens', 'reads']) {
     const s = await getDocs(collection(db, 'users', user.uid, sub));
     await Promise.all(s.docs.map((d) => deleteDoc(d.ref)));
   }

@@ -1,10 +1,10 @@
 import {
-  arrayRemove, arrayUnion, collection, deleteField, doc, FieldPath, limitToLast, onSnapshot, orderBy, query,
+  arrayRemove, arrayUnion, collection, deleteField, doc, FieldPath, getDoc, limitToLast, onSnapshot, orderBy, query,
   serverTimestamp, Timestamp, updateDoc, where, writeBatch, type WriteBatch,
 } from 'firebase/firestore';
 import { ttlOf } from './tabs';
-import { markActivity } from './memories';
-import { expiryFor, ttlLabel } from '../lib/disappear';
+import { activityDone, markActivity } from './memories';
+import { expiryFor, tabTtl, ttlLabel } from '../lib/disappear';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { findLink } from '../lib/links';
@@ -40,14 +40,21 @@ const newId = (roomId: string, tabId: string) => doc(msgsCol(roomId, tabId)).id;
  * Writes a message, bumps the tab's lastMessageAt and the room's chat-list preview,
  * all in the same atomic batch.
  */
-function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>, preview: string, ttlHours = ttlOf(roomId, tabId)) {
+function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>, preview: string, ttlHours = ttlOf(roomId, tabId)): string | null {
   // Disappearing tab: the message carries its expiry (rules check it matches the tab).
   const exp = expiryFor(ttlHours);
   b.set(doc(msgsCol(roomId, tabId), id), { ...data, ...(exp ? { expiresAt: Timestamp.fromMillis(exp) } : {}), createdAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId, 'tabs', tabId), { lastMessageAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId), { lastMessage: { id, uid: data.uid, tabId, text: preview.slice(0, 160), at: serverTimestamp() } });
   // Today counts towards the streak and Rewind (system lines like "disappearing on" don't).
-  if (data.kind !== 'system') markActivity(b, roomId, String(data.uid));
+  // Returns the day mark to confirm with activityDone() once the batch is committed.
+  return data.kind !== 'system' ? markActivity(b, roomId, String(data.uid)) : null;
+}
+
+/** Commits a message batch, then remembers that today's activity was recorded. */
+async function commit(b: WriteBatch, mark: string | null) {
+  await b.commit();
+  activityDone(mark);
 }
 
 export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null, opts: { urgent?: boolean; effect?: EffectCode | null } = {}) {
@@ -62,6 +69,7 @@ export async function sendText(roomId: string, tabId: string, uid: string, raw: 
     ...(opts.urgent ? { urgent: true } : {}),
     ...(fx ? { effect: fx.code } : {}),
   };
+  let mark: string | null;
   if (link) {
     const data = {
       uid, kind: 'link', text: link.rest, ...reply,
@@ -70,11 +78,11 @@ export async function sendText(roomId: string, tabId: string, uid: string, raw: 
         title: null, description: null, image: null, siteName: null, status: 'pending',
       },
     };
-    addMessage(b, roomId, tabId, newId(roomId, tabId), data, snippetOf(data as any));
+    mark = addMessage(b, roomId, tabId, newId(roomId, tabId), data, snippetOf(data as any));
   } else {
-    addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, ...reply }, previewFor(snippetOf({ kind: 'text', text }), fx?.code));
+    mark = addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, ...reply }, previewFor(snippetOf({ kind: 'text', text }), fx?.code));
   }
-  await b.commit();
+  await commit(b, mark);
 }
 
 /** A reply to someone's 24-hour note: a text message that quotes the note. */
@@ -83,8 +91,12 @@ export async function sendNoteReply(roomId: string, tabId: string, uid: string, 
   if (!text) return;
   const b = writeBatch(db);
   const replyToNote = { text: note.text.slice(0, 60), emoji: note.emoji.slice(0, 16) };
-  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, replyToNote }, snippetOf({ kind: 'text', text }));
-  await b.commit();
+  // Sent from the chat list, where this room's tabs may not be watched yet: read the
+  // tab's disappearing setting rather than trusting an empty cache (rules check expiresAt).
+  const t = (await getDoc(doc(db, 'rooms', roomId, 'tabs', tabId))).data();
+  const ttl = tabTtl({ disappearing: !!t?.disappearing, ttlHours: t?.ttlHours });
+  const mark = addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, replyToNote }, snippetOf({ kind: 'text', text }), ttl);
+  await commit(b, mark);
 }
 
 export async function sendPhoto(roomId: string, tabId: string, uid: string, file: File, caption: string) {
@@ -96,8 +108,8 @@ export async function sendPhoto(roomId: string, tabId: string, uid: string, file
   } catch (e) { throw friendlyStorageError(e, 'Photos'); }
   const b = writeBatch(db);
   const text = caption.trim().slice(0, 1000);
-  addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text, photo: { path, width, height } }, snippetOf({ kind: 'photo', text }));
-  await b.commit();
+  const mark = addMessage(b, roomId, tabId, id, { uid, kind: 'photo', text, photo: { path, width, height } }, snippetOf({ kind: 'photo', text }));
+  await commit(b, mark);
 }
 
 export interface VoiceRecording {
@@ -122,8 +134,8 @@ export async function sendVoice(roomId: string, tabId: string, uid: string, rec:
     mime: rec.format.contentType,
   };
   const reply = replyTo ? { replyTo: { msgId: replyTo.msgId, snippet: replyTo.snippet.slice(0, 160), senderId: replyTo.senderId } } : {};
-  addMessage(b, roomId, tabId, id, { uid, kind: 'voice', text: '', voice, ...reply }, snippetOf({ kind: 'voice', text: '' }));
-  await b.commit();
+  const mark = addMessage(b, roomId, tabId, id, { uid, kind: 'voice', text: '', voice, ...reply }, snippetOf({ kind: 'voice', text: '' }));
+  await commit(b, mark);
 }
 
 /** Creates a Drop and the chat message that carries it, atomically. */
@@ -139,8 +151,8 @@ export async function createDrop(
     b.set(doc(collection(dropRef, 'entries')), { uid, text: text.slice(0, 280), createdAt: serverTimestamp() });
   });
   opts.extra?.(b);
-  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id }, snippetOf({ kind: 'drop', text: '' }, title));
-  await b.commit();
+  const mark = addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id }, snippetOf({ kind: 'drop', text: '' }, title));
+  await commit(b, mark);
   return dropRef.id;
 }
 

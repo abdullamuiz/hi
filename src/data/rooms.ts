@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import type { Member, MoodId, Room } from '../types';
 import { GENERAL, generalTabDoc } from './tabs';
 import { makeInviteCode } from '../lib/invite';
+import { setRoomZone } from './memories';
 
 const roomsCol = collection(db, 'rooms');
 export const DEFAULT_TZ = 'Indian/Maldives';
@@ -29,7 +30,13 @@ export function watchMyRooms(uid: string, cb: (rooms: Room[]) => void, onError?:
     query(roomsCol, where('members', 'array-contains', uid)),
     { includeMetadataChanges: true },
     // (createdAt stays null until the server has accepted the room; later edits don't hide it.)
-    (s) => cb(s.docs.filter((d) => d.data().createdAt != null).map((d) => toRoom(d.id, d.data({ serverTimestamps: 'estimate' })))),
+    (s) => {
+      const rooms = s.docs.filter((d) => d.data().createdAt != null).map((d) => toRoom(d.id, d.data({ serverTimestamps: 'estimate' })));
+      // Activity days are filed in the room's zone, also for messages sent without the
+      // chat open (note replies, scheduled messages).
+      rooms.forEach((r) => setRoomZone(r.id, r.timezone));
+      cb(rooms);
+    },
     onError,
   );
 }

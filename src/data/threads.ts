@@ -1,5 +1,5 @@
 import {
-  collection, doc, FieldPath, arrayRemove, arrayUnion, limitToLast, onSnapshot, orderBy, query,
+  collection, deleteField, doc, FieldPath, arrayRemove, arrayUnion, increment, limitToLast, onSnapshot, orderBy, query,
   serverTimestamp, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -34,9 +34,13 @@ export async function sendReply(roomId: string, root: Message, uid: string, raw:
   const b = writeBatch(db);
   const expiresAt = (root as any).expiresAt ?? null;
   b.set(ref, { uid, text, createdAt: serverTimestamp(), ...(expiresAt ? { expiresAt } : {}) });
-  b.update(rootRef(roomId, tabId, root.id), {
-    thread: { count: (root.thread?.count || 0) + 1, lastAt: serverTimestamp(), lastBy: uid, lastId: ref.id },
-  });
+  // Field paths + increment: the count is bumped on the server's value, so two replies
+  // sent at the same moment both land (a count read from this phone could be stale).
+  b.update(rootRef(roomId, tabId, root.id),
+    new FieldPath('thread', 'count'), increment(1),
+    new FieldPath('thread', 'lastAt'), serverTimestamp(),
+    new FieldPath('thread', 'lastBy'), uid,
+    new FieldPath('thread', 'lastId'), ref.id);
   await b.commit();
 }
 
@@ -44,7 +48,8 @@ export const reactToReply = (roomId: string, tabId: string, rootId: string, r: R
   updateDoc(doc(repliesCol(roomId, tabId, rootId), r.id), new FieldPath('reactions', code), on ? arrayUnion(uid) : arrayRemove(uid));
 
 export const deleteReply = (roomId: string, tabId: string, rootId: string, r: Reply) =>
-  updateDoc(doc(repliesCol(roomId, tabId, rootId), r.id), { deleted: true, text: '' });
+  // Rules: a deleted reply keeps no reactions.
+  updateDoc(doc(repliesCol(roomId, tabId, rootId), r.id), { deleted: true, text: '', reactions: deleteField() });
 
 // ---------------------------------------------------------------------------- unread (per device)
 

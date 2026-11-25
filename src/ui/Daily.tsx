@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'preact/hooks';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { dailyId } from '../data/daily';
-import { dayKey } from '../drops/logic';
+import { dailyId, roomDayKey } from '../data/daily';
 
 /**
  * "Today's question" strip at the top of General until both of you have answered.
  * Tapping it scrolls to the card.
  */
-export function DailyBanner({ roomId, me, partner, partnerName, onOpen }: {
-  roomId: string; me: string; partner: string; partnerName: string; onOpen(msgId: string): void;
+export function DailyBanner({ roomId, tz, me, partner, partnerName, onOpen }: {
+  roomId: string; tz?: string; me: string; partner: string; partnerName: string; onOpen(msgId: string): void;
 }) {
-  const id = dailyId(dayKey());
+  const id = dailyId(roomDayKey(new Date(), tz));
   const [question, setQuestion] = useState<string | null>(null);
   const [locks, setLocks] = useState<Set<string>>(new Set());
   useEffect(() => {

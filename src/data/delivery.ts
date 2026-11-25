@@ -1,4 +1,4 @@
-import { markActivityTx } from './memories';
+import { activityDone, markActivityTx } from './memories';
 import {
   collection, deleteDoc, doc, getDocs, onSnapshot, query, runTransaction, serverTimestamp, setDoc, Timestamp,
   updateDoc, where, writeBatch,
@@ -155,7 +155,9 @@ export const cancelScheduled = (s: Scheduled) => deleteDoc(doc(schedCol(s.roomId
 export async function deliverScheduled(s: Scheduled): Promise<boolean> {
   const sref = doc(schedCol(s.roomId), s.id);
   const mref = doc(db, 'rooms', s.roomId, 'tabs', s.tabId, 'messages', s.id);
-  return runTransaction(db, async (tx) => {
+  let mark: string | null = null;
+  const sent = await runTransaction(db, async (tx) => {
+    mark = null;
     const cur = await tx.get(sref);
     if (!cur.exists()) return false;
     const tab = await tx.get(doc(db, 'rooms', s.roomId, 'tabs', s.tabId));
@@ -174,7 +176,9 @@ export async function deliverScheduled(s: Scheduled): Promise<boolean> {
     tx.update(doc(db, 'rooms', s.roomId), {
       lastMessage: { id: s.id, uid: s.senderId, tabId: s.tabId, text: snippetOf({ kind: 'text', text } as any).slice(0, 160), at: serverTimestamp() },
     });
-    markActivityTx(tx, s.roomId, s.senderId);
+    mark = markActivityTx(tx, s.roomId, s.senderId);
     return true;
   });
+  if (sent) activityDone(mark);
+  return sent;
 }
