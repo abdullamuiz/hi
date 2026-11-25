@@ -1245,3 +1245,39 @@ describe('Notes to self', () => {
     await assertSucceeds(setDoc(doc(alice(), 'users', 'alice'), { readReceipts: false }, { merge: true }));
   });
 });
+
+describe('your move & thread dot (room fields)', () => {
+  const room = (db: Firestore) => doc(db, 'rooms', ROOM);
+
+  it('members keep room.moves for members only, with nothing else', async () => {
+    await seedRoom();
+    await assertSucceeds(updateDoc(room(alice()), new FieldPath('moves', 'bob', 'd1'), true));
+    await assertSucceeds(updateDoc(room(bob()), new FieldPath('moves', 'bob', 'd1'), deleteField(), new FieldPath('moves', 'alice', 'd1'), true));
+    // Not for someone outside the chat, not alongside another field, not by outsiders.
+    await assertFails(updateDoc(room(alice()), new FieldPath('moves', 'eve', 'd1'), true));
+    await assertFails(updateDoc(room(alice()), new FieldPath('moves', 'bob', 'd2'), true, 'invites', []));
+    await assertFails(updateDoc(room(eve()), new FieldPath('moves', 'bob', 'd3'), true));
+    await assertFails(updateDoc(room(alice()), { moves: 'nope' }));
+  });
+
+  it('a thread reply notes itself on the room, as me and now', async () => {
+    await seedRoom();
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), 'rooms', ROOM, 'tabs', 'general', 'messages', 'm1'), {
+      uid: 'alice', kind: 'text', text: 'Plans?', createdAt: new Date(),
+    }));
+    const bdb = bob();
+    const b = writeBatch(bdb);
+    b.set(doc(bdb, 'rooms', ROOM, 'tabs', 'general', 'messages', 'm1', 'replies', 'r1'), { uid: 'bob', text: 'Brunch', createdAt: serverTimestamp() });
+    b.update(doc(bdb, 'rooms', ROOM, 'tabs', 'general', 'messages', 'm1'), new FieldPath('thread', 'count'), 1, new FieldPath('thread', 'lastAt'), serverTimestamp(), new FieldPath('thread', 'lastBy'), 'bob', new FieldPath('thread', 'lastId'), 'r1');
+    b.update(room(bdb), { lastThreadReplyAt: serverTimestamp(), lastThreadReplyBy: 'bob' });
+    await assertSucceeds(b.commit());
+    await assertFails(updateDoc(room(bob()), { lastThreadReplyAt: serverTimestamp(), lastThreadReplyBy: 'alice' }));
+    await assertFails(updateDoc(room(bob()), { lastThreadReplyAt: new Date(0), lastThreadReplyBy: 'bob' }));
+    await assertFails(updateDoc(room(eve()), { lastThreadReplyAt: serverTimestamp(), lastThreadReplyBy: 'eve' }));
+  });
+
+  it('nobody reads or writes the server-only invite push markers', async () => {
+    await assertFails(setDoc(doc(alice(), 'invitePushes', 'x'), { at: serverTimestamp() }));
+    await assertFails(getDoc(doc(alice(), 'invitePushes', 'x')));
+  });
+});

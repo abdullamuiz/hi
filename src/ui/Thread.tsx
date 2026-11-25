@@ -3,6 +3,7 @@ import type { Message, ReactionCode } from '../types';
 import { deleteReply, markThreadSeen, reactToReply, sendReply, threadUnread, watchReplies, type Reply } from '../data/threads';
 import { REACTIONS, snippetOf } from '../lib/messages';
 import { previewFor } from '../lib/effects';
+import { markRoomThreadsSeen } from '../lib/moves';
 import { closeOverlay, forgetOverlay, openOverlay } from '../lib/overlay';
 import { ReactionChips } from './MessageActions';
 import { BackIcon, SendIcon } from './icons';
@@ -54,10 +55,11 @@ export function ThreadView({ roomId, root, me, nameOf, readOnly, onToast, onClos
   // Everything shown counts as seen; keep the list scrolled to the newest.
   useEffect(() => {
     markThreadSeen(root.id);
+    markRoomThreadsSeen(roomId);
     const el = list.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [replies.length]);
-  useEffect(() => () => markThreadSeen(root.id), []);
+  useEffect(() => () => { markThreadSeen(root.id); markRoomThreadsSeen(roomId); }, []);
 
   const send = async () => {
     const t = draft.trim();

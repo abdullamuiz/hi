@@ -26,6 +26,11 @@ export interface Room {
   pinned: TopPin[];
   /** Notes to self: one person forever, never joined or invited to. */
   self: boolean;
+  /** Drops waiting on each person ("Your move"): uid → dropId → true. */
+  moves: Record<string, Record<string, true>>;
+  /** Latest thread reply anywhere in the chat (for the chat list's 💬 dot). */
+  lastThreadReplyAt: Timestamp | null;
+  lastThreadReplyBy: string | null;
 }
 
 /** room.pinned[]: a message pinned to the top of the chat. */

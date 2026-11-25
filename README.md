@@ -369,6 +369,12 @@ When the message box is empty, the Send button becomes a microphone.
 
 > Voice notes and photos use Cloud Storage, which needs the **Blaze** plan (section 4) and `DEPLOY_BACKEND=true` so the Storage rules deploy. Until then, sending one says Storage isn't set up. If uploads say *"permission refused"* after that, grant the Storage service agent the **Firebase Rules Firestore Service Agent** role (see the deploy section).
 
+## Chat list markers and invite notifications
+
+- **Your move:** a chip on a chat row when a Drop there is waiting on you (the other person locked an answer, it's your turn in a story, a Truth or Dare to play, and so on). Each Drop works it out (`waitingOn` in its definition, or from the lock markers by default). Whoever has the Drop on screen keeps `room.moves` in step, so the chat list needs no extra listeners.
+- **💬:** a reply in a thread since you last opened one in that chat (`room.lastThreadReplyAt/By`, compared on this device).
+- **Invite notification:** when you invite someone by e-mail and that address already has a Hi account, the `notifyInvite` function sends them "{name} invited you to chat on Hi" once. Tapping it opens the chat list with the invite highlighted. Your app shows the same thing either way, so it never reveals whether someone has an account. Needs `DEPLOY_BACKEND=true` (already on).
+
 ## Tabs
 
 - Every room has a **General** tab. The **+** at the end of the tab bar adds another (name and colour). Tap the open tab for options: rename, recolour, archive. General can't be archived.

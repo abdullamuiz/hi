@@ -25,6 +25,7 @@ import { Logo, MoodIcon, MOODS, PlusIcon, SearchIcon, SettingsIcon } from './ico
 import { SearchSheet } from './Search';
 import { requestJump } from '../lib/jump';
 import { InstallBanner } from './Install';
+import { myMoves, roomThreadsSeen, threadDot } from '../lib/moves';
 
 interface Props {
   user: User;
@@ -35,6 +36,8 @@ interface Props {
   /** Rooms that invited my e-mail and that I haven't joined. */
   invites: Room[];
   onOpen(roomId: string): void;
+  /** Invite opened from its notification: scrolled to and highlighted. */
+  focusInvite?: string | null;
 }
 
 type Sheet =
@@ -55,7 +58,7 @@ const sortKey = (r: Room) => ms(r.lastMessage?.at) || ms(r.createdAt) || Date.no
 export const sortChats = (rooms: Room[]) => [...rooms].sort((a, b) => (Number(b.self) - Number(a.self)) || (sortKey(b) - sortKey(a)));
 
 /** Home: every chat (one per contact), invitations, and "+ Add contact". */
-export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen }: Props) {
+export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen, focusInvite }: Props) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [toast, setToast] = useState('');
   const [err, setErr] = useState('');
@@ -143,7 +146,8 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
             const existing = partnerOf.get(r.owner);
             const who = firstName(r.ownerName, 'Someone');
             return (
-              <div class="card invite-card" key={r.id}>
+              <div class={`card invite-card${focusInvite === r.id ? ' flash' : ''}`} key={r.id} id={`invite-${r.id}`}
+                ref={(el) => { if (el && focusInvite === r.id) el.scrollIntoView({ block: 'center' }); }}>
                 <h2>{who} invited you</h2>
                 <p class="lede">{existing ? `You already have a chat with ${who}.` : 'A private chat for just the two of you.'}</p>
                 <div class="btn-row">
@@ -366,11 +370,13 @@ function ContactRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: Row
   const mood = partner?.mood ? MOODS.find((m) => m.id === partner.mood) : undefined;
   const muted = isMuted(prefs);
   const fire = room.left ? 0 : listStreak(room);
+  const moves = room.left ? 0 : myMoves(room.moves, me);
+  const thread = !room.left && threadDot(ms(room.lastThreadReplyAt), room.lastThreadReplyBy, me, roomThreadsSeen(room.id));
 
   return (
     <li class="chat-row">
       <button type="button" class="chat-open" onClick={onOpen}
-        aria-label={`${name}${mood ? `, mood ${mood.label}` : ''}${fire ? `, ${fire}-day streak` : ''}${unread ? ', unread messages' : ''}${muted ? ', muted' : ''}. ${sub}`}>
+        aria-label={`${name}${mood ? `, mood ${mood.label}` : ''}${fire ? `, ${fire}-day streak` : ''}${unread ? ', unread messages' : ''}${moves ? ', your move' : ''}${thread ? ', new thread reply' : ''}${muted ? ', muted' : ''}. ${sub}`}>
         {alone ? <span class="avatar" aria-hidden="true">+</span> : <Avatar profile={profile} fallbackPhoto={partner?.photoURL} name={name} />}
         <span class="chat-text" aria-hidden="true">
           <span class="chat-top">
@@ -380,7 +386,11 @@ function ContactRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: Row
             {muted && <span class="muted-mark" title={muteLabel(prefs)}>🔕</span>}
             <span class="chat-time">{timeLabel(lastMs)}</span>
           </span>
-          <span class={`chat-sub${unread ? ' unread' : ''}${typing ? ' typing' : ''}`}>{sub}</span>
+          <span class="chat-sub-row">
+            <span class={`chat-sub${unread ? ' unread' : ''}${typing ? ' typing' : ''}`}>{sub}</span>
+            {thread && <span class="row-thread" title="New reply in a thread">💬</span>}
+            {moves > 0 && <span class="move-chip">Your move{moves > 1 ? ` · ${moves}` : ''}</span>}
+          </span>
         </span>
         {unread && <span class="chat-dot" aria-hidden="true" />}
       </button>

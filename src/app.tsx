@@ -59,6 +59,8 @@ function Screen() {
   const myProfile = useProfile(user?.uid);
   const [contacts, setContacts] = useState<Record<string, ContactPrefs>>({});
   const [blocked, setBlocked] = useState<Blocked[]>([]);
+  // An invite opened from its notification: shown on the chat list, highlighted.
+  const [inviteFocus, setInviteFocus] = useState<string | null>(null);
   // My scheduled messages, sent on time while the app is open.
   const scheduled = useScheduledDelivery(user?.uid, rooms);
 
@@ -110,6 +112,11 @@ function Screen() {
     const sw = navigator.serviceWorker;
     if (!sw) return;
     const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'open-invite' && typeof e.data.room === 'string') {
+        setInviteFocus(e.data.room);
+        if (history.state?.hiChat) history.back(); else setOpenId(null);
+        return;
+      }
       if (e.data?.type !== 'open-chat' || typeof e.data.room !== 'string') return;
       if (typeof e.data.tab === 'string') setTabFor(e.data.room, e.data.tab);
       setNonce((n) => n + 1);
@@ -126,8 +133,11 @@ function Screen() {
     decided.current = true;
     const p = new URLSearchParams(location.search);
     const fromUrl = p.get('room');
-    if (p.has('room') || p.has('tab')) history.replaceState(history.state, '', location.pathname);
+    const invite = p.get('invite');
+    if (p.has('room') || p.has('tab') || invite) history.replaceState(history.state, '', location.pathname);
     if (join) return;
+    // From an invite notification: stay on the chat list, where the invite is waiting.
+    if (invite) { setInviteFocus(invite); return; }
     let target: string | null = null;
     if (fromUrl && rooms.some((r) => r.id === fromUrl)) {
       target = fromUrl;
@@ -185,7 +195,7 @@ function Screen() {
   const room = openId ? rooms!.find((r) => r.id === openId) : undefined;
   if (room) return <Chat key={`${room.id}:${nonce}`} user={user} room={room} contacts={contacts} blocked={blocked} scheduled={scheduled[room.id] || []} onBack={back} />;
   const blockedIds = new Set(blocked.map((b) => b.uid));
-  return <Chats user={user} profile={myProfile} rooms={rooms!} invites={invites.filter((r) => !blockedIds.has(r.owner))} contacts={contacts} blocked={blocked} onOpen={open} />;
+  return <Chats user={user} profile={myProfile} rooms={rooms!} invites={invites.filter((r) => !blockedIds.has(r.owner))} contacts={contacts} blocked={blocked} onOpen={open} focusInvite={inviteFocus} />;
 }
 
 function Splash() {

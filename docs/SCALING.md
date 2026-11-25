@@ -65,6 +65,11 @@ The four changes below should roughly **double** how many users fit in the free 
   - **Server:** `minuteJob` (functions/src/index.ts) runs every minute and queries `scheduled` and `held`.
     Consider every 2–5 minutes, or skip runs when a cheap "anything due?" counter doc says nothing is pending.
 
+- **`notifyInvite`** (`functions/src/index.ts`) fires on every write to a room, including each message's
+  `lastMessage` update. It returns at once unless a new invite address appears, but it's still one invocation per
+  message. If invocations matter, move the trigger to a small `rooms/{id}/meta/invite` doc written only when
+  inviting.
+
 ## Also worth doing at that point
 - Turn on Firestore's offline persistence (multi-tab IndexedDB cache) so reopening the app reuses cached
   documents.

@@ -827,6 +827,54 @@ try {
   await alice.locator('.thread-tile', { hasText: '2 replies' }).waitFor();
   assert.ok(await alice.locator('.thread-tile').evaluate((el) => el.classList.contains('unread')), 'Bob’s reply is new for Alice');
 
+  step('Chat list markers: 💬 for a new thread reply, "Your move" when a Drop waits on me');
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  const bobRow = alice.locator('.chat-row', { hasText: 'bob' });
+  // Bob replied in the thread after Alice last looked.
+  await bobRow.locator('.row-thread').waitFor();
+  // Earlier Drops may already wait on Alice (e.g. the Tag-team Story is her turn): count them.
+  const movesOf = async (row) => {
+    const chip = row.locator('.move-chip');
+    if (!(await chip.count())) return 0;
+    const m = (await chip.textContent()).match(/· (\d+)/);
+    return m ? Number(m[1]) : 1;
+  };
+  await alice.waitForTimeout(800);
+  const movesBefore = await movesOf(bobRow);
+  await bob.getByRole('button', { name: 'Add a Drop' }).click();
+  await bob.locator('.tray-item', { hasText: 'Gap Slider' }).click();
+  await bob.getByRole('button', { name: 'Drop it' }).click();
+  const gB2 = bob.getByRole('region', { name: 'Gap Slider' }).last();
+  await gB2.getByLabel('Your take').fill('40');
+  await gB2.getByRole('button', { name: 'Lock my take' }).click();
+  for (let i = 0; i < 40 && (await movesOf(bobRow)) !== movesBefore + 1; i++) await alice.waitForTimeout(250);
+  assert.equal(await movesOf(bobRow), movesBefore + 1, 'Bob’s Gap Slider now waits on Alice');
+  await shot(alice, 'chats-markers');
+  // Bob is waiting on Alice, so his own list shows no chip for her chat.
+  await bob.getByRole('button', { name: 'Back to chats' }).click();
+  await bob.locator('.chat-row', { hasText: 'alice' }).waitFor();
+  await bob.locator('.chat-open', { hasText: 'alice' }).click();
+  await bob.getByRole('textbox', { name: 'Message' }).waitFor();
+  // Alice answers inside the chat: the card says "Your move" until she locks.
+  await bobRow.locator('.chat-open').click();
+  const gA2 = alice.getByRole('region', { name: 'Gap Slider' }).last();
+  await gA2.locator('.move-chip', { hasText: 'Your move' }).waitFor();
+  await gA2.getByLabel('Your take').fill('45');
+  await gA2.getByRole('button', { name: 'Lock my take' }).click();
+  await gA2.locator('.move-chip').waitFor({ state: 'detached' });
+  // Opening a thread clears the 💬.
+  await alice.locator('.thread-tile').first().click();
+  await alice.getByRole('dialog', { name: 'Thread' }).waitFor();
+  await alice.getByRole('button', { name: 'Close thread' }).click();
+  await alice.getByRole('dialog', { name: 'Thread' }).waitFor({ state: 'detached' });
+  await alice.getByRole('button', { name: 'Back to chats' }).click();
+  await bobRow.waitFor();
+  await bobRow.locator('.row-thread').waitFor({ state: 'detached' });
+  for (let i = 0; i < 40 && (await movesOf(bobRow)) !== movesBefore; i++) await alice.waitForTimeout(250);
+  assert.equal(await movesOf(bobRow), movesBefore, 'answering clears it');
+  await bobRow.locator('.chat-open').click();
+  await alice.getByRole('textbox', { name: 'Message' }).waitFor();
+
   step('Today’s question: dropped once, hidden answers, banner until both answer');
   for (const p of [alice, bob]) {
     await p.evaluate(() => { localStorage.setItem('hi.daily.e2e', 'on'); localStorage.removeItem('hi.daily.off'); });

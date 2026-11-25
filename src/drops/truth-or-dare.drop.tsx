@@ -27,6 +27,13 @@ export default defineDrop<Content>({
   },
   subtitle: () => 'Truth… or dare?',
   pinTitle: () => 'Truth or Dare',
+  // The person who didn't drop it plays: pick, then answer (or skip).
+  waitingOn(_c, api) {
+    const author = api.createdBy.isMe;
+    const pr = (author ? api.theirProgress : api.myProgress) as Progress;
+    if (pr.skipped || pr.doneAt) return null;
+    return author ? 'partner' : 'me';
+  },
   pinDetail(c, api) {
     const pr = (api.createdBy.isMe ? api.theirProgress : api.myProgress) as Progress;
     if (pr.skipped) return 'Chickened out 🐔';

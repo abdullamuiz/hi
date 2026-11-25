@@ -12,6 +12,15 @@ export default defineDrop<Content>({
   setup: [{ key: 'opening', label: 'Your first line', kind: 'text', maxLength: 280 }],
   subtitle: () => 'One line each',
   initialEntries: (c) => (c.opening.trim() ? [c.opening.trim()] : []),
+  // Turn-based: whoever didn't write the last line is up, until the story is full.
+  waitingOn(c, api) {
+    const max = Math.max(2, Math.min(20, Number(c.maxLines) || 8));
+    const lines = api.entries.slice(0, max);
+    if (lines.length >= max) return null;
+    const last = lines[lines.length - 1];
+    if (!last) return 'me';
+    return last.uid === api.me.uid ? 'partner' : 'me';
+  },
   pinDetail: (_c, api) => api.entries.map((e) => e.text).join(' '),
 
   Renderer({ content, api }) {

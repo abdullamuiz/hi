@@ -209,6 +209,16 @@ service cloud.firestore {
           );
       }
 
+      // moves: { uid: { dropId: true } }, only for members, at most 60 waiting each.
+      function movesOf(m, uid) {
+        return !(uid in m) || (m[uid] is map && m[uid].size() <= 60);
+      }
+      function validMoves(m, mem) {
+        return m is map && m.keys().hasOnly(mem)
+          && movesOf(m, mem[0])
+          && (mem.size() < 2 || movesOf(m, mem[1]));
+      }
+
       function validTopPin(p) {
         return p is map
           && p.keys().hasOnly(['msgId', 'tabId', 'uid', 'by', 'text', 'at'])
@@ -239,6 +249,20 @@ service cloud.firestore {
           && validLastMessage()
         )
         ||
+        // A thread reply notes itself on the room (the chat list's 💬 dot), in the reply's batch.
+        (
+          changedKeys().hasOnly(['lastThreadReplyAt', 'lastThreadReplyBy'])
+          && me() in resource.data.members
+          && incoming().lastThreadReplyBy == me()
+          && incoming().lastThreadReplyAt == request.time
+        )
+        ||
+        // "Your move": members keep room.moves[uid][dropId] in step with their Drops.
+        (
+          changedKeys().hasOnly(['moves'])
+          && me() in resource.data.members
+          && validMoves(incoming().moves, resource.data.members)
+        )        ||
         // Pin messages to the top of the chat (max 3), or take them down.
         (
           changedKeys().hasOnly(['pinned'])

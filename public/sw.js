@@ -1,6 +1,6 @@
 /* Drops Chat service worker: offline app shell + Web Push (FCM).
  * Plain JS on purpose — no build step, no Firebase SDK, no config needed here. */
-const VERSION = 'hi-v3';
+const VERSION = 'hi-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -61,7 +61,7 @@ self.addEventListener('push', (e) => {
       renotify: true,
       icon: './icons/icon-192.png',
       badge: './icons/badge-96.png',
-      data: { url: d.url || './', room: d.room || '', tab: d.tab || '' },
+      data: { url: d.url || './', room: d.room || '', tab: d.tab || '', invite: d.invite || '' },
     }),
   );
 });
@@ -75,7 +75,8 @@ self.addEventListener('notificationclick', (e) => {
       // App already open: bring it forward and ask it to open that chat and tab.
       for (const c of list) {
         if ('focus' in c) {
-          if (data.room) c.postMessage({ type: 'open-chat', room: data.room, tab: data.tab || undefined });
+          if (data.invite) c.postMessage({ type: 'open-invite', room: data.invite });
+          else if (data.room) c.postMessage({ type: 'open-chat', room: data.room, tab: data.tab || undefined });
           return c.focus();
         }
       }
