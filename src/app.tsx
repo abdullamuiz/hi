@@ -15,6 +15,7 @@ import { clearPendingJoin, loadPendingJoin, parseJoin, savePendingJoin, type Joi
 import { firstName } from './lib/names';
 import { watchBlocked, watchContacts, type Blocked, type ContactPrefs } from './data/profile';
 import { ProfileSetup, useProfile } from './ui/Profile';
+import { useScheduledDelivery } from './ui/Delivery';
 
 export function App() {
   const [update, setUpdate] = useState(false);
@@ -56,6 +57,8 @@ function Screen() {
   const myProfile = useProfile(user?.uid);
   const [contacts, setContacts] = useState<Record<string, ContactPrefs>>({});
   const [blocked, setBlocked] = useState<Blocked[]>([]);
+  // My scheduled messages, sent on time while the app is open.
+  const scheduled = useScheduledDelivery(user?.uid, rooms);
 
   useEffect(() => {
     getRedirectResult(auth).catch((e) => setErr(e?.message || String(e)));
@@ -167,7 +170,7 @@ function Screen() {
   if (awaiting) return <div class="app" aria-busy="true"><div class="screen"><div class="sys">Opening chat…</div></div></div>;
   // (A chat that has gone away, e.g. a removed invite, falls back to the list.)
   const room = openId ? rooms!.find((r) => r.id === openId) : undefined;
-  if (room) return <Chat key={`${room.id}:${nonce}`} user={user} room={room} contacts={contacts} blocked={blocked} onBack={back} />;
+  if (room) return <Chat key={`${room.id}:${nonce}`} user={user} room={room} contacts={contacts} blocked={blocked} scheduled={scheduled[room.id] || []} onBack={back} />;
   const blockedIds = new Set(blocked.map((b) => b.uid));
   return <Chats user={user} profile={myProfile} rooms={rooms!} invites={invites.filter((r) => !blockedIds.has(r.owner))} contacts={contacts} blocked={blocked} onOpen={open} />;
 }

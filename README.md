@@ -179,7 +179,7 @@ To deploy only one part later: `npx firebase deploy --only hosting`, `--only fir
 4. Delete the downloaded `.json` file from your computer. GitHub keeps the only copy it needs. If it ever leaks, delete the key on the same Keys tab and repeat steps 2–3.
 5. **Run it.** Merge a pull request, or open **Actions → Test and deploy → Run workflow** (branch `main`). After about 3 minutes, https://hi-dropchat.web.app is live. The Actions tab shows each run, with a red ✗ and the reason if something failed.
 
-**After you move to Blaze:** to also deploy the Storage rules and Cloud Functions (photos, link previews, push), go to **Settings → Secrets and variables → Actions → Variables → New repository variable**, set `DEPLOY_BACKEND` = `true`, and give the `github-deploy` account two more roles: **Cloud Functions Admin** and **Service Account User**. The first Functions deploy can take about 5 minutes.
+**After you move to Blaze:** to also deploy the Storage rules and Cloud Functions (photos, link previews, push), go to **Settings → Secrets and variables → Actions → Variables → New repository variable**, set `DEPLOY_BACKEND` = `true`, and give the `github-deploy` account three more roles: **Cloud Functions Admin**, **Service Account User** and **Cloud Scheduler Admin** (for `minuteJob`). The first Functions deploy can take about 5 minutes.
 
 ## 7. Install on iPhone (and Android)
 
@@ -224,7 +224,8 @@ rooms/{roomId}                      one chat: owner, members (max 2), invites [e
   members/{uid}                     name, photo, mood weather, lastSeen, typing (+tab), lastRead {tabId: time}
   tabs/{tabId}                      name, colour, archived, order, lastMessageAt   ("general" always exists)
     messages/{id}                   text | link | photo | drop, + replyTo, editedAt, reactions {code: [uid]},
-                                    phraseReactions, hiddenFor [uid], deleted
+                                    phraseReactions, hiddenFor [uid], deleted, urgent, scheduled
+  scheduled/{id}                    a scheduled message; only its sender can see it (id = the message id it becomes)
   pins/{id}                         scrapbook
   drops/{dropId}                    type + content (the Drop's JSON definition snapshot)
     sealed/{uid}_{key}              a PRIVATE answer
@@ -232,9 +233,11 @@ rooms/{roomId}                      one chat: owner, members (max 2), invites [e
     entries/{id}                    public, append-only lines
     users/{uid}                     public per-person progress
 profiles/{uid}                      public profile: name, photo (small inline JPEG), about, note {text, emoji, at}
-users/{uid}                         theme (private)
+users/{uid}                         theme, readReceipts, quiet {on, start, end, tz}; urgent {day, count} (server only)
   tokens/{fcmToken}                 push tokens (private)
-  contacts/{uid}                    my nickname for them, muted (private)
+  reads/{roomId}                    my own "read up to" per tab (private; works with read receipts off)
+  held/{id}                         notifications held during quiet hours (server only)
+  contacts/{uid}                    my nickname for them, muted / mutedUntil (private)
   blocked/{uid}                     people I blocked (private)
 ```
 
@@ -278,10 +281,23 @@ Long-press a message (or right-click / the ⋯ button on a computer) for **Reply
 - **Delete for me** hides it on your devices (5-second Undo). **Delete for everyone** (your own messages, after a second confirmation) clears the content for both of you and leaves "Message deleted"; a Cloud Function also deletes the photo file.
 - The rules enforce each of these: only the sender edits (within 15 minutes) or deletes for everyone, and reactions, phrase reactions and "delete for me" can only add or remove your own uid.
 
+### Delivery: ticks, scheduled messages, quiet hours
+
+- **Ticks** on your messages: a clock while it's still on your phone, ✓ once the server has it, ✓✓ once they've read it. Only the newest read message says "Read".
+- **Read receipts** (Settings) are on by default. Turning them off works both ways, like WhatsApp: they don't see when you've read theirs and you don't see theirs. Your own unread counts keep working from a private copy (`users/{uid}/reads`).
+- **Not sent**: if the server refuses a message, it stays in the chat as "Not sent · Tap to retry" (kept on that phone). With no signal, messages just wait with a clock and send when you're back online.
+- **Press and hold Send** (or right-click it) for:
+  - **Schedule…**: Tonight 8 pm, Tomorrow 8 am, Next Monday 9 am, or any date and time, in your phone's time zone. A strip above the composer lists them, with Edit · Send now · Cancel. Nobody else can see them until they're sent, and they show "· scheduled".
+  - **Send as urgent**: breaks through the other person's quiet hours. Three a day, counted by the server.
+- **Sending on time:** while you have the app open, it sends your scheduled messages itself. With Cloud Functions deployed (Blaze), `minuteJob` sends them every minute even when your phone is off. The message takes the scheduled message's id, and the rules only allow that write if it removes the scheduled one, so it's never sent twice.
+- **Quiet hours** (Settings, off by default, 21:00–07:00): `notifyPartner` holds your notifications and `minuteJob` sends one summary when they end ("3 messages from Sam, 1 from Alex"). Messages still arrive in the app straight away. This part needs Cloud Functions.
+- **Mute a chat** from the ⋯ on its row in Chats: for 8 hours, a week, or always.
+
 ### Link previews and push
 
 - **`linkPreview`** runs when a link message is created. It fetches the page (public hosts only: private, loopback and metadata IPs are blocked and re-checked on every redirect; 6 s timeout; 600 KB cap), reads `og:` / `twitter:` / `<title>` tags, and fills them into the message.
-- **`notifyPartner`** sends a Web Push to the other person's devices, unless they muted that chat. The text never contains Drop answers. Dead tokens are cleaned up automatically.
+- **`notifyPartner`** sends a Web Push to the other person's devices, unless they muted that chat or it's their quiet hours (then it's held for the summary, unless the message is Urgent). The text never contains Drop answers. Dead tokens are cleaned up automatically.
+- **`minuteJob`** (every minute, Cloud Scheduler) sends due scheduled messages and the quiet-hours summaries.
 - **`deleteAccount`** (callable) deletes your account and data, as described above.
 
 ### Photos

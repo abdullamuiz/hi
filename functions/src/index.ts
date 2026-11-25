@@ -5,12 +5,14 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { fetchPreview } from './og.js';
 import { notificationBody, openUrl } from './notify.js';
 import { filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
+import { due, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
 
 initializeApp();
 // Small, capped instances keep a two-person app comfortably inside the free tier.
@@ -41,7 +43,28 @@ export const linkPreview = onDocumentCreated({ document: MESSAGE, timeoutSeconds
   }
 });
 
-/** Sends a Web Push to the other member's devices. */
+/** Push to all of one person's devices; forgets tokens that no longer work. */
+async function pushTo(uid: string, data: Record<string, string>) {
+  const db = getFirestore();
+  const tokensSnap = await db.collection(`users/${uid}/tokens`).get();
+  const tokens = tokensSnap.docs.map((d) => d.id);
+  if (!tokens.length) return;
+  const res = await getMessaging().sendEachForMulticast({
+    tokens,
+    webpush: { headers: { Urgency: 'high', TTL: '86400' }, data },
+  });
+  const dead = res.responses
+    .map((r, i) => ({ r, t: tokens[i] }))
+    .filter(({ r }) => !r.success && /registration-token-not-registered|invalid-registration-token|invalid-argument/.test(r.error?.code || ''));
+  await Promise.all(dead.map(({ t }) => db.doc(`users/${uid}/tokens/${t}`).delete()));
+  logger.info('push sent', { success: res.successCount, removed: dead.length });
+}
+
+/**
+ * Sends a Web Push to the other member's devices. Skipped for a muted chat. During the
+ * recipient's quiet hours it's held and summed up later, unless the sender marked it
+ * Urgent (three a day).
+ */
 export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   const msg = event.data?.data();
   if (!msg) return;
@@ -61,27 +84,86 @@ export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
     dropType = (await db.doc(`rooms/${roomId}/drops/${msg.dropId}`).get()).data()?.type;
   }
   const body = notificationBody({ ...msg, dropType });
+  const now = Date.now();
 
   for (const uid of recipients) {
-    // Muted this chat (Contact profile → Mute): no push.
-    const contact = (await db.doc(`users/${uid}/contacts/${msg.uid}`).get()).data();
-    if (contact?.muted === true) continue;
-    const tokensSnap = await db.collection(`users/${uid}/tokens`).get();
-    const tokens = tokensSnap.docs.map((d) => d.id);
-    if (!tokens.length) continue;
-    const res = await getMessaging().sendEachForMulticast({
-      tokens,
-      webpush: {
-        headers: { Urgency: 'high', TTL: '86400' },
-        data: { title, body, tag: `room-${roomId}-${tabId}`, url: openUrl(roomId, tabId), room: roomId, tab: tabId },
-      },
+    const c = (await db.doc(`users/${uid}/contacts/${msg.uid}`).get()).data();
+    if (isMuted({ muted: c?.muted, mutedUntilMs: c?.mutedUntil?.toMillis?.() ?? null }, now)) continue;
+
+    const settings = (await db.doc(`users/${uid}`).get()).data();
+    if (isQuiet(now, settings?.quiet)) {
+      let breakThrough = false;
+      if (msg.urgent === true) {
+        // Count the sender's urgent messages for today; the 4th and later wait too.
+        breakThrough = await db.runTransaction(async (tx) => {
+          const ref = db.doc(`users/${msg.uid}`);
+          const d = urgentDecision((await tx.get(ref)).data()?.urgent, now);
+          if (d.allowed) tx.set(ref, { urgent: d.next }, { merge: true });
+          return d.allowed;
+        });
+      }
+      if (!breakThrough) {
+        await db.collection(`users/${uid}/held`).add({ roomId, tabId, from: first, at: FieldValue.serverTimestamp() });
+        continue;
+      }
+    }
+    await pushTo(uid, {
+      title: msg.urgent === true ? `❗ ${title}` : title,
+      body, tag: `room-${roomId}-${tabId}`, url: openUrl(roomId, tabId), room: roomId, tab: tabId,
     });
-    const dead = res.responses
-      .map((r, i) => ({ r, t: tokens[i] }))
-      .filter(({ r }) => !r.success && /registration-token-not-registered|invalid-registration-token|invalid-argument/.test(r.error?.code || ''));
-    await Promise.all(dead.map(({ t }) => db.doc(`users/${uid}/tokens/${t}`).delete()));
-    logger.info('push sent', { roomId, success: res.successCount, removed: dead.length });
   }
+});
+
+/**
+ * Every minute: sends scheduled messages that are due, and the one-line summary of
+ * notifications held during quiet hours once those hours are over. (The app also
+ * sends a scheduled message itself while the sender has it open; the message takes
+ * the scheduled id, so it's never sent twice.)
+ */
+export const minuteJob = onSchedule({ schedule: 'every 1 minutes', timeoutSeconds: 50 }, async () => {
+  const db = getFirestore();
+  const now = Date.now();
+
+  const scheduled = await db.collectionGroup('scheduled').get();
+  const ready = due(scheduled.docs.map((d) => ({ d, sendAtMs: d.data().sendAt?.toMillis?.() ?? 0 })), now);
+  for (const { d } of ready) {
+    const roomRef = d.ref.parent.parent!;
+    const s = d.data();
+    try {
+      await db.runTransaction(async (tx) => {
+        const cur = await tx.get(d.ref);
+        if (!cur.exists) return;
+        const { message, preview } = scheduledToMessage(cur.data() as any);
+        const at = FieldValue.serverTimestamp();
+        tx.delete(d.ref);
+        tx.set(roomRef.collection('tabs').doc(s.tabId).collection('messages').doc(d.id), { ...message, createdAt: at });
+        tx.update(roomRef.collection('tabs').doc(s.tabId), { lastMessageAt: at });
+        tx.update(roomRef, { lastMessage: { id: d.id, uid: s.senderId, tabId: s.tabId, text: preview, at } });
+      });
+    } catch (e) {
+      logger.warn('scheduled delivery failed', { id: d.id, error: String(e) });
+    }
+  }
+
+  const held = await db.collectionGroup('held').get();
+  const byUser = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
+  held.docs.forEach((d) => {
+    const uid = d.ref.parent.parent!.id;
+    byUser.set(uid, [...(byUser.get(uid) || []), d]);
+  });
+  for (const [uid, docs] of byUser) {
+    const settings = (await db.doc(`users/${uid}`).get()).data();
+    if (isQuiet(now, settings?.quiet)) continue;
+    const list = docs
+      .sort((a, b) => (a.data().at?.toMillis?.() ?? 0) - (b.data().at?.toMillis?.() ?? 0))
+      .map((d) => d.data() as Held);
+    const sum = summaryText(list);
+    if (sum) {
+      await pushTo(uid, { title: sum.title, body: sum.body, tag: 'quiet-summary', url: openUrl(sum.roomId, sum.tabId), room: sum.roomId, tab: sum.tabId });
+    }
+    await Promise.all(docs.map((d) => d.ref.delete()));
+  }
+  if (ready.length || held.size) logger.info('minute job', { delivered: ready.length, held: held.size });
 });
 
 

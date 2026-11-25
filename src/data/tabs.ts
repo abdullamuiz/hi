@@ -80,6 +80,3 @@ export function watchUnread(roomId: string, tabId: string, since: Timestamp | nu
 }
 
 /** Mark a tab read up to now (stored on my member doc, so it syncs across my devices). */
-export function markRead(roomId: string, uid: string, tabId: string) {
-  return setDoc(doc(db, 'rooms', roomId, 'members', uid), { uid, lastRead: { [tabId]: serverTimestamp() } }, { merge: true });
-}

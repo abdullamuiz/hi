@@ -643,3 +643,50 @@ button.phrase-chip { cursor: pointer; }
 .chat-sub.typing { color: var(--me); font-style: italic; }
 .left-bar { justify-content: center; }
 .quote.note-reply { border-left-style: dashed; }
+
+/* ---------------------------------------------------------------- delivery: ticks, retry, scheduled, mute */
+.status-mark { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; vertical-align: -1px; opacity: 0.85; white-space: nowrap; }
+.status-mark.sending { opacity: 0.6; }
+.bubble.mine .status-mark.read { opacity: 1; }
+.status-text { font-size: 11px; font-weight: 600; }
+.msg-meta { font-size: 11px; color: var(--muted); padding: 0 6px; display: inline-flex; align-items: center; gap: 4px; }
+.msg-meta .status-mark { margin-left: 0; }
+.read-label { font-weight: 600; }
+.urgent-tag {
+  align-self: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
+  color: var(--danger); padding: 0 6px;
+}
+.msg.failed .msg-body { align-items: flex-end; }
+.failed-bubble { border: none; text-align: left; font: inherit; opacity: 0.65; box-shadow: 0 0 0 2px var(--danger) inset; cursor: pointer; }
+.failed-line { font-size: 12px; color: var(--danger); display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.failed-line .link-btn { font-size: 12px; min-height: 32px; padding: 0 2px; }
+.failed-dot {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--danger); color: var(--on-danger); font-size: 11px; font-weight: 800;
+}
+.sched-strip { background: var(--surface); border-top: 1px solid var(--line); flex-shrink: 0; }
+.sched-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 14px; border: none; background: none;
+  color: var(--body-2); font-size: 13px; font-weight: 700; text-align: left;
+}
+.sched-toggle { margin-left: auto; font-weight: 600; color: var(--muted); }
+.sched-list { list-style: none; margin: 0; padding: 0 10px 8px; display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow-y: auto; }
+.sched-item { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-radius: 12px; background: var(--soft); }
+.sched-text { flex: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sched-when { font-size: 12px; font-weight: 700; color: var(--me); }
+.sched-snip { font-size: 14px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sched-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.mini-btn {
+  position: relative; min-height: 32px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.mini-btn.icon { width: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.mini-btn::after { content: ''; position: absolute; inset: -6px -2px; }
+.sched-area { min-height: 72px; resize: vertical; font: inherit; padding: 10px 12px; }
+.quiet-times { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--body-2); }
+.quiet-times label { display: flex; align-items: center; gap: 6px; }
+.quiet-times .field { width: auto; min-width: 110px; }
+.row-more {
+  width: 40px; height: 44px; flex-shrink: 0; border: none; background: none; color: var(--muted); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}

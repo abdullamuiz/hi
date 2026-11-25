@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { User } from 'firebase/auth';
 import { declineInvite, joinRoom, watchMembers } from '../data/rooms';
 import { sendNoteReply } from '../data/messages';
-import { unblock, type Blocked, type ContactPrefs, type Profile as ProfileT } from '../data/profile';
+import { setContact, unblock, type Blocked, type ContactPrefs, type Profile as ProfileT } from '../data/profile';
+import { readUpTo, useMyReads } from '../data/delivery';
+import { isMuted, muteFor, muteLabel } from '../lib/schedule';
+import { MuteSheet } from './Delivery';
 import { GENERAL } from '../data/tabs';
 import { displayName, noteActive, noteLabel, type Note } from '../lib/profile';
 import { Avatar, DeleteAccountSheet, NoteReplySheet, NoteSheet, ProfileForm, useMinute, useProfile } from './Profile';
@@ -38,7 +41,8 @@ type Sheet =
   | { kind: 'profile' }
   | { kind: 'note' }
   | { kind: 'note-reply'; roomId: string; name: string; note: Note }
-  | { kind: 'delete-account' };
+  | { kind: 'delete-account' }
+  | { kind: 'mute'; uid: string; name: string };
 
 const ms = (t: { toMillis(): number } | null | undefined) => (t ? t.toMillis() : 0);
 const sortKey = (r: Room) => ms(r.lastMessage?.at) || ms(r.createdAt) || Date.now();
@@ -91,6 +95,7 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
     } catch (e: any) { flash(e?.message || 'Could not send the reply.'); }
   };
 
+  const reads = useMyReads(user.uid);
   const managed = sheet?.kind === 'invite' ? rooms.find((r) => r.id === sheet.roomId) : undefined;
 
   return (
@@ -149,7 +154,9 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
           {sorted.length > 0 && (
             <ul class="chat-list" aria-label="Your chats">
               {sorted.map((r) => (
-                <ChatRow key={r.id} room={r} me={user.uid} contacts={contacts} onOpen={() => onOpen(r.id)} onInvite={() => setSheet({ kind: 'invite', roomId: r.id })} />
+                <ChatRow key={r.id} room={r} me={user.uid} contacts={contacts} reads={reads}
+                  onOpen={() => onOpen(r.id)} onInvite={() => setSheet({ kind: 'invite', roomId: r.id })}
+                  onMute={(uid, name) => setSheet({ kind: 'mute', uid, name })} />
               ))}
             </ul>
           )}
@@ -174,6 +181,13 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
             <NoteReplySheet name={sheet.name} note={sheet.note} onSend={(t) => replyToNote(sheet.roomId, sheet.note, t)} />
           )}
           {sheet.kind === 'delete-account' && <DeleteAccountSheet user={user} onCancel={() => setSheet(null)} />}
+          {sheet.kind === 'mute' && (
+            <MuteSheet name={sheet.name} state={contacts[sheet.uid] || {}} onPick={(c) => {
+              const uid = sheet.uid;
+              setSheet(null);
+              setContact(user.uid, uid, muteFor(c)).then(() => flash(c === 'off' ? 'Unmuted' : 'Muted')).catch((e) => flash(e.message));
+            }} />
+          )}
           {sheet.kind === 'add' && (
             <AddContactSheet user={user} onToast={flash} onClose={() => setSheet(null)}
               onOpenChat={(id) => { setSheet(null); onOpen(id); }} />
@@ -191,6 +205,7 @@ export function Chats({ user, profile, rooms, invites, contacts, blocked, onOpen
               onUnblock={(uid) => unblock(user.uid, uid).then(() => flash('Unblocked')).catch((e) => flash(e.message))}
               onEditProfile={() => setSheet({ kind: 'profile' })}
               onDeleteAccount={() => setSheet({ kind: 'delete-account' })}
+              onToast={flash}
               onPush={async () => {
                 try { await enablePush(user.uid); setPush('granted'); flash('Notifications on.'); } catch (e: any) { setPush(await pushStatus()); flash(e?.message || 'Could not turn on notifications.'); }
               }}
@@ -211,7 +226,7 @@ function timeLabel(ms: number, now = Date.now()) {
 
 const SHEET_LABEL: Record<NonNullable<Sheet>['kind'], string> = {
   add: 'Add contact', invite: 'Invite', settings: 'Settings', profile: 'Your profile',
-  note: 'Your note', 'note-reply': 'Reply to note', 'delete-account': 'Delete account',
+  note: 'Your note', 'note-reply': 'Reply to note', 'delete-account': 'Delete account', mute: 'Mute',
 };
 
 // ---------------------------------------------------------------------------- notes strip
@@ -261,7 +276,17 @@ function PartnerNote({ roomId, uid, nickname, now, onOpen }: { me: string; roomI
 
 // ---------------------------------------------------------------------------- one chat row
 
-function ChatRow({ room, me, contacts, onOpen, onInvite }: { room: Room; me: string; contacts: Record<string, ContactPrefs>; onOpen(): void; onInvite(): void }) {
+interface RowProps {
+  room: Room;
+  me: string;
+  contacts: Record<string, ContactPrefs>;
+  reads: ReturnType<typeof useMyReads>;
+  onOpen(): void;
+  onInvite(): void;
+  onMute(uid: string, name: string): void;
+}
+
+function ChatRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: RowProps) {
   const [members, setMembers] = useState<Record<string, Member>>({});
   useEffect(() => watchMembers(room.id, setMembers, () => {}), [room.id]);
   const partnerUid = room.members.find((u) => u !== me) || (room.left && room.left !== me ? room.left : '');
@@ -274,8 +299,7 @@ function ChatRow({ room, me, contacts, onOpen, onInvite }: { room: Room; me: str
     : displayName(prefs?.nickname, profile?.name, partner?.name, '…');
   const last = room.lastMessage;
   const lastMs = ms(last?.at);
-  const readTs = last ? members[me]?.lastRead?.[last.tabId] : undefined;
-  const readMs = readTs ? readTs.toMillis() : 0;
+  const readMs = last ? readUpTo(reads, room.id, last.tabId, members[me]?.lastRead?.[last.tabId]) : 0;
   const unread = !room.left && !!last && last.uid !== me && lastMs > readMs + 500;
   const typingUntil = !room.left && partner?.typingUntil ? partner.typingUntil.toMillis() : 0;
   const now = useTick(typingUntil > Date.now());
@@ -286,23 +310,29 @@ function ChatRow({ room, me, contacts, onOpen, onInvite }: { room: Room; me: str
       ? (room.invites[0] ? `Waiting for ${room.invites[0]} to join` : 'Invite link not used yet')
       : typing ? 'typing…' : last ? `${last.uid === me ? 'You: ' : ''}${last.text}` : 'Say hi';
   const mood = partner?.mood ? MOODS.find((m) => m.id === partner.mood) : undefined;
+  const muted = isMuted(prefs);
 
   return (
     <li class="chat-row">
       <button type="button" class="chat-open" onClick={onOpen}
-        aria-label={`${name}${mood ? `, mood ${mood.label}` : ''}${unread ? ', unread messages' : ''}${prefs?.muted ? ', muted' : ''}. ${sub}`}>
+        aria-label={`${name}${mood ? `, mood ${mood.label}` : ''}${unread ? ', unread messages' : ''}${muted ? ', muted' : ''}. ${sub}`}>
         {alone ? <span class="avatar" aria-hidden="true">+</span> : <Avatar profile={profile} fallbackPhoto={partner?.photoURL} name={name} />}
         <span class="chat-text" aria-hidden="true">
           <span class="chat-top">
             <span class="chat-name">{name}</span>
             {partner?.mood && !room.left && <MoodIcon mood={partner.mood} size={18} />}
-            {prefs?.muted && <span class="muted-mark" title="Muted">🔕</span>}
+            {muted && <span class="muted-mark" title={muteLabel(prefs)}>🔕</span>}
             <span class="chat-time">{timeLabel(lastMs)}</span>
           </span>
           <span class={`chat-sub${unread ? ' unread' : ''}${typing ? ' typing' : ''}`}>{sub}</span>
         </span>
         {unread && <span class="chat-dot" aria-hidden="true" />}
       </button>
+      {!alone && !room.left && (
+        <button type="button" class="row-more" onClick={() => onMute(partnerUid, name)} aria-label={`${muted ? 'Muted. Change' : 'Mute'} notifications for ${name}`}>
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+        </button>
+      )}
       {alone && !room.left && room.owner === me && (
         <button type="button" class="chip-btn" onClick={onInvite} aria-label={`Share the invite for ${name} again`}>Share</button>
       )}

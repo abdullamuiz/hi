@@ -5,7 +5,12 @@ import {
   setReaction, watchMessages,
 } from '../data/messages';
 import { addPin, watchPins } from '../data/pins';
-import { GENERAL, createTab, ensureGeneralTab, markRead, updateTab, watchTabs } from '../data/tabs';
+import { GENERAL, createTab, ensureGeneralTab, updateTab, watchTabs } from '../data/tabs';
+import { cancelScheduled, deliverScheduled, markRead, readUpTo, scheduleMessage, updateScheduled, useDeliveryPrefs, useMyReads } from '../data/delivery';
+import { parseFailed, statuses, type Failed } from '../lib/delivery';
+import { isMuted, muteFor, urgentLeft as urgentLeftOf, whenLabel } from '../lib/schedule';
+import { FailedRow, ScheduledStrip, ScheduleSheet, SendOptionsSheet, StatusMark } from './Delivery';
+import { Timestamp } from 'firebase/firestore';
 import { ensureMember, heartbeat, setMood, setTyping, watchMembers } from '../data/rooms';
 import { AddContactSheet } from './AddContactSheet';
 import { ActionSheet, DeleteSheet, PhraseSheet, PhraseText, ReactionChips, ReplyQuote, useLongPress } from './MessageActions';
@@ -22,7 +27,7 @@ import { blockContact, deleteRoom, leaveRoom, setContact, unblock, type Blocked,
 import { displayName, noteLabel } from '../lib/profile';
 import { Avatar, ContactSheet, DeleteAccountSheet, ProfileForm, useProfile } from './Profile';
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
-import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Tab } from '../types';
+import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab } from '../types';
 import { DropCard } from './DropCard';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
 import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
@@ -45,7 +50,9 @@ type Sheet =
   | { kind: 'phrase'; msgId: string }
   | { kind: 'contact' }
   | { kind: 'profile' }
-  | { kind: 'delete-account' };
+  | { kind: 'delete-account' }
+  | { kind: 'send-options' }
+  | { kind: 'schedule'; id?: string };
 
 interface Toast { text: string; undo?: () => void }
 
@@ -78,10 +85,14 @@ interface ChatProps {
   /** My private nicknames / mutes. */
   contacts: Record<string, ContactPrefs>;
   blocked: Blocked[];
+  /** My scheduled messages in this chat (sent on time by the app / the server). */
+  scheduled?: Scheduled[];
   onBack(): void;
 }
 
-export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
+const failedKey = (roomId: string) => `hi.failed.${roomId}`;
+
+export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: ChatProps) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTab, setActiveTab] = useState<string>(() => initialTab(room.id));
@@ -102,6 +113,15 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
   const [push, setPush] = useState<PushStatus>('unsupported');
   const [bannerHidden, setBannerHidden] = useState(() => { try { return !!localStorage.getItem(BANNER_KEY); } catch { return false; } });
   const lastTypingWrite = useRef(0);
+  const delivery = useDeliveryPrefs(user.uid);
+  const reads = useMyReads(user.uid);
+  // Messages the server refused, kept on this phone to retry.
+  const [failed, setFailedState] = useState<Failed[]>(() => { try { return parseFailed(localStorage.getItem(failedKey(room.id))); } catch { return []; } });
+  const setFailed = (f: (cur: Failed[]) => Failed[]) => setFailedState((cur) => {
+    const next = f(cur);
+    try { if (next.length) localStorage.setItem(failedKey(room.id), JSON.stringify(next)); else localStorage.removeItem(failedKey(room.id)); } catch { /* ignore */ }
+    return next;
+  });
   const fileInput = useRef<HTMLInputElement>(null);
 
   // After the other person left (removed the contact) the room only lists me; their profile stays readable.
@@ -152,13 +172,13 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
   // Mark the open tab read when it opens and whenever new messages arrive while visible.
   useEffect(() => {
     if (!messages || document.visibilityState !== 'visible') return;
-    markRead(room.id, user.uid, activeTab).catch(() => {});
-  }, [room.id, activeTab, messages?.length]);
+    markRead(room.id, user.uid, activeTab, delivery.readReceipts).catch(() => {});
+  }, [room.id, activeTab, messages?.length, delivery.readReceipts]);
   useEffect(() => {
-    const onVis = () => { if (document.visibilityState === 'visible') markRead(room.id, user.uid, activeTab).catch(() => {}); };
+    const onVis = () => { if (document.visibilityState === 'visible') markRead(room.id, user.uid, activeTab, delivery.readReceipts).catch(() => {}); };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [room.id, activeTab]);
+  }, [room.id, activeTab, delivery.readReceipts]);
 
   // presence heartbeat while the app is in front
   useEffect(() => {
@@ -216,10 +236,20 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
     if (!tabReady || queued.current == null) return;
     const t = queued.current;
     queued.current = null;
-    sendText(room.id, activeTab, user.uid, t).catch((e) => { setDraft(t); flash(e.message); });
+    sendText(room.id, activeTab, user.uid, t).catch((e) => keepFailed(activeTab, t, null, e));
   }, [tabReady, activeTab]);
 
-  const send = () => {
+  /** The server refused a message: keep it here as "Not sent · Tap to retry". */
+  const keepFailed = (tabId: string, text: string, reply: ReplyRef | null, e: any) => {
+    setFailed((cur) => [...cur, { localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tabId, text, replyTo: reply, at: Date.now(), error: String(e?.message || e) }]);
+    flash('Message not sent. Tap it to try again.');
+  };
+  const retry = (f: Failed) => {
+    setFailed((cur) => cur.filter((x) => x.localId !== f.localId));
+    sendText(room.id, f.tabId, user.uid, f.text, f.replyTo).catch((e) => keepFailed(f.tabId, f.text, f.replyTo, e));
+  };
+
+  const send = (opts: { urgent?: boolean } = {}) => {
     const t = draft.trim();
     if (!t) return;
     if (editing) {
@@ -235,8 +265,31 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
     const reply = replyTo;
     setDraft('');
     setReplyTo(null);
-    sendText(room.id, activeTab, user.uid, t, reply).catch((e) => { setDraft(t); setReplyTo(reply); flash(e.message); });
+    const tab = activeTab;
+    sendText(room.id, tab, user.uid, t, reply, opts).catch((e) => keepFailed(tab, t, reply, e));
   };
+
+  // --- scheduled messages ------------------------------------------------------
+  const saveSchedule = async (text: string, at: number, existing?: Scheduled) => {
+    setSheet(null);
+    try {
+      if (existing) {
+        await updateScheduled(existing, text, at);
+        flash(`Scheduled for ${whenLabel(at)}`);
+        return;
+      }
+      if (!tabReady) return notReady();
+      await scheduleMessage(room.id, activeTab, user.uid, text, at, replyTo);
+      setDraft('');
+      setReplyTo(null);
+      stopTyping();
+      flash(`Scheduled for ${whenLabel(at)}`);
+    } catch (e: any) { flash(e?.message || 'Could not schedule that.'); }
+  };
+  const sendNow = (s: Scheduled) => deliverScheduled(s).then((ok) => flash(ok ? 'Sent' : 'Already sent')).catch((e) => flash(e.message));
+  const cancelSched = (s: Scheduled) => cancelScheduled(s).then(() => flash('Scheduled message cancelled')).catch((e) => flash(e.message));
+  const sendLong = useLongPress(() => { if (!editing) setSheet({ kind: 'send-options' }); });
+  const urgentLeft = urgentLeftOf(delivery.urgent);
 
   const pickPhoto = () => fileInput.current?.click();
   const onFile = async (e: Event) => {
@@ -291,6 +344,15 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
   const pinnedDrops = useMemo(() => new Set(pins.map((p) => p.dropId).filter(Boolean)), [pins]);
   const pinnedMsgs = useMemo(() => new Set(pins.map((p) => p.messageId).filter(Boolean)), [pins]);
   const viewed = viewer ? messages?.find((m) => m.id === viewer) : undefined;
+  // My unread counts use my private copy of "read up to" (it works with read receipts off).
+  const myLastRead = useMemo(() => {
+    const out: Record<string, Timestamp> = {};
+    tabs.forEach((t) => {
+      const ms = readUpTo(reads, room.id, t.id, meMember?.lastRead?.[t.id]);
+      if (ms) out[t.id] = Timestamp.fromMillis(ms);
+    });
+    return out;
+  }, [tabs, reads, room.id, meMember?.lastRead]);
   const nameOf = (uid: string) => (uid === user.uid ? me.name : partner.name);
   const quoteName = (uid: string) => (uid === user.uid ? 'You' : partner.name);
   const tabName = (id: string | null) => tabs.find((t) => t.id === id)?.name || '';
@@ -303,6 +365,13 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
   };
   // --- message actions ---------------------------------------------------------
   const shown = useMemo(() => (messages ? visibleTo(messages, user.uid) : null), [messages, user.uid]);
+  // Ticks: read only when we both share read receipts.
+  const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
+  const ticks = useMemo(() => statuses(
+    (shown || []).map((m) => ({ id: m.id, uid: m.uid, createdMs: m.pending ? null : m.createdAt ? m.createdAt.toMillis() : null, pending: m.pending, deleted: m.deleted })),
+    user.uid,
+    partnerRead ? partnerRead.toMillis() : null,
+  ), [shown, user.uid, partnerRead?.toMillis()]);
   const byId = (id: string) => messages?.find((m) => m.id === id);
   const dropTitle = (m: Message) => `a ${(m.dropId && dropTypes[m.dropId] && getDrop(dropTypes[m.dropId])?.title) || 'Drop'}`;
   const snip = (m: Message) => snippetOf(m, dropTitle(m));
@@ -419,7 +488,7 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
         me={user.uid}
         tabs={tabs}
         active={activeTab}
-        lastRead={meMember?.lastRead || {}}
+        lastRead={myLastRead}
         onSelect={setActiveTab}
         onOptions={(tabId) => setSheet({ kind: 'tab-edit', tabId })}
         onAdd={() => setSheet({ kind: 'tab-new' })}
@@ -431,7 +500,12 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
         messages={shown}
         me={me}
         partner={partner}
-        typing={<TypingIndicator member={partnerMember} name={partner.name} tabId={activeTab} />}
+        typing={<>
+          {failed.filter((f) => f.tabId === activeTab).map((f) => (
+            <FailedRow key={f.localId} f={f} onRetry={() => retry(f)} onDiscard={() => setFailed((cur) => cur.filter((x) => x.localId !== f.localId))} />
+          ))}
+          <TypingIndicator member={partnerMember} name={partner.name} tabId={activeTab} />
+        </>}
         tabName={currentTab && currentTab.id !== GENERAL ? currentTab.name : ''}
         banner={<>
           {left && (
@@ -475,6 +549,8 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
                 <PhraseText text={m.text} phrases={m.phraseReactions} me={user.uid} nameOf={nameOf}
                   onRemove={(p) => removePhraseReaction(room.id, m, p).catch((e) => flash(e.message))} />
                 {m.editedAt && <span class="edited"> · edited</span>}
+                {m.scheduled && <span class="edited"> · scheduled</span>}
+                {mine && ticks.byId[m.id] && <StatusMark status={ticks.byId[m.id]} showRead={false} />}
               </div>
             );
           } else if (m.kind === 'link' && m.link) {
@@ -511,8 +587,13 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
               onActions={() => openActions(m)}
               onToggle={() => toggleSelect(m.id)}
             >
+              {m.urgent && !m.deleted && <span class="urgent-tag">Urgent</span>}
               {body}
               <ReactionChips msg={m} me={user.uid} onToggle={(code, on) => react(m, code, on)} />
+              {mine && m.kind !== 'text' && !m.deleted && ticks.byId[m.id] && (
+                <span class="msg-meta"><StatusMark status={ticks.byId[m.id]} showRead={false} /></span>
+              )}
+              {ticks.lastReadId === m.id && <span class="msg-meta read-label">Read</span>}
             </MsgRow>
           );
         }}
@@ -533,6 +614,13 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
           <button type="button" class="chip-btn danger-text" disabled={!selectedMsgs.length} onClick={() => setSheet({ kind: 'delete', ids: selectedMsgs.map((m) => m.id) })}>Delete</button>
         </footer>
       ) : (<>
+      <ScheduledStrip
+        items={scheduled}
+        tabName={(id) => (id === activeTab ? '' : tabName(id))}
+        onEdit={(s) => setSheet({ kind: 'schedule', id: s.id })}
+        onSendNow={sendNow}
+        onCancel={cancelSched}
+      />
       {(replyTo || editing) && (
         <div class="compose-strip" role="status">
           <span class={`strip-bar${(editing || replyTo!.senderId === user.uid) ? ' me' : ''}`} aria-hidden="true" />
@@ -560,7 +648,8 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
           autocomplete="off"
           enterKeyHint="send"
         />
-        <button type="button" class="send-btn" onClick={send} aria-label={editing ? 'Save edit' : 'Send'}><SendIcon /></button>
+        <button type="button" class="send-btn" {...sendLong} onClick={() => send()}
+          aria-label={editing ? 'Save edit' : 'Send'} aria-description={editing ? undefined : 'Press and hold for Schedule and Urgent'}><SendIcon /></button>
       </footer>
       </>)}
 
@@ -600,6 +689,7 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
                 onUnblock={(uid) => unblock(user.uid, uid).then(() => flash('Unblocked')).catch((e) => flash(e.message))}
                 onEditProfile={() => setSheet({ kind: 'profile' })}
                 onDeleteAccount={() => setSheet({ kind: 'delete-account' })}
+                onToast={flash}
               />
             )}
             {sheet.kind === 'scrap' && <ScrapSheet pins={pins} nameOf={nameOf} tabName={tabName} />}
@@ -677,9 +767,9 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
                 sinceMs={toMillis(room.createdAt)}
                 pinCount={pins.length}
                 nickname={prefs?.nickname || ''}
-                muted={!!prefs?.muted}
+                muted={isMuted(prefs)}
                 onNickname={(nickname) => setContact(user.uid, partnerUid, { nickname }).then(() => flash(nickname ? 'Nickname saved' : 'Nickname removed')).catch((e) => flash(e.message))}
-                onMute={(muted) => setContact(user.uid, partnerUid, { muted }).then(() => flash(muted ? 'Muted' : 'Unmuted')).catch((e) => flash(e.message))}
+                onMute={(muted) => setContact(user.uid, partnerUid, muteFor(muted ? 'always' : 'off')).then(() => flash(muted ? 'Muted' : 'Unmuted')).catch((e) => flash(e.message))}
                 onRemove={async () => {
                   setSheet(null);
                   try { if (left) await deleteRoom(room.id); else await leaveRoom(room.id, user.uid); onBack(); } catch (e: any) { flash(e.message); }
@@ -695,6 +785,20 @@ export function Chat({ user, room, contacts, blocked, onBack }: ChatProps) {
               <ProfileForm user={user} profile={myProfile} roomIds={[room.id]} submitLabel="Save" onSaved={() => { setSheet(null); flash('Profile saved'); }} />
             </>)}
             {sheet.kind === 'delete-account' && <DeleteAccountSheet user={user} onCancel={() => setSheet(null)} />}
+            {sheet.kind === 'send-options' && (
+              <SendOptionsSheet
+                hasText={!!draft.trim()}
+                urgentLeft={urgentLeft}
+                partnerName={partner.name}
+                onSchedule={() => setSheet({ kind: 'schedule' })}
+                onUrgent={() => { setSheet(null); send({ urgent: true }); }}
+              />
+            )}
+            {sheet.kind === 'schedule' && (() => {
+              const existing = sheet.id ? scheduled.find((x) => x.id === sheet.id) : undefined;
+              if (sheet.id && !existing) return <div class="sys">That message has already been sent.</div>;
+              return <ScheduleSheet text={draft} existing={existing} onSave={(t, at) => saveSchedule(t, at, existing)} onCancel={() => setSheet(null)} />;
+            })()}
             {sheet.kind === 'archived' && (
               <ArchivedSheet
                 tabs={tabs}

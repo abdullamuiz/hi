@@ -103,6 +103,23 @@ export interface Message {
   reactions?: Partial<Record<ReactionCode, string[]>>;
   /** Reactions to a span of the text. */
   phraseReactions?: PhraseReaction[];
+  /** Delivered from a scheduled message. */
+  scheduled?: boolean;
+  /** Sent as Urgent: may break through the other person's quiet hours (3 a day). */
+  urgent?: boolean;
+  /** Client-only: still waiting to reach the server. */
+  pending?: boolean;
+}
+
+/** rooms/{roomId}/scheduled/{id} — only the sender can see it. Its id becomes the message id. */
+export interface Scheduled {
+  id: string;
+  roomId: string;
+  senderId: string;
+  tabId: string;
+  text: string;
+  replyTo: ReplyRef | null;
+  sendAt: number;
 }
 
 export type ReactionCode = 'heart' | 'laugh' | 'wow' | 'sad' | 'up' | 'fire';

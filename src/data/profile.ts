@@ -1,6 +1,6 @@
 import {
   collection, deleteDoc, doc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where,
-  arrayRemove, writeBatch,
+  arrayRemove, writeBatch, Timestamp,
 } from 'firebase/firestore';
 import { deleteUser, updateProfile, type User } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
@@ -20,7 +20,10 @@ export interface Profile {
 /** users/{me}/contacts/{uid} — private to me. */
 export interface ContactPrefs {
   nickname: string;
+  /** Muted for good. */
   muted: boolean;
+  /** Muted until this time (ms), e.g. 8 hours or a week. */
+  mutedUntil: number | null;
 }
 
 export interface Blocked {
@@ -111,13 +114,20 @@ export const clearNote = (uid: string) =>
 export function watchContacts(me: string, cb: (c: Record<string, ContactPrefs>) => void) {
   return onSnapshot(collection(db, 'users', me, 'contacts'), (s) => {
     const out: Record<string, ContactPrefs> = {};
-    s.docs.forEach((d) => { const x = d.data(); out[d.id] = { nickname: String(x.nickname || ''), muted: x.muted === true }; });
+    s.docs.forEach((d) => {
+      const x = d.data();
+      const until = x.mutedUntil && typeof x.mutedUntil.toMillis === 'function' ? x.mutedUntil.toMillis() : null;
+      out[d.id] = { nickname: String(x.nickname || ''), muted: x.muted === true, mutedUntil: until };
+    });
     cb(out);
   }, () => cb({}));
 }
 
-export const setContact = (me: string, uid: string, patch: Partial<ContactPrefs>) =>
-  setDoc(doc(db, 'users', me, 'contacts', uid), { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+export function setContact(me: string, uid: string, patch: Partial<ContactPrefs>) {
+  const data: Record<string, unknown> = { ...patch, updatedAt: serverTimestamp() };
+  if ('mutedUntil' in patch) data.mutedUntil = patch.mutedUntil == null ? null : Timestamp.fromMillis(patch.mutedUntil);
+  return setDoc(doc(db, 'users', me, 'contacts', uid), data, { merge: true });
+}
 
 export function watchBlocked(me: string, cb: (b: Blocked[]) => void) {
   return onSnapshot(collection(db, 'users', me, 'blocked'), (s) => {

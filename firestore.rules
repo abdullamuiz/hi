@@ -3,7 +3,9 @@ rules_version = '2';
 // Drops Chat — Firestore security rules.
 //
 // Data model (see docs/ARCHITECTURE.md):
+//   users/{uid}                                   private: theme, read receipts, quiet hours, urgent count (server)
 //   users/{uid}/tokens/{fcmToken}                 private: push tokens
+//   users/{uid}/reads/{roomId}                     private: my own "read up to" per tab
 //   users/{uid}/contacts/{uid}                     private: my nickname for a contact, mute
 //   users/{uid}/blocked/{uid}                      private: people I blocked
 //   profiles/{uid}                                 public profile: name, photo, about, 24h note
@@ -11,6 +13,7 @@ rules_version = '2';
 //     members/{uid}                                public profile, mood weather, lastRead per tab
 //     tabs/{tabId}                                 parallel conversations ("General" + more)
 //       messages/{id}                              chat messages (append-only)
+//     scheduled/{id}                               a scheduled message: only its sender can see it
 //     pins/{id}                                    scrapbook
 //     drops/{dropId}                               a Drop card: type + content
 //       sealed/{uid}_{key}                         a PRIVATE answer
@@ -57,7 +60,19 @@ service cloud.firestore {
 
     // ---------------------------------------------------------------- users
     match /users/{uid} {
-      allow read, write: if signedIn() && me() == uid;
+      allow read, delete: if signedIn() && me() == uid;
+      // The urgent-message count is kept by the server (Cloud Function) only.
+      allow create: if signedIn() && me() == uid && !incoming().keys().hasAny(['urgent']);
+      allow update: if signedIn() && me() == uid && !changedKeys().hasAny(['urgent']);
+
+      // My own "read up to" times. Kept here too, so unread counts work with read receipts off.
+      match /reads/{rid} {
+        allow read, delete: if signedIn() && me() == uid;
+        allow create, update: if signedIn() && me() == uid
+          && onlyKeys(['lastRead'])
+          && incoming().lastRead is map
+          && incoming().lastRead.size() <= 200;
+      }
 
       match /tokens/{token} {
         allow read, delete: if signedIn() && me() == uid;
@@ -72,9 +87,10 @@ service cloud.firestore {
       match /contacts/{cid} {
         allow read, delete: if signedIn() && me() == uid;
         allow create, update: if signedIn() && me() == uid
-          && onlyKeys(['nickname', 'muted', 'updatedAt'])
+          && onlyKeys(['nickname', 'muted', 'mutedUntil', 'updatedAt'])
           && str(incoming().get('nickname', ''), 0, 40)
           && incoming().get('muted', false) is bool
+          && (incoming().get('mutedUntil', null) == null || incoming().mutedUntil is timestamp)
           && incoming().updatedAt == request.time;
       }
 
@@ -305,16 +321,31 @@ service cloud.firestore {
               && str(incoming().replyToNote.emoji, 0, 16)
             );
           }
+          function schedPath() { return /databases/$(database)/documents/rooms/$(roomId)/scheduled/$(msgId); }
+          // Urgent (may break through quiet hours; the server caps it at 3 a day).
+          // Scheduled: delivered from my scheduled message with the same id, which must be
+          // removed in the same write, so it can only ever be delivered once.
+          function validFlags() {
+            return incoming().get('urgent', true) == true
+              && (
+                !incoming().keys().hasAny(['scheduled'])
+                || (incoming().scheduled == true
+                    && exists(schedPath())
+                    && get(schedPath()).data.senderId == me()
+                    && get(schedPath()).data.tabId == tabId
+                    && !existsAfter(schedPath()))
+              );
+          }
           function validText() {
             return incoming().kind == 'text'
               && str(incoming().text, 1, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'replyTo', 'replyToNote', 'urgent', 'scheduled', 'createdAt'])
               && validNoteReply();
           }
           function validLink() {
             return incoming().kind == 'link'
               && str(incoming().text, 0, 4000)
-              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'link', 'replyTo', 'urgent', 'createdAt'])
               && incoming().link is map
               && incoming().link.status == 'pending'
               && str(incoming().link.url, 8, 2048)
@@ -415,12 +446,45 @@ service cloud.firestore {
             && incoming().uid == me()
             && incoming().createdAt == request.time
             && validReply()
+            && validFlags()
             && (validText() || validLink() || validPhoto() || validDrop());
           // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
           allow update: if isMember(roomId)
             && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase());
           allow delete: if false;
         }
+      }
+
+      // -------------------------------------------------------- scheduled messages
+      // Only the sender can see or change them. The id becomes the message id on delivery.
+      match /scheduled/{sid} {
+        function validSched() {
+          return str(incoming().text, 1, 4000)
+            && incoming().tabId is string
+            && exists(/databases/$(database)/documents/rooms/$(roomId)/tabs/$(incoming().tabId))
+            && incoming().sendAt is timestamp
+            && incoming().sendAt < request.time + duration.value(366, 'd')
+            && (incoming().get('replyTo', null) == null || (
+              incoming().replyTo is map
+              && incoming().replyTo.keys().hasOnly(['msgId', 'snippet', 'senderId'])
+              && str(incoming().replyTo.snippet, 0, 160)
+            ));
+        }
+        allow get, list: if isMember(roomId) && resource.data.senderId == me();
+        allow create: if isMember(roomId)
+          && roomData(roomId).get('left', null) == null
+          && sid.matches('^[A-Za-z0-9]{20}$')
+          && onlyKeys(['senderId', 'tabId', 'text', 'replyTo', 'sendAt', 'createdAt'])
+          && incoming().senderId == me()
+          && incoming().createdAt == request.time
+          && incoming().sendAt > request.time
+          && validSched();
+        allow update: if isMember(roomId)
+          && resource.data.senderId == me()
+          && changedKeys().hasOnly(['text', 'sendAt'])
+          && validSched();
+        // The sender can cancel, even after leaving the chat.
+        allow delete: if signedIn() && resource.data.senderId == me();
       }
 
       // -------------------------------------------------------- scrapbook
