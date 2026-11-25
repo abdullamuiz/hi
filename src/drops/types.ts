@@ -10,10 +10,22 @@ export interface Person {
 
 /** A field the sender fills in when dropping the card (pre-filled from `content`). */
 export type SetupField =
-  | { key: string; label: string; kind: 'text'; placeholder?: string; maxLength?: number }
+  | {
+    key: string; label: string; kind: 'text'; placeholder?: string; maxLength?: number;
+    /** May be left empty (the Drop's `prepare` can fill it in). */
+    optional?: boolean;
+    /** Shows a 🎲 button that fills the field with this suggestion. */
+    suggest?(): string;
+  }
   | { key: string; label: string; kind: 'lines'; placeholder?: string; min?: number; max?: number }
   /** A calendar date, stored as "YYYY-MM-DD". */
-  | { key: string; label: string; kind: 'date' };
+  | { key: string; label: string; kind: 'date' }
+  /**
+   * A private pick among other fields' values (e.g. "which statement is the lie").
+   * Not stored in `content`: it's sealed and locked under `key` for the sender as the
+   * Drop is created, so the other person can't read it until they lock the same key.
+   */
+  | { key: string; label: string; kind: 'secret'; from: string[] };
 
 /**
  * What a Drop renderer can see and do. Everything is scoped to the current
@@ -23,6 +35,8 @@ export type SetupField =
 export interface DropApi {
   /** The chat this Drop is in. */
   roomId: string;
+  /** This Drop's id (stable; handy for "play once" keys). */
+  dropId: string;
   me: Person;
   /** The other person in the room (a placeholder until they join). */
   partner: Person;
@@ -50,6 +64,12 @@ export interface DropApi {
   myProgress: Record<string, unknown>;
   theirProgress: Record<string, unknown>;
   setMyProgress(patch: Record<string, unknown>): Promise<void>;
+
+  // --- Photos ---------------------------------------------------------------
+  /** Compresses and uploads a photo for this Drop; resolves to its Storage path. */
+  uploadPhoto(file: File): Promise<string>;
+  /** A viewable URL for a photo path from `uploadPhoto` (members only). */
+  photoUrl(path: string): Promise<string>;
 }
 
 export interface DropRendererProps<C> {

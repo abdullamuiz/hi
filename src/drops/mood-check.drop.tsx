@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { defineDrop } from './types';
+import { RevealPair } from './parts';
 import { MoodIcon, MOODS } from '../ui/icons';
 import type { MoodId } from '../types';
 
@@ -52,13 +53,6 @@ export default defineDrop<Content>({
     const a = api.mine<Answer>(K)!;
     const b = api.theirs<Answer>(K);
     const card = (x: Answer) => (<><span class="mood-big"><MoodIcon mood={x.mood} size={34} /> {label(x.mood)}</span>{x.note && <span class="mood-note">{x.note}</span>}</>);
-    return (
-      <div class="reveal-grid">
-        <div class="reveal-card me"><div class="reveal-who">You</div><div class="reveal-ans">{card(a)}</div></div>
-        {b && api.revealed(K)
-          ? <div class="reveal-card them"><div class="reveal-who">{p}</div><div class="reveal-ans">{card(b)}</div></div>
-          : <div class="reveal-card hidden"><div class="reveal-who">{p}</div><div class="reveal-ans">?</div><div style={{ fontSize: '12px' }}>Shows when they answer</div></div>}
-      </div>
-    );
+    return <RevealPair me={card(a)} them={b ? card(b) : null} partner={p} revealed={!!b && api.revealed(K)} hiddenNote="Shows when they answer" beatKey={`mc:${api.dropId}`} />;
   },
 });

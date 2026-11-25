@@ -82,7 +82,7 @@ This runs three suites:
 | `npm run test:rules` | **Firestore + Storage security rules** against the emulators: only members can read/write, you can only write your own answers, a hidden answer can't be read until both lock in, locked answers are frozen, a third person can never join, photo and voice uploads limited to your own folder and 5 MB, voice notes' played marks and timed reactions are your own only |
 | `npm --prefix functions test` | Open Graph parsing, SSRF protection for link previews, push text never leaking answers |
 
-There is also a full end-to-end run: two browsers sign in, pair up, chat, send a photo, play the Drops (including Poll, Two Truths & a Lie, Decision Wheel and Today's question) and use a thread, against the emulators.
+There is also a full end-to-end run: two browsers sign in, pair up, chat, send a photo, play the Drops (including Poll with its crown, Two Truths & a Lie with stars and red flags, Truth or Dare with a photo answer, a spinning Decision Wheel, a swiped This or That and Today's question) and use a thread, against the emulators.
 
 ```bash
 npm run test:e2e

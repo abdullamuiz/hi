@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { buzz, fxOn } from './fx';
 import { defineDrop, type DropApi } from './types';
 import { splitPair } from './logic';
 
@@ -70,11 +71,7 @@ export default defineDrop<Content>({
       return (
         <div class="stack-10">
           <div class="tot-head"><span>Round {next + 1} / {pairs.length}</span><span class="tot-clock" role="timer">{left}s</span></div>
-          <div class="tot-pair">
-            <button type="button" class="tot-btn" onClick={() => choose(0)}>{a}</button>
-            <span class="tot-or">or</span>
-            <button type="button" class="tot-btn" onClick={() => choose(1)}>{b}</button>
-          </div>
+          <SwipePick a={a} b={b} onPick={choose} key={next} />
         </div>
       );
     }
@@ -95,14 +92,65 @@ function Results({ pairs, api, p }: { pairs: [string, string][]; api: DropApi; p
   return (
     <div class="stack-10">
       <ul class="tot-results" aria-label="Your picks">
-        {rows.map((r) => (
-          <li key={r.i} class={r.theirs !== undefined && r.mine != null && r.mine === r.theirs ? 'match' : ''}>
-            <span>{label(r, r.mine)}</span>
-            <span class="tot-vs">{r.theirs === undefined ? '?' : label(r, r.theirs)}</span>
-          </li>
-        ))}
+        {rows.map((r) => {
+          const same = r.theirs !== undefined && r.mine != null && r.mine === r.theirs;
+          return (
+            <li key={r.i} class={same ? 'match' : ''}>
+              <span>{label(r, r.mine)}</span>
+              {same && <span class="tot-same">Same! 💞</span>}
+              <span class="tot-vs">{r.theirs === undefined ? '?' : label(r, r.theirs)}</span>
+            </li>
+          );
+        })}
       </ul>
       <div class="note">{done.length ? `${same} of ${done.length} matched` : ''}{done.length < rows.length ? `${done.length ? ' · ' : ''}${p}’s picks show as they play` : ''}</div>
+    </div>
+  );
+}
+
+/**
+ * One round as a card: drag left for "this", right for "that" (a fling past 80px picks).
+ * The two buttons stay as the plain, accessible way to choose.
+ */
+function SwipePick({ a, b, onPick }: { a: string; b: string; onPick(side: 0 | 1): void }) {
+  const [dx, setDx] = useState(0);
+  const [gone, setGone] = useState<0 | 1 | null>(null);
+  const start = useRef<{ x: number; id: number } | null>(null);
+  const pick = (side: 0 | 1) => {
+    if (gone != null) return;
+    setGone(side);
+    buzz(8);
+    setTimeout(() => onPick(side), fxOn() ? 180 : 0);
+  };
+  const down = (e: PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    start.current = { x: e.clientX, id: e.pointerId };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const move = (e: PointerEvent) => { if (start.current && e.pointerId === start.current.id) setDx(e.clientX - start.current.x); };
+  const up = (e: PointerEvent) => {
+    if (!start.current || e.pointerId !== start.current.id) return;
+    const d = e.clientX - start.current.x;
+    start.current = null;
+    if (d <= -80) pick(0);
+    else if (d >= 80) pick(1);
+    else setDx(0);
+  };
+  const lean = gone === 0 ? -400 : gone === 1 ? 400 : dx;
+  return (
+    <div class="tot-swipe">
+      <div class={`tot-card${start.current ? ' dragging' : ''}`} style={{ transform: `translateX(${lean}px) rotate(${lean / 20}deg)` }}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { start.current = null; setDx(0); }}
+        role="group" aria-label={`${a} or ${b}. Swipe left for ${a}, right for ${b}.`}>
+        <span class={`tot-side left${dx < -30 ? ' hot' : ''}`}>← {a}</span>
+        <span class="tot-or">or</span>
+        <span class={`tot-side right${dx > 30 ? ' hot' : ''}`}>{b} →</span>
+      </div>
+      <div class="tot-pair">
+        <button type="button" class="tot-btn" onClick={() => pick(0)}>{a}</button>
+        <span class="tot-or">or</span>
+        <button type="button" class="tot-btn" onClick={() => pick(1)}>{b}</button>
+      </div>
     </div>
   );
 }

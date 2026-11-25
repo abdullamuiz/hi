@@ -30,6 +30,42 @@ export function wheelPick(optionIds: string[]): number {
   return hash(optionIds.join('|')) % optionIds.length;
 }
 
+/**
+ * Decision Wheel: the final rotation (degrees, clockwise) that lands `index` under a
+ * pointer at the top. Several full turns plus a small, id-derived offset inside the slice,
+ * so both phones spin exactly the same way.
+ */
+export function wheelLanding(optionIds: string[], index: number): number {
+  const n = optionIds.length;
+  if (n < 1 || index < 0) return 0;
+  const slice = 360 / n;
+  const h = hash(`spin|${optionIds.join('|')}`);
+  const turns = 5 + (h % 2);
+  const jitter = (((h >>> 8) % 1000) / 1000 - 0.5) * slice * 0.6;
+  return turns * 360 - (index + 0.5) * slice + jitter;
+}
+
+/** Which slice is under the pointer at rotation `deg` (for the tick sound/vibration). */
+export function sliceAt(deg: number, n: number): number {
+  if (n < 1) return -1;
+  const slice = 360 / n;
+  const a = ((-deg % 360) + 360) % 360;
+  return Math.floor(a / slice) % n;
+}
+
+/** Two Truths & a Lie: did the guess find the lie? */
+export const spottedLie = (lie: number | null | undefined, guess: number | null | undefined) =>
+  lie != null && guess != null && lie === guess;
+
+/** Predict Me: a friendly tier for a 0–100 score. */
+export function knowTier(pct: number): { emoji: string; label: string } {
+  if (pct >= 100) return { emoji: '🔮', label: 'Mind reader' };
+  if (pct >= 75) return { emoji: '💞', label: 'You know me' };
+  if (pct >= 50) return { emoji: '🙂', label: 'Getting there' };
+  if (pct >= 25) return { emoji: '🤔', label: 'Hmm, keep learning' };
+  return { emoji: '🙈', label: 'Strangers?' };
+}
+
 export interface Reaction { uid: string; code: string; minute: number }
 
 /** Watch Party reactions are stored as public lines "r|<code>|<minute>". */

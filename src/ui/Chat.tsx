@@ -18,7 +18,8 @@ import { cancelScheduled, deliverScheduled, markRead, readUpTo, scheduleMessage,
 import { parseFailed, statuses, type Failed } from '../lib/delivery';
 import { isMuted, muteFor, urgentLeft as urgentLeftOf, whenLabel } from '../lib/schedule';
 import { FailedRow, ScheduledStrip, ScheduleSheet, SendOptionsSheet, StatusMark } from './Delivery';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, type WriteBatch } from 'firebase/firestore';
+import { lockInBatch } from '../data/drops';
 import { ensureMember, heartbeat, makeSelfRoom, setMood, setTyping, watchMembers } from '../data/rooms';
 import { AddContactSheet } from './AddContactSheet';
 import { ActionSheet, DeleteSheet, PhraseSheet, PhraseText, ReactionChips, ReplyQuote, useLongPress } from './MessageActions';
@@ -514,11 +515,16 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     }
   };
 
-  const dropIt = async (def: DropDefinition<any>, content: Record<string, unknown>) => {
+  const dropIt = async (def: DropDefinition<any>, content: Record<string, unknown>, secrets: Record<string, unknown> = {}) => {
     setSheet(null);
     if (!tabReady) return notReady();
     try {
-      await createDrop(room.id, activeTab, user.uid, def.type, content, def.initialEntries?.(content) || [], `a ${def.title}`);
+      // Private picks made in the setup form (e.g. which statement is the lie) are sealed
+      // and locked for me in the same write, so they're never readable before a guess.
+      const extra = Object.keys(secrets).length
+        ? (b: WriteBatch, id: string) => Object.entries(secrets).forEach(([k, v]) => lockInBatch(b, room.id, id, user.uid, k, v))
+        : undefined;
+      await createDrop(room.id, activeTab, user.uid, def.type, content, def.initialEntries?.(content) || [], `a ${def.title}`, { extra });
     } catch (e: any) {
       flash(e?.message || 'Could not drop that.');
     }
@@ -1049,7 +1055,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
               sessions={isSelf ? [] : trayTests()} onSession={beginSession} self={isSelf} />}
             {sheet.kind === 'setup' && (() => {
               const def = getDrop(sheet.type);
-              return def ? <SetupSheet def={def} prefill={sheet.prefill} onDrop={(c) => dropIt(def, c)} onBack={() => setSheet({ kind: 'tray' })} /> : null;
+              return def ? <SetupSheet def={def} prefill={sheet.prefill} onDrop={(c, sec) => dropIt(def, c, sec)} onBack={() => setSheet({ kind: 'tray' })} /> : null;
             })()}
             {sheet.kind === 'mood' && (
               <MoodSheet

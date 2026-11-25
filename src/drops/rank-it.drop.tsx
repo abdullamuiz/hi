@@ -63,12 +63,12 @@ export default defineDrop<Content>({
     return (
       <div class="stack-10">
         <div class="q">{content.prompt}</div>
-        <div class="rank-cols">
-          <ol class="rank-col me" aria-label="Your ranking">{a.map((i) => <li key={i}>{items[i]}</li>)}</ol>
-          {b
-            ? <ol class="rank-col them" aria-label={`${p}’s ranking`}>{b.map((i) => <li key={i}>{items[i]}</li>)}</ol>
-            : <div class="reveal-card hidden"><div class="reveal-who">{p}</div><div class="reveal-ans">?</div></div>}
-        </div>
+        {b ? <RankLines a={a} b={b} items={items} p={p} /> : (
+          <div class="rank-cols">
+            <ol class="rank-col me" aria-label="Your ranking">{a.map((i) => <li key={i}>{items[i]}</li>)}</ol>
+            <div class="reveal-card hidden waiting"><div class="reveal-who">{p}</div><div class="reveal-ans">?</div></div>
+          </div>
+        )}
         {b
           ? <div class="gap-line"><div class="gap-num">{agreement(a, b)}%</div><div class="gap-txt">in agreement</div></div>
           : <div class="note">{api.theyLocked(K) ? 'Revealing…' : `Waiting for ${p} to rank`}</div>}
@@ -76,3 +76,26 @@ export default defineDrop<Content>({
     );
   },
 });
+
+const ROW = 40;
+
+/** Both rankings side by side, with a line joining each item to where the other person put it. */
+function RankLines({ a, b, items, p }: { a: number[]; b: number[]; items: string[]; p: string }) {
+  const n = Math.min(a.length, b.length);
+  const posB = new Map(b.map((item, i) => [item, i]));
+  return (
+    <div class="rank-lines" style={{ '--rows': n } as any}>
+      <ol class="rank-col me" aria-label="Your ranking">{a.slice(0, n).map((i, k) => <li key={i} style={{ height: `${ROW}px` }}><b>{k + 1}</b> {items[i]}</li>)}</ol>
+      <svg class="rank-svg" viewBox={`0 0 40 ${n * ROW}`} preserveAspectRatio="none" width="40" height={n * ROW} aria-hidden="true">
+        {a.slice(0, n).map((item, k) => {
+          const j = posB.get(item) ?? k;
+          const y1 = k * ROW + ROW / 2;
+          const y2 = j * ROW + ROW / 2;
+          return <path key={item} class={`rank-link${j === k ? ' same' : ''}`} style={{ '--k': k } as any}
+            d={`M0,${y1} C20,${y1} 20,${y2} 40,${y2}`} />;
+        })}
+      </svg>
+      <ol class="rank-col them" aria-label={`${p}’s ranking`}>{b.slice(0, n).map((i, k) => <li key={i} style={{ height: `${ROW}px` }}><b>{k + 1}</b> {items[i]}</li>)}</ol>
+    </div>
+  );
+}

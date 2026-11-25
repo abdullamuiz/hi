@@ -1,5 +1,6 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { defineDrop } from './types';
+import { buzz, fxOn, once, played } from './fx';
 
 type Content = { question: string; left: string; right: string };
 const K = 'take';
@@ -66,10 +67,7 @@ export default defineDrop<Content>({
         )}
         {locked && mine != null && (
           <div class="stack">
-            <div class="track">
-              {theirs != null && <div class="mark them" style={{ left: `calc(${theirs}% - 10px)` }} />}
-              <div class="mark me" style={{ left: `calc(${mine}% - 10px)` }} />
-            </div>
+            <GapTrack mine={mine} theirs={theirs ?? null} onceKey={`gs:${api.dropId}`} />
             {ends}
             {theirs != null ? (
               <div class="gap-line">
@@ -85,3 +83,27 @@ export default defineDrop<Content>({
     );
   },
 });
+
+/** The two marks glide in from the ends the first time; close takes get a 🙌, far ones a ⚡. */
+function GapTrack({ mine, theirs, onceKey }: { mine: number; theirs: number | null; onceKey: string }) {
+  const animate = theirs != null && fxOn() && !played(onceKey);
+  const [settled, setSettled] = useState(!animate);
+  useEffect(() => {
+    if (!animate) return;
+    once(onceKey);
+    const r = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)));
+    const t = setTimeout(() => buzz(theirs != null && Math.abs(mine - theirs) < 15 ? [10, 40, 10] : 20), 900);
+    return () => { cancelAnimationFrame(r); clearTimeout(t); };
+  }, [theirs != null]);
+  const gap = theirs != null ? Math.abs(mine - theirs) : null;
+  const mid = theirs != null ? (mine + theirs) / 2 : mine;
+  return (
+    <div class={`track${settled ? ' settled' : ''}`}>
+      {theirs != null && <div class="mark them" style={{ left: `calc(${settled ? theirs : 100}% - 10px)` }} />}
+      <div class="mark me" style={{ left: `calc(${settled || theirs == null ? mine : 0}% - 10px)` }} />
+      {settled && gap != null && (gap < 15 || gap >= 40) && (
+        <span class="gap-burst" style={{ left: `${mid}%` }} aria-label={gap < 15 ? 'High five' : 'Far apart'}>{gap < 15 ? '🙌' : '⚡'}</span>
+      )}
+    </div>
+  );
+}

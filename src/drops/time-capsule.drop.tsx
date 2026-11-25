@@ -58,12 +58,12 @@ export default defineDrop<Content>({
       if (solo) {
         return open ? (
           <div class="stack-10">
-            <div class="capsule open"><span class="capsule-lock" aria-hidden="true">💌</span><div class="cd-label">From past you · sealed until {date}</div></div>
+            <div class="capsule open"><Envelope open /><div class="cd-label">From past you · sealed until {date}</div></div>
             <div class="reveal-card me"><div class="reveal-ans">{api.mine<string>(K)}</div></div>
           </div>
         ) : (
           <div class="stack-10">
-            <div class="capsule"><span class="capsule-lock" aria-hidden="true">🔒</span>
+            <div class="capsule"><Envelope />
               <div><div class="cd-label">Sealed until {date}</div><div class="cd-sub">{timeLeft(content.openAtMs - Date.now())} to go</div></div>
             </div>
           </div>
@@ -71,7 +71,7 @@ export default defineDrop<Content>({
       }
       return (
         <div class="stack-10">
-          <div class="capsule"><span class="capsule-lock" aria-hidden="true">🔒</span>
+          <div class="capsule"><Envelope />
             <div><div class="cd-label">Sealed until {date}</div><div class="cd-sub">{api.theyLocked(K) ? `${p} has opened it` : open ? `${p} can open it now` : `${timeLeft(content.openAtMs - Date.now())} to go`}</div></div>
           </div>
           <div class="fine">Your message: “{api.mine<string>(K)}”</div>
@@ -82,14 +82,14 @@ export default defineDrop<Content>({
     if (api.revealed(K)) {
       return (
         <div class="stack-10">
-          <div class="capsule open"><span class="capsule-lock" aria-hidden="true">💌</span><div class="cd-label">Opened · sealed until {date}</div></div>
+          <div class="capsule open"><Envelope open /><div class="cd-label">Opened · sealed until {date}</div></div>
           <div class="reveal-card them"><div class="reveal-who">{p} wrote</div><div class="reveal-ans">{api.theirs<string>(K)}</div></div>
         </div>
       );
     }
     return (
       <div class="stack-10">
-        <div class="capsule"><span class="capsule-lock" aria-hidden="true">🔒</span>
+        <div class="capsule"><Envelope />
           <div><div class="cd-label">{sealedByAuthor ? `A message from ${p}` : `${p} is still writing`}</div>
             <div class="cd-sub">{open ? 'Ready to open' : `Opens ${date} · ${timeLeft(content.openAtMs - Date.now())} to go`}</div></div>
         </div>
@@ -107,3 +107,15 @@ export default defineDrop<Content>({
     );
   },
 });
+
+/** A sealed envelope with a wax seal; open, its flap folds back and the letter peeks out. */
+function Envelope({ open = false }: { open?: boolean }) {
+  return (
+    <span class={`envelope${open ? ' open' : ''}`} aria-hidden="true">
+      <span class="env-letter" />
+      <span class="env-body" />
+      <span class="env-flap" />
+      {!open && <span class="env-wax">H</span>}
+    </span>
+  );
+}

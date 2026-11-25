@@ -142,7 +142,7 @@ export async function sendVoice(roomId: string, tabId: string, uid: string, rec:
 export async function createDrop(
   roomId: string, tabId: string, uid: string, type: string, content: Record<string, unknown>, firstEntries: string[] = [], title = 'a Drop',
   /** A fixed Drop id and extra writes for the same batch (e.g. a Session's own doc). */
-  opts: { id?: string; extra?(b: WriteBatch): void } = {},
+  opts: { id?: string; extra?(b: WriteBatch, dropId: string): void } = {},
 ) {
   const b = writeBatch(db);
   const dropRef = opts.id ? doc(db, 'rooms', roomId, 'drops', opts.id) : doc(collection(db, 'rooms', roomId, 'drops'));
@@ -150,7 +150,7 @@ export async function createDrop(
   firstEntries.forEach((text) => {
     b.set(doc(collection(dropRef, 'entries')), { uid, text: text.slice(0, 280), createdAt: serverTimestamp() });
   });
-  opts.extra?.(b);
+  opts.extra?.(b, dropRef.id);
   const mark = addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id }, snippetOf({ kind: 'drop', text: '' }, title));
   await commit(b, mark);
   return dropRef.id;

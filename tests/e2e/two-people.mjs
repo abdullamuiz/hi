@@ -506,7 +506,7 @@ try {
 
   step('The tray lists every Drop');
   await alice.getByRole('button', { name: 'Add a Drop' }).click();
-  for (const t of ['Two Truths & a Lie', 'Predict Me', 'Rank It', 'Decision Wheel', 'Watch Party', 'Countdown', 'Poll', 'This or That', 'Time Capsule', 'Mood Check', 'Rewind']) {
+  for (const t of ['Two Truths & a Lie', 'Truth or Dare', 'Predict Me', 'Rank It', 'Decision Wheel', 'Watch Party', 'Countdown', 'Poll', 'This or That', 'Time Capsule', 'Mood Check', 'Rewind']) {
     await alice.locator('.tray-item', { hasText: t }).waitFor();
   }
   assert.equal(await alice.locator('.tray-item', { hasText: 'Today’s question' }).count(), 0, 'the daily question isn’t in the tray');
@@ -527,20 +527,92 @@ try {
   await pA.getByText('Split vote. Talk it out?').waitFor();
   await pB.locator('.them-tag', { hasText: 'alice' }).waitFor();
   await shot(alice, 'drop-poll');
-
-  step('Two Truths & a Lie: Bob marks the lie, Alice guesses');
+  // A second poll where they agree: the bars race and the winner gets a crown.
   await bob.getByRole('button', { name: 'Add a Drop' }).click();
-  await bob.locator('.tray-item', { hasText: 'Two Truths' }).click();
+  await bob.locator('.tray-item', { hasText: 'Poll' }).click();
+  await bob.getByRole('textbox', { name: 'Question', exact: true }).fill('Dinner tonight?');
+  await bob.getByLabel('Options (one per line, 2–6)').fill('Pizza\nCurry');
   await bob.getByRole('button', { name: 'Drop it' }).click();
-  const tB = bob.getByRole('region', { name: 'Two Truths & a Lie' });
-  const tA = alice.getByRole('region', { name: 'Two Truths & a Lie' });
-  await tB.getByRole('radio', { name: 'I can juggle' }).click();
-  await tB.getByRole('button', { name: 'Lock the lie' }).click();
-  await tA.getByText('Two are true. Which one is the lie?').waitFor();
-  await tA.getByRole('radio', { name: 'I can juggle' }).click();
-  await tA.getByRole('button', { name: 'Lock my guess' }).click();
-  await tA.getByText('You spotted it!').waitFor();
-  await tB.getByText('alice spotted it. Too easy?').waitFor();
+  const p2A = alice.getByRole('region', { name: 'Poll' }).last();
+  const p2B = bob.getByRole('region', { name: 'Poll' }).last();
+  await p2A.getByText('Dinner tonight?').waitFor();
+  await p2A.getByRole('radio', { name: 'Curry' }).click();
+  await p2A.getByRole('button', { name: 'Vote', exact: true }).click();
+  await p2B.getByRole('radio', { name: 'Curry' }).click();
+  await p2B.getByRole('button', { name: 'Vote', exact: true }).click();
+  await p2B.getByText('You agree! 👑').waitFor();
+  await p2B.locator('.poll-row.winner .poll-crown').waitFor();
+  await bob.locator('#drop-fx[data-kind="crown"]').waitFor({ state: 'attached' });
+  await shot(bob, 'drop-poll-crown');
+
+  step('Two Truths & a Lie: the lie is picked while writing; a wrong guess waves red flags, a right one rains stars');
+  const twoTruths = async (lie) => {
+    await bob.getByRole('button', { name: 'Add a Drop' }).click();
+    await bob.locator('.tray-item', { hasText: 'Two Truths' }).click();
+    await bob.getByRole('radiogroup', { name: 'Which one is the lie?' }).getByRole('radio', { name: lie }).click();
+    await bob.getByRole('button', { name: 'Drop it' }).click();
+    return [bob.getByRole('region', { name: 'Two Truths & a Lie' }).last(), alice.getByRole('region', { name: 'Two Truths & a Lie' }).last()];
+  };
+  {
+    const [tB, tA] = await twoTruths('I can juggle');
+    // The lie is already sealed: Bob just waits; Alice can't see which one it is.
+    await tB.getByText('Waiting for alice to guess').waitFor();
+    await tA.getByText('Two are true. Which one is the lie?').waitFor();
+    await tA.getByRole('radio', { name: 'I’ve never seen snow' }).click();
+    await tA.getByRole('button', { name: 'Lock my guess' }).click();
+    await tA.getByText('Fooled! bob got you.').waitFor();
+    await alice.locator('#drop-fx[data-kind="flags"]').waitFor({ state: 'attached' });
+    await shot(alice, 'two-truths-flags');
+    await tB.getByText('You fooled alice.').waitFor();
+    await bob.locator('#drop-fx[data-kind="flags"]').waitFor({ state: 'attached' });
+  }
+  {
+    await alice.locator('#drop-fx').waitFor({ state: 'detached' });
+    const [tB, tA] = await twoTruths('I can juggle');
+    await tA.getByText('Two are true. Which one is the lie?').waitFor();
+    await tA.getByRole('radio', { name: 'I can juggle' }).click();
+    await tA.getByRole('button', { name: 'Lock my guess' }).click();
+    await tA.getByText('You spotted it!').waitFor();
+    await alice.locator('#drop-fx[data-kind="stars"]').waitFor({ state: 'attached' });
+    await shot(alice, 'two-truths-stars');
+    await tB.getByText('alice spotted it. Too easy?').waitFor();
+  }
+
+  step('Truth or Dare: Alice sets a dare, Bob answers it with a photo; the next one he skips');
+  {
+    await alice.getByRole('button', { name: 'Add a Drop' }).click();
+    await alice.locator('.tray-item', { hasText: 'Truth or Dare' }).click();
+    await alice.getByLabel(/^Your dare/).fill('Send a photo of your shoes.');
+    await alice.getByRole('button', { name: 'Random your truth question' }).click();
+    assert.ok((await alice.getByLabel(/^Your truth question/).inputValue()).length > 8, 'the dice fills a truth');
+    await alice.getByRole('button', { name: 'Drop it' }).click();
+    const dA = alice.getByRole('region', { name: 'Truth or Dare' }).last();
+    const dB = bob.getByRole('region', { name: 'Truth or Dare' }).last();
+    await dA.getByText('Waiting for bob to pick…').waitFor();
+    assert.equal(await dB.getByText('Send a photo of your shoes.').count(), 0, 'the dare stays hidden until picked');
+    await dB.getByRole('button', { name: 'Dare', exact: true }).click();
+    await dB.getByText('Send a photo of your shoes.').waitFor();
+    await dA.getByText('bob is on it…').waitFor();
+    await shot(bob, 'truth-or-dare-dare');
+    const shoes = await bob.evaluate(async () => {
+      const c = document.createElement('canvas'); c.width = 800; c.height = 600;
+      const g = c.getContext('2d'); g.fillStyle = '#8A5A3C'; g.fillRect(0, 0, 800, 600); g.fillStyle = '#fff'; g.fillRect(200, 250, 400, 120);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    await dB.getByLabel('Your answer').fill('My trusty trainers');
+    await dB.locator('input[aria-label="Choose a photo"]').setInputFiles({ name: 'shoes.png', mimeType: 'image/png', buffer: Buffer.from(shoes, 'base64') });
+    await dA.locator('img.tod-photo').waitFor({ timeout: 20_000 });
+    await dA.getByText('My trusty trainers').waitFor();
+    await shot(alice, 'truth-or-dare-answer');
+
+    await alice.getByRole('button', { name: 'Add a Drop' }).click();
+    await alice.locator('.tray-item', { hasText: 'Truth or Dare' }).click();
+    await alice.getByRole('button', { name: 'Drop it' }).click();
+    const d2B = bob.getByRole('region', { name: 'Truth or Dare' }).last();
+    await d2B.getByRole('button', { name: 'Skip 🐔' }).click();
+    await bob.locator('#drop-fx[data-kind="chicken"]').waitFor({ state: 'attached' });
+    await alice.getByRole('region', { name: 'Truth or Dare' }).last().getByText('bob chickened out!').waitFor();
+  }
 
   step('Decision Wheel: both add options, one spin, same result on both phones');
   await alice.getByRole('button', { name: 'Add a Drop' }).click();
@@ -554,9 +626,38 @@ try {
   await wB.getByLabel('Add an option').fill('Tacos');
   await wB.getByRole('button', { name: 'Add', exact: true }).click();
   await wB.getByRole('button', { name: 'Spin the wheel' }).click();
+  await wB.getByText('Spinning…').waitFor();
+  await bob.waitForTimeout(1500);
+  await shot(bob, 'wheel-spinning');
   await wA.getByText('The wheel chose').waitFor({ timeout: 15000 });
+  await wB.locator('svg.wheel[aria-label^="Wheel stopped on"]').waitFor({ timeout: 15000 });
   await wB.getByText('The wheel chose').waitFor({ timeout: 15000 });
   assert.equal(await wA.locator('.gap-line b').textContent(), await wB.locator('.gap-line b').textContent());
+  assert.equal(await wA.locator('svg.wheel').getAttribute('aria-label'), await wB.locator('svg.wheel').getAttribute('aria-label'), 'both wheels stop on the same slice');
+  await shot(bob, 'wheel-landed');
+
+  step('This or That: swipe a card to pick');
+  {
+    await alice.getByRole('button', { name: 'Add a Drop' }).click();
+    await alice.locator('.tray-item', { hasText: 'This or That' }).click();
+    await alice.getByLabel(/^Pairs, one per line/).fill('Tea / Coffee\nCats / Dogs\nSea / Sky');
+    await alice.getByRole('button', { name: 'Drop it' }).click();
+    const oA = alice.getByRole('region', { name: 'This or That' }).last();
+    await oA.getByRole('button', { name: 'Start' }).click();
+    const card = oA.locator('.tot-card');
+    await card.waitFor();
+    const box = await card.boundingBox();
+    // Drag right past the threshold: "Coffee".
+    await alice.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await alice.mouse.down();
+    await alice.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 4 });
+    await alice.mouse.move(box.x + box.width / 2 + 140, box.y + box.height / 2, { steps: 4 });
+    await alice.mouse.up();
+    await oA.getByText('Round 2 / 3').waitFor();
+    await oA.getByRole('button', { name: 'Cats', exact: true }).click();
+    await oA.getByRole('button', { name: 'Sky', exact: true }).click();
+    await oA.locator('.tot-results li', { hasText: 'Coffee' }).waitFor();
+  }
 
   step('Pin to scrapbook shows for both');
   await bobCard.getByRole('button', { name: 'Pin to scrapbook' }).click();
@@ -1048,6 +1149,27 @@ try {
   await bob.locator('.msg', { hasText: 'Happy new year!' }).getByText('Sent with Fireworks').waitFor();
   await bob.waitForTimeout(800);
   assert.equal(await fxCount(bob), before, 'no animation with effects turned off');
+  // Drop moments are off too: an agreed poll gives no crown overlay on Bob's phone.
+  {
+    const dropFx = () => bob.evaluate(() => (window.__hiDropFx || []).length);
+    const fxBefore = await dropFx();
+    await alice.getByRole('button', { name: 'Add a Drop' }).click();
+    await alice.locator('.tray-item', { hasText: 'Poll' }).click();
+    await alice.getByRole('textbox', { name: 'Question', exact: true }).fill('Quiet poll?');
+    await alice.getByLabel('Options (one per line, 2–6)').fill('Yes\nNo');
+    await alice.getByRole('button', { name: 'Drop it' }).click();
+    const qA = alice.getByRole('region', { name: 'Poll' }).last();
+    const qB = bob.getByRole('region', { name: 'Poll' }).last();
+    await qB.getByText('Quiet poll?').waitFor();
+    await qA.getByRole('radio', { name: 'Yes' }).click();
+    await qA.getByRole('button', { name: 'Vote', exact: true }).click();
+    await qB.getByRole('radio', { name: 'Yes' }).click();
+    await qB.getByRole('button', { name: 'Vote', exact: true }).click();
+    await qB.getByText('You agree! 👑').waitFor();
+    await bob.waitForTimeout(600);
+    assert.equal(await dropFx(), fxBefore, 'no Drop overlay with effects turned off');
+    assert.equal(await bob.locator('#drop-fx').count(), 0);
+  }
   await bob.getByRole('button', { name: 'Settings' }).click();
   await bob.getByRole('radiogroup', { name: 'Play effects' }).getByRole('radio', { name: 'On' }).click();
   await bob.keyboard.press('Escape');

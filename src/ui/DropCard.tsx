@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import { addEntry, emptyDropState, lockAnswer, saveDraft, setProgress, watchDrop, type DropState } from '../data/drops';
+import { addEntry, emptyDropState, lockAnswer, saveDraft, setProgress, uploadDropPhoto, watchDrop, type DropState } from '../data/drops';
+import { buzz } from '../drops/fx';
+import { photoURL } from '../data/photos';
 import { getDrop, withDefaults } from '../drops/registry';
 import type { DropApi, Person } from '../drops/types';
 import { BookmarkIcon, DropIcon } from './icons';
@@ -27,19 +29,21 @@ export function DropCard({ roomId, dropId, me, partner, pinned, onPin, onType }:
   const api = useMemo<DropApi>(() => {
     const has = (uid: string, key: string) => s.locks.has(`${uid}_${key}`);
     return {
-      roomId, me, partner, createdBy,
+      roomId, dropId, me, partner, createdBy,
       mine: (key) => s.mine[key]?.value as any,
       theirs: (key) => s.theirs[key]?.value as any,
       iLocked: (key) => !!s.mine[key]?.locked || has(me.uid, key),
       theyLocked: (key) => !!partner.uid && has(partner.uid, key),
       revealed: (key) => !!s.theirs[key] && has(me.uid, key),
       saveDraft: (key, value) => saveDraft(roomId, dropId, me.uid, key, value),
-      lock: (key, value) => lockAnswer(roomId, dropId, me.uid, key, value),
+      lock: (key, value) => { buzz(10); return lockAnswer(roomId, dropId, me.uid, key, value); },
       entries: s.entries,
       addEntry: (text) => addEntry(roomId, dropId, me.uid, text),
       myProgress: s.progress[me.uid] || {},
       theirProgress: (partner.uid && s.progress[partner.uid]) || {},
       setMyProgress: (patch) => setProgress(roomId, dropId, me.uid, patch),
+      uploadPhoto: (file) => uploadDropPhoto(roomId, dropId, me.uid, file),
+      photoUrl: (path) => photoURL(path),
     };
   }, [s, me, partner, createdBy, roomId, dropId]);
 

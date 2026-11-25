@@ -8,7 +8,7 @@ describe('Drop registry', async () => {
 
   it('discovers every built-in Drop in tray order', () => {
     expect(drops.map((d) => d.type)).toEqual([
-      'feeling-map', 'blind-reveal', 'gap-slider', 'tag-team-story', 'two-truths', 'predict-me', 'rank-it',
+      'feeling-map', 'blind-reveal', 'gap-slider', 'tag-team-story', 'two-truths', 'truth-or-dare', 'predict-me', 'rank-it',
       'decision-wheel', 'watch-party', 'countdown', 'rewind', 'poll', 'this-or-that', 'time-capsule', 'mood-check', 'daily-question',
       'session',
     ]);
@@ -47,7 +47,11 @@ describe('Drop registry', async () => {
       expect(d.trayDescription).toBeTruthy();
       expect(typeof d.Renderer).toBe('function');
       expect(typeof d.subtitle(d.content)).toBe('string');
-      for (const f of d.setup || []) expect(f.key in d.content).toBe(true);
+      for (const f of d.setup || []) {
+        // A secret pick isn't stored in content; the fields it picks among are.
+        if (f.kind === 'secret') { expect(f.key in d.content).toBe(false); f.from.forEach((k) => expect(k in d.content).toBe(true)); }
+        else expect(f.key in d.content).toBe(true);
+      }
       // Content must be plain JSON: it is stored in Firestore as-is.
       expect(JSON.parse(JSON.stringify(d.content))).toEqual(d.content);
     }
