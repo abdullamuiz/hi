@@ -118,6 +118,58 @@ try {
   await eve.getByText('Start your first chat').waitFor();
   assert.equal(await eve.getByText(/invited you/).count(), 0);
 
+  step('Notes to self: Eve turns a waiting chat into hers; no invite, no ticks, only solo Drops, a reminder to self');
+  // Everyone gets one automatically, at the top of the list.
+  await eve.locator('.chat-row.self-row', { hasText: 'Notes to self' }).waitFor();
+  assert.equal(await eve.locator('.chat-row').first().evaluate((el) => el.classList.contains('self-row')), true, 'Notes to self is first');
+  // Eve starts a chat, then keeps it for herself instead: the invite link stops working.
+  await eve.getByRole('button', { name: 'Add contact' }).click();
+  await eve.getByRole('button', { name: 'Create invite link' }).click();
+  await eve.getByText('Invite ready').waitFor();
+  const eveLink = (await eve.getByLabel('Invite link', { exact: true }).textContent()).trim();
+  await eve.keyboard.press('Escape');
+  await eve.getByRole('button', { name: /^Share the invite/ }).click();
+  await eve.getByRole('button', { name: '📝 Make this my Notes to self' }).click();
+  await eve.getByRole('status').filter({ hasText: 'This is now your Notes to self' }).waitFor();
+  // The empty automatic one goes, so there's exactly one, and no chat waits for anyone.
+  await eve.waitForFunction(() => document.querySelectorAll('.chat-row.self-row').length === 1 && document.querySelectorAll('.chat-row').length === 1);
+  assert.equal(await eve.getByText('Invite link not used yet').count(), 0);
+  await eve.getByRole('button', { name: /^Notes to self/ }).click();
+  await eve.locator('.hdr-name', { hasText: 'Notes to self' }).waitFor();
+  await eve.getByText('Only you can see this').waitFor();
+  assert.equal(await eve.getByText('It’s just you here for now.').count(), 0, 'no invite banner');
+  assert.equal(await eve.getByRole('button', { name: /^Your mood weather/ }).count(), 0, 'no mood in Notes to self');
+  await eve.getByRole('textbox', { name: 'Message' }).fill('Passport renewal before March');
+  await eve.keyboard.press('Enter');
+  await eve.locator('.msg', { hasText: 'Passport renewal before March' }).waitFor();
+  await eve.locator('input[type=file]').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: Buffer.from(AVATAR_PNG, 'base64') });
+  await eve.locator('.photo-btn img').first().waitFor();
+  await eve.waitForTimeout(800);
+  assert.equal(await eve.locator('.status-mark').count(), 0, 'no ticks in Notes to self');
+  assert.equal(await eve.getByText('Read', { exact: true }).count(), 0);
+  // Only the Drops that work alone, and no Sessions.
+  await eve.getByRole('button', { name: 'Add a Drop' }).click();
+  await eve.locator('.tray-item', { hasText: 'Countdown' }).waitFor();
+  assert.deepEqual((await eve.locator('.tray-item .tray-name').allTextContents()).sort(), ['Countdown', 'Decision Wheel', 'Time Capsule']);
+  await shot(eve, 'self-tray');
+  await eve.keyboard.press('Escape');
+  // A reminder to self: scheduled, then sent now.
+  await eve.getByRole('textbox', { name: 'Message' }).fill('Call the dentist');
+  await eve.getByRole('button', { name: 'Send', exact: true }).click({ button: 'right' });
+  await eve.getByRole('button', { name: /^Schedule…/ }).click();
+  await eve.getByRole('button', { name: /^Tomorrow 8 am/ }).click();
+  await eve.getByRole('status').filter({ hasText: 'Scheduled for' }).waitFor();
+  await eve.getByRole('button', { name: 'Send now: Call the dentist' }).click();
+  await eve.locator('.msg', { hasText: 'Call the dentist' }).getByText('· scheduled').waitFor();
+  await eve.getByRole('button', { name: 'About Notes to self' }).click();
+  await eve.getByRole('button', { name: 'Photos and media' }).waitFor();
+  await shot(eve, 'self-info');
+  await eve.keyboard.press('Escape');
+  await shot(eve, 'self-chat');
+  await eve.getByRole('button', { name: 'Back to chats' }).click();
+  await eve.locator('.chat-row.self-row', { hasText: 'Call the dentist' }).waitFor();
+  await shot(eve, 'self-list');
+
   step('Bob opens the link, signs in, joins, and sees what Alice wrote before');
   const bob = await person('bob@example.com', bobLink);
   await bob.getByRole('button', { name: 'Join alice' }).click();
@@ -128,7 +180,15 @@ try {
   await alice.locator('.hdr-name', { hasText: 'bob' }).waitFor();
   assert.equal(await alice.getByText('It’s just you here for now.').count(), 0);
 
-  step('A used link can’t add anyone else');
+  step('A used link can’t add anyone else; nor can Eve’s Notes to self link');
+  await bob.goto(eveLink);
+  await bob.getByRole('button', { name: 'Join eve' }).click();
+  await bob.getByText('This invite link doesn’t work any more').waitFor();
+  await bob.getByRole('button', { name: 'Go to my chats' }).click();
+  // Bob's own Notes to self is there too; his chat with Alice is the only contact.
+  await bob.locator('.chat-row.self-row').waitFor();
+  await bob.getByRole('button', { name: /^alice/ }).click();
+  await bob.getByText('Note to self: invite Bob').waitFor();
   await eve.goto(bobLink);
   await eve.getByRole('button', { name: 'Join alice' }).click();
   await eve.getByText('This invite link doesn’t work any more').waitFor();
@@ -798,7 +858,8 @@ try {
   await carol.keyboard.press('Enter');
   await alice.getByRole('button', { name: /^carol.*unread messages/ }).waitFor();
   await alice.getByRole('button', { name: /^bob/ }).waitFor();
-  assert.equal(await alice.locator('.chat-row').count(), 2);
+  assert.equal(await alice.locator('.chat-row:not(.self-row)').count(), 2);
+  assert.equal(await alice.locator('.chat-row.self-row').count(), 1, 'plus Notes to self');
   await shot(alice, 'chats-two');
   await alice.getByRole('button', { name: /^carol/ }).click();
   await alice.getByText('Hi Alice, it’s Carol!').waitFor();
@@ -1065,7 +1126,7 @@ try {
   await shot(alice, 'left-chat');
   await alice.getByRole('button', { name: 'Delete chat' }).click();
   await alice.getByRole('button', { name: /^Bobby/ }).waitFor();
-  assert.equal(await alice.locator('.chat-row').count(), 1);
+  assert.equal(await alice.locator('.chat-row:not(.self-row)').count(), 1);
 
   step('Block: Dave joins with a link, Alice blocks him');
   await alice.getByRole('button', { name: 'Add contact' }).click();
@@ -1438,8 +1499,8 @@ try {
   await bob.getByRole('textbox', { name: 'Message' }).waitFor();
 
   // Every send above went through (the activity day rides in the same batch as each message).
-  assert.equal(await alice.locator('.msg.failed').count(), 0, 'no unsent messages (alice)');
-  assert.equal(await bob.locator('.msg.failed').count(), 0, 'no unsent messages (bob)');
+  assert.equal(await alice.locator('.msg.failed').count(), 0, `no unsent messages (alice): ${(await alice.locator('.msg.failed').allTextContents()).join(' | ')}`);
+  assert.equal(await bob.locator('.msg.failed').count(), 0, `no unsent messages (bob): ${(await bob.locator('.msg.failed').allTextContents()).join(' | ')} ${await bob.evaluate(() => Object.keys(localStorage).filter((k) => /fail/i.test(k)).map((k) => localStorage.getItem(k)).join(' '))}`);
 
   step('Streak off');
   await bob.getByRole('button', { name: /^Hot streak: \d+ days?$/ }).click();

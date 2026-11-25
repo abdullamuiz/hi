@@ -258,12 +258,22 @@ This is enforced in `firestore.rules`, not just in the UI, and covered by `tests
 
 ### Contacts, chats and invites
 
-- Every chat is a room of exactly two people. You can have as many as you like: the **Chats** screen lists them (newest first, with the other person's mood face, a preview and an unread dot). Opening the app goes back to the chat you last had open, or straight in when you only have one. The back arrow (or the phone's back gesture) returns to the list.
+- Every chat is a room of exactly two people (apart from your **Notes to self**, below). You can have as many as you like: the **Chats** screen lists them (newest first, with the other person's mood face, a preview and an unread dot). Opening the app goes back to the chat you last had open, or straight in when you only have one. The back arrow (or the phone's back gesture) returns to the list.
 - **Add contact** makes a new chat with a secret **invite link** (`?join=<room>&code=<22 random characters>`). Share it any way you like. Whoever opens it first, signs in and taps **Join** becomes the other person. The code is used up in the same write, so the link can't add anyone else. You can make a new link (the old one stops working) or remove an invite nobody has used.
 - You can also add their **e-mail**. **Hi doesn't send any e-mail**: adding it only lets that address (once signed in with it, verified) see the invite in their chat list and tap **Accept**. Send the link too.
 - Strangers can't read a room or its messages. Joining by code is a write-only check in `firestore.rules`: only your own uid can be added, only while the room has one member, and only with the matching code. All of it is covered by `tests/rules/firestore.test.ts`.
 - A link opened before signing in is remembered (for a day) through the sign-in, including Google's redirect. If you already have a chat with the person who sent it, Hi opens that one instead of making a second.
 - You can chat in a new room before anyone joins. The room, your profile and its General tab are created in one atomic write, so a room never exists half set-up.
+
+### Notes to self
+
+- Everyone has a **📝 Notes to self** chat, pinned at the top of **Chats**. It's made automatically the first time you sign in (`rooms/self_<uid>`, in one write with its General tab).
+- **Private:** it's yours only. Nobody can be invited or join, and the rules refuse any invite, share code or second member (`self: true`).
+- **What works:** messages, photos, voice notes, tabs, search, export, the scrapbook, pins and **scheduled messages** (handy as reminders to yourself).
+- **What's hidden:** two-person things, such as the invite banner, typing, ticks and *Read*, mood, streaks, Today's question and memories.
+- **Drops:** the **+** tray offers only the Drops that work alone: Countdown, Time Capsule (a letter to future you, sealed until the date) and Decision Wheel.
+- **Push:** never sent for your own notes.
+- **Converting a waiting chat:** a chat nobody has joined yet can become your Notes to self. On **Chats**, tap **Share** on it, then **📝 Make this my Notes to self**, or use **Invite someone** inside the chat. Its invite link stops working. If your automatic Notes to self is still empty, it's removed, so you keep one. `users/{uid}.selfRoom` points at the one in use.
 
 ### Profiles, notes and safety
 
