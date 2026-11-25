@@ -38,7 +38,10 @@ async function read(roomId: string, cap: number): Promise<RoomHistory> {
     return s.docs.map((d) => ({ id: d.id, tabId: t.id, text: '', ...(d.data({ serverTimestamps: 'estimate' }) as any) }) as Message);
   }));
   const ms = (m: Message) => (m.createdAt ? m.createdAt.toMillis() : 0);
-  const messages = lists.flat().sort((a, b) => ms(b) - ms(a)).slice(0, cap);
+  const all = lists.flat();
+  // With many tabs the per-tab reads add up to more than the cap: cutting them is a truncation too.
+  if (all.length > cap) truncated = true;
+  const messages = all.sort((a, b) => ms(b) - ms(a)).slice(0, cap);
   return { roomId, tabs, messages, names, truncated };
 }
 

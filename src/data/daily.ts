@@ -2,6 +2,7 @@ import { doc, getDoc, serverTimestamp, Timestamp, writeBatch } from 'firebase/fi
 import { expiryFor } from '../lib/disappear';
 import { db } from '../firebase';
 import { dailyQuestionFor, dayKey } from '../drops/logic';
+import { dayKeyIn } from '../lib/streak';
 import { snippetOf } from '../lib/messages';
 import { GENERAL, ttlOf } from './tabs';
 
@@ -9,11 +10,17 @@ import { GENERAL, ttlOf } from './tabs';
 export const dailyId = (day: string) => `daily-${day}`;
 
 /**
+ * Today as "YYYYMMDD" in the room's time zone, so both phones agree on which day's
+ * question it is even when they're in different zones.
+ */
+export const roomDayKey = (now: Date = new Date(), tz?: string) => (tz ? dayKeyIn(now.getTime(), tz).replace(/-/g, '') : dayKey(now));
+
+/**
  * Drops today's question into General if neither of us has yet. Either phone may do
  * it when the chat opens; the fixed id means a second attempt fails harmlessly.
  */
-export async function ensureDailyQuestion(roomId: string, uid: string, now = new Date()): Promise<string | null> {
-  const day = dayKey(now);
+export async function ensureDailyQuestion(roomId: string, uid: string, tz?: string, now = new Date()): Promise<string | null> {
+  const day = roomDayKey(now, tz);
   const id = dailyId(day);
   const dropRef = doc(db, 'rooms', roomId, 'drops', id);
   if ((await getDoc(dropRef)).exists()) return id;

@@ -96,4 +96,3 @@ export function watchUnread(roomId: string, tabId: string, since: Timestamp | nu
   return onSnapshot(q, (s) => cb(s.docs.filter((d) => d.data().uid !== me).length), () => cb(0));
 }
 
-/** Mark a tab read up to now (stored on my member doc, so it syncs across my devices). */

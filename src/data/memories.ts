@@ -25,26 +25,34 @@ function activity(roomId: string, uid: string) {
   const day = dayKeyIn(Date.now(), zoneOf(roomId));
   const key = `${roomId}/${day}/${uid}`;
   if (marked.has(key)) return null;
-  marked.add(key);
-  return { ref: doc(db, 'rooms', roomId, 'days', day), data: { uids: arrayUnion(uid) } };
+  return { key, ref: doc(db, 'rooms', roomId, 'days', day), data: { uids: arrayUnion(uid) } };
+}
+
+/** The write that carried this day's mark went through: don't write it again today. */
+export function activityDone(key: string | null | undefined) {
+  if (key) marked.add(key);
 }
 
 /**
  * Notes that I sent something today (rooms/{id}/days/{YYYY-MM-DD}), in the same batch as
- * the message. That's what streaks and Rewind count. Once a day per chat per phone.
+ * the message. That's what streaks and Rewind count. Once a day per chat per phone:
+ * returns a key to pass to activityDone() once the batch has been committed (a refused
+ * batch, or a retried transaction, must write the mark again).
  */
-export function markActivity(b: WriteBatch, roomId: string, uid: string) {
+export function markActivity(b: WriteBatch, roomId: string, uid: string): string | null {
   const a = activity(roomId, uid);
   if (a) b.set(a.ref, a.data, { merge: true });
+  return a?.key ?? null;
 }
-export function markActivityTx(tx: Transaction, roomId: string, uid: string) {
+export function markActivityTx(tx: Transaction, roomId: string, uid: string): string | null {
   const a = activity(roomId, uid);
   if (a) tx.set(a.ref, a.data, { merge: true });
+  return a?.key ?? null;
 }
 
 /** Activity days from `sinceKey` on (live). */
 export function watchDays(roomId: string, sinceKey: string, cb: (d: DayMap) => void, onError?: (e: Error) => void) {
-  const q = query(collection(db, 'rooms', roomId, 'days'), where(documentId(), '>=', sinceKey), orderBy(documentId()), limit(1200));
+  const q = query(collection(db, 'rooms', roomId, 'days'), where(documentId(), '>=', sinceKey), orderBy(documentId()), limit(3700));
   return onSnapshot(q, (s) => {
     const out: DayMap = {};
     s.docs.forEach((d) => { const u = d.data().uids; out[d.id] = Array.isArray(u) ? u : []; });
