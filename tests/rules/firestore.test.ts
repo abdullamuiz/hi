@@ -9,6 +9,7 @@ import {
 import {
   arrayRemove,
   arrayUnion,
+  increment,
   collection,
   deleteDoc,
   deleteField,
@@ -155,6 +156,45 @@ describe('messages', () => {
     const base = { uid: 'alice', kind: 'photo', text: '', createdAt: serverTimestamp() };
     await assertSucceeds(setDoc(doc(msgs(alice()), 'p1'), { ...base, photo: { path: `rooms/${ROOM}/photos/alice/abc.jpg`, width: 10, height: 10 } }));
     await assertFails(setDoc(doc(msgs(alice()), 'p2'), { ...base, photo: { path: `rooms/${ROOM}/photos/bob/abc.jpg`, width: 10, height: 10 } }));
+  });
+
+  it('a photo may carry a thumbnail next to it in the sender\'s folder', async () => {
+    await seedRoom();
+    const base = { uid: 'alice', kind: 'photo', text: '', createdAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(msgs(alice()), 't1'), { ...base, photo: { path: `rooms/${ROOM}/photos/alice/t1.jpg`, thumbPath: `rooms/${ROOM}/photos/alice/t1_t.jpg`, width: 10, height: 10 } }));
+    await assertFails(setDoc(doc(msgs(alice()), 't2'), { ...base, photo: { path: `rooms/${ROOM}/photos/alice/t2.jpg`, thumbPath: `rooms/${ROOM}/photos/bob/t2_t.jpg`, width: 10, height: 10 } }));
+  });
+
+  it('a view-once photo lives under once/{me}/{tab}/{id}.jpg, without caption or thumbnail', async () => {
+    await seedRoom();
+    const base = { uid: 'alice', kind: 'photo', text: '', createdAt: serverTimestamp() };
+    const once = (id: string) => ({ path: `rooms/${ROOM}/once/alice/general/${id}.jpg`, width: 10, height: 10 });
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'o1'), { ...base, viewLimit: 1, photo: once('o1') }));
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'o2'), { ...base, viewLimit: 2, photo: once('o2') }));
+    await assertFails(setDoc(doc(msgs(alice()), 'o3'), { ...base, viewLimit: 3, photo: once('o3') }));
+    await assertFails(setDoc(doc(msgs(alice()), 'o4'), { ...base, viewLimit: 1, photo: once('other') }));
+    await assertFails(setDoc(doc(msgs(alice()), 'o5'), { ...base, text: 'caption', viewLimit: 1, photo: once('o5') }));
+    await assertFails(setDoc(doc(msgs(alice()), 'o6'), { ...base, viewLimit: 1, photo: { ...once('o6'), thumbPath: `rooms/${ROOM}/photos/alice/o6_t.jpg` } }));
+    await assertFails(setDoc(doc(msgs(alice()), 'o7'), { ...base, photo: once('o7') }));
+    await assertFails(setDoc(doc(msgs(alice()), 'o8'), { ...base, viewLimit: 1, viewCount: 0, photo: once('o8') }));
+  });
+
+  it('views: only the recipient, one at a time, up to the limit; the limit never changes', async () => {
+    await seedRoom();
+    const base = { uid: 'alice', kind: 'photo', text: '', createdAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'v1'), { ...base, viewLimit: 2, photo: { path: `rooms/${ROOM}/once/alice/general/v1.jpg`, width: 1, height: 1 } }));
+    const r = (db: Firestore) => doc(msgs(db), 'v1');
+    await assertFails(updateDoc(r(alice()), { viewCount: 1 }));          // the sender can't
+    await assertFails(updateDoc(r(eve()), { viewCount: 1 }));            // outsiders can't
+    await assertFails(updateDoc(r(bob()), { viewCount: 2 }));            // not two at once
+    await assertFails(updateDoc(r(bob()), { viewLimit: 9 }));            // the limit is fixed
+    await assertFails(updateDoc(r(bob()), { viewCount: 1, text: 'x' })); // nothing else
+    await assertSucceeds(updateDoc(r(bob()), { viewCount: increment(1) }));
+    await assertSucceeds(updateDoc(r(bob()), { viewCount: increment(1) }));
+    await assertFails(updateDoc(r(bob()), { viewCount: increment(1) })); // used up
+    // A normal photo has no views to count.
+    await assertSucceeds(setDoc(doc(msgs(alice()), 'n1'), { ...base, photo: { path: `rooms/${ROOM}/photos/alice/n1.jpg`, width: 1, height: 1 } }));
+    await assertFails(updateDoc(doc(msgs(bob()), 'n1'), { viewCount: 1 }));
   });
 
   it('a link message starts pending', async () => {

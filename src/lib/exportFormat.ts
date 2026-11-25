@@ -31,7 +31,7 @@ export function lineText(m: Message, file?: string): string {
   switch (m.kind) {
     case 'text': return m.text;
     case 'link': return [m.text, m.link?.url].filter(Boolean).join(' ');
-    case 'photo': return `[Photo${file ? `: ${file}` : ''}]${m.text ? ` ${m.text}` : ''}`;
+    case 'photo': return m.viewLimit ? '[View-once photo]' : `[Photo${file ? `: ${file}` : ''}]${m.text ? ` ${m.text}` : ''}`;
     case 'voice': return `[Voice note, ${Math.round((m.voice?.durationMs || 0) / 1000)} s${file ? `: ${file}` : ''}]`;
     case 'drop': return '[Drop]';
     default: return '';

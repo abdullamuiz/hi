@@ -1,6 +1,9 @@
 /* Drops Chat service worker: offline app shell + Web Push (FCM).
  * Plain JS on purpose — no build step, no Firebase SDK, no config needed here. */
-const VERSION = 'hi-v4';
+const VERSION = 'hi-v5';
+// Photos and voice notes: cache-first, kept across app updates, capped (oldest out first).
+const MEDIA = 'hi-media-v1';
+const MEDIA_MAX = 250;
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -10,7 +13,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== VERSION && k !== MEDIA).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -45,8 +48,38 @@ self.addEventListener('fetch', (e) => {
       }),
     );
   }
-  // Everything else (Firestore, Storage, Auth) goes straight to the network.
+  // Storage downloads (photos, thumbnails, voice notes): cache-first. View-once photos
+  // (…/once/…) are never cached. The app evicts entries when a photo is deleted.
+  if (isMedia(url)) {
+    e.respondWith(
+      caches.open(MEDIA).then(async (cache) => {
+        const hit = await cache.match(req.url);
+        if (hit) return hit;
+        const res = await fetch(req);
+        if (res.ok || res.type === 'opaque') {
+          await cache.put(req.url, res.clone());
+          trimMedia(cache);
+        }
+        return res;
+      }).catch(() => fetch(req)),
+    );
+  }
+  // Everything else (Firestore, Auth) goes straight to the network.
 });
+
+function isMedia(url) {
+  const storageHost = url.hostname === 'firebasestorage.googleapis.com' || (/\/v0\/b\//.test(url.pathname) && url.port === '9199');
+  if (!storageHost || url.searchParams.get('alt') !== 'media') return false;
+  return !/%2Fonce%2F|\/once\//i.test(url.pathname);
+}
+
+async function trimMedia(cache) {
+  try {
+    const keys = await cache.keys();
+    const extra = keys.length - MEDIA_MAX;
+    for (let i = 0; i < extra; i++) await cache.delete(keys[i]);
+  } catch { /* ignore */ }
+}
 
 // FCM delivers {data:{title, body, url, tag}} (sent by functions/src/notify.ts).
 self.addEventListener('push', (e) => {

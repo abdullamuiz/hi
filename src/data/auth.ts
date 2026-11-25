@@ -2,7 +2,9 @@ import {
   GoogleAuthProvider, isSignInWithEmailLink, sendSignInLinkToEmail, signInWithEmailLink,
   signInWithPopup, signInWithRedirect, signOut as fbSignOut,
 } from 'firebase/auth';
-import { auth } from '../firebase';
+import { clearIndexedDbPersistence, terminate } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { clearMediaCache } from '../lib/mediaCache';
 import { isStandalone } from './push';
 
 const EMAIL_KEY = 'drops.emailForSignIn';
@@ -44,4 +46,20 @@ export async function finishEmailLink(email: string, link: string) {
   if (location.search.includes('oobCode')) history.replaceState(null, '', location.pathname);
 }
 
-export const signOut = () => fbSignOut(auth);
+/**
+ * Sign out and wipe what this account left on the device: the offline copy of the chats
+ * (Firestore's IndexedDB cache) and cached photos. The page reloads so the app starts clean.
+ */
+export async function signOut() {
+  await fbSignOut(auth);
+  await clearLocalData();
+  location.reload();
+}
+
+export async function clearLocalData() {
+  await clearMediaCache();
+  try {
+    await terminate(db);
+    await clearIndexedDbPersistence(db);
+  } catch { /* no persistence (private mode) or already cleared */ }
+}

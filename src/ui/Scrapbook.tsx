@@ -327,10 +327,11 @@ function Scrap(p: ScrapProps) {
 }
 
 function ScrapPhoto({ path, caption }: { path: string; caption: string }) {
-  const url = usePhoto(path);
+  // The ~480px thumbnail next to the photo; older photos have none, so fall back.
+  const { url, broken } = usePhoto(path.replace(/\.jpg$/, '_t.jpg'), path);
   return (
     <div class="scrap-photo">
-      {url ? <img src={url} alt={caption || 'Pinned photo'} loading="lazy" decoding="async" draggable={false} /> : <span class="uploading">Loading…</span>}
+      {url ? <img src={url} alt={caption || 'Pinned photo'} loading="lazy" decoding="async" draggable={false} onError={broken} /> : <span class="uploading">Loading…</span>}
       {caption && <div class="scrap-photo-cap">{caption}</div>}
     </div>
   );

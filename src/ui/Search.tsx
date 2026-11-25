@@ -99,7 +99,7 @@ export function SearchSheet({ me, scope, global = false, initialFilter = 'all', 
             <div role="listitem" key={it.msg.id}>
               <button type="button" class="photo-cell" onClick={() => open(it)}
                 aria-label={`Photo from ${dayLabel(ms(it.msg))}${it.msg.text ? `: ${it.msg.text}` : ''}${global ? ` with ${it.roomName}` : ''}`}>
-                <Thumb path={it.msg.photo?.path} />
+                <Thumb path={it.msg.photo?.thumbPath || it.msg.photo?.path} />
               </button>
             </div>
           ))}

@@ -26,6 +26,7 @@ export interface MsgLike {
   link?: { url?: string; domain?: string };
   dropType?: string;
   effect?: string;
+  viewLimit?: number;
 }
 
 /** Effect names for the push text (keep in step with src/lib/effects.ts). */
@@ -43,7 +44,9 @@ export function notificationBody(m: MsgLike): string {
   switch (m.kind) {
     case 'text': return fx + (cut(text) || 'New message');
     case 'link': return cut(text ? `${text} · ${m.link?.domain || 'link'}` : `Shared a link from ${m.link?.domain || 'the web'}`);
-    case 'photo': return cut(text ? `Photo: ${text}` : 'Sent a photo');
+    case 'photo':
+      if (m.viewLimit) return m.viewLimit === 2 ? '📷 View-twice photo' : '📷 View-once photo';
+      return cut(text ? `Photo: ${text}` : 'Sent a photo');
     case 'voice': return '🎤 Voice note';
     case 'drop': return `Dropped ${DROP_TITLES[m.dropType || ''] || 'a Drop'} — your move`;
     default: return 'New message';

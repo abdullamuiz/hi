@@ -347,12 +347,20 @@ try {
     return c.toDataURL('image/png').split(',')[1];
   });
   await alice.getByRole('textbox', { name: 'Message' }).fill('Cinema snacks were elite');
-  await alice.locator('input[type=file]').setInputFiles({ name: 'snacks.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  const sendPicked = async (page, name, b64, limit = 'Normal') => {
+    await page.locator('input[type=file][accept="image/*"]').setInputFiles({ name, mimeType: 'image/png', buffer: Buffer.from(b64, 'base64') });
+    const d = page.getByRole('dialog', { name: 'Send photo' });
+    await d.waitFor();
+    if (limit !== 'Normal') { await d.getByRole('radio', { name: limit }).click(); await shot(page, 'photo-send-once'); }
+    await d.getByRole('button', { name: 'Send photo' }).click();
+    await d.waitFor({ state: 'detached' });
+  };
+  await sendPicked(alice, 'snacks.png', png);
   await bob.getByText('Cinema snacks were elite').waitFor();
   const img = bob.locator('.photo-btn img').first();
   await img.waitFor();
-  const natural = await img.evaluate((el) => new Promise((r) => (el.complete ? r([el.naturalWidth, el.naturalHeight]) : el.addEventListener('load', () => r([el.naturalWidth, el.naturalHeight])))));
-  assert.deepEqual(natural, [1600, 1067], 'photo should be scaled to 1600px');
+  const naturalOf = (loc) => loc.evaluate((el) => new Promise((r) => (el.complete && el.naturalWidth ? r([el.naturalWidth, el.naturalHeight]) : el.addEventListener('load', () => r([el.naturalWidth, el.naturalHeight])))));
+  assert.deepEqual(await naturalOf(img), [480, 320], 'the bubble shows the 480px thumbnail');
 
   step('Photo viewer: double-tap zoom, swipe to the next photo, swipe down to close, back gesture');
   const png2 = await alice.evaluate(async () => {
@@ -360,7 +368,7 @@ try {
     const g = c.getContext('2d'); g.fillStyle = '#2F5BEA'; g.fillRect(0, 0, 900, 1200); g.fillStyle = '#FFFFFF'; g.font = 'bold 160px sans-serif'; g.fillText('Hi', 300, 650);
     return c.toDataURL('image/png').split(',')[1];
   });
-  await alice.locator('input[type=file][accept="image/*"]').setInputFiles({ name: 'hi.png', mimeType: 'image/png', buffer: Buffer.from(png2, 'base64') });
+  await sendPicked(alice, 'hi.png', png2);
   await bob.locator('.photo-btn img').nth(1).waitFor();
   await bob.locator('.photo-btn').first().click();
   const viewer = bob.getByRole('dialog', { name: /Photo from/ });
@@ -368,6 +376,7 @@ try {
   await viewer.getByText('1 of 2').waitFor();
   const stage = viewer.locator('.viewer-img');
   await stage.locator('img').waitFor();
+  assert.deepEqual(await naturalOf(stage.locator('img')), [1600, 1067], 'the viewer shows the full photo, scaled to 1600px');
   const sbox = await stage.boundingBox();
   const cx = sbox.x + sbox.width / 2;
   const cy = sbox.y + sbox.height / 2;
@@ -398,6 +407,74 @@ try {
   await bob.waitForTimeout(300);
   await bob.getByRole('textbox', { name: 'Message' }).waitFor();
   await bob.getByRole('button', { name: 'Back to chats' }).waitFor();
+
+  step('Photos reopen from the device: no Storage lookups after a reload; delete for me forgets them');
+  {
+    const urls = () => bob.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('hi.media.urls') || '{}')));
+    assert.ok((await urls()).some((p) => p.endsWith('_t.jpg')), 'thumbnail address remembered');
+    const lookups = [];
+    const onReq = (r) => { const u = r.url(); if (u.includes(':9199/v0/b/') && !u.includes('alt=media')) lookups.push(u); };
+    bob.on('request', onReq);
+    await bob.reload();
+    await bob.getByText('Cinema snacks were elite').waitFor();
+    await bob.locator('.photo-btn img').first().waitFor();
+    await naturalOf(bob.locator('.photo-btn img').first());
+    bob.off('request', onReq);
+    assert.equal(lookups.length, 0, `no Storage address lookups on reopen (saw ${lookups.length})`);
+    // Delete for me: the photo's cached address goes too.
+    const before = await urls();
+    await alice.getByRole('textbox', { name: 'Message' }).fill('throwaway pic');
+    await sendPicked(alice, 'tmp.png', png2);
+    await bob.getByText('throwaway pic').waitFor();
+    await msgWith(bob, 'throwaway pic').locator('.photo-btn img').waitFor();
+    await bob.waitForFunction((n) => Object.keys(JSON.parse(localStorage.getItem('hi.media.urls') || '{}')).length > n, before.length);
+    const added = (await urls()).filter((p) => !before.includes(p));
+    assert.ok(added.length >= 1, 'the new photo was cached');
+    await actionsOn(bob, 'throwaway pic');
+    await bob.getByRole('button', { name: 'Delete', exact: true }).click();
+    await bob.getByRole('button', { name: 'Delete for me' }).click();
+    await bob.waitForFunction((gone) => { const k = Object.keys(JSON.parse(localStorage.getItem('hi.media.urls') || '{}')); return gone.every((p) => !k.includes(p)); }, added);
+  }
+
+  step('View-once and view-twice photos: the recipient opens them, then they are gone');
+  {
+    const onceRow = (page, i) => page.locator('.once-bubble').nth(i);
+    await sendPicked(alice, 'secret.png', png2, '① View once');
+    await alice.getByRole('button', { name: /View-once photo · Delivered/ }).waitFor();
+    const bOnce = bob.getByRole('button', { name: /View-once photo · Tap to view \(once\)/ });
+    await bOnce.waitFor();
+    await bob.getByRole('button', { name: 'Undo' }).waitFor({ state: 'detached', timeout: 10_000 });
+    await bob.evaluate(() => { const f = document.querySelector('.feed'); f.scrollTop = f.scrollHeight; });
+    await shot(bob, 'once-bubble');
+    await bOnce.click();
+    const ov = bob.getByRole('dialog', { name: /View-once photo from/ });
+    await ov.locator('img.once-img').waitFor();
+    await ov.getByText('View once — can’t be saved. Screenshots can’t be blocked.').waitFor();
+    assert.equal(await ov.getByRole('button', { name: /Save|Pin/ }).count(), 0, 'no save or pin');
+    await shot(bob, 'once-viewer');
+    await ov.getByRole('button', { name: 'Close photo' }).click();
+    await ov.waitFor({ state: 'detached' });
+    await bob.getByRole('button', { name: /View-once photo · Opened/ }).waitFor();
+    await alice.getByRole('button', { name: /View-once photo · Opened/ }).waitFor();
+    assert.equal(await onceRow(bob, 0).isDisabled(), true, 'used up');
+    // The server removes the file once it's used up: the message keeps no photo path.
+    assert.equal(await bob.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('hi.media.urls') || '{}')).some((p) => p.includes('/once/'))), false, 'view-once never cached');
+
+    await sendPicked(alice, 'twice.png', png2, '② View twice');
+    const bTwice = bob.getByRole('button', { name: /View-twice photo · Tap to view \(twice\)/ });
+    await bTwice.click();
+    let tv = bob.getByRole('dialog', { name: /View-twice photo from/ });
+    await tv.locator('img.once-img').waitFor();
+    await bob.keyboard.press('Escape');
+    await tv.waitFor({ state: 'detached' });
+    await bob.getByRole('button', { name: /View-twice photo · Tap to view \(once\)/ }).click();
+    tv = bob.getByRole('dialog', { name: /View-twice photo from/ });
+    await tv.locator('img.once-img').waitFor();
+    await bob.evaluate(() => history.back());
+    await tv.waitFor({ state: 'detached' });
+    await bob.getByRole('button', { name: /View-twice photo · Opened/ }).waitFor();
+    await alice.getByRole('button', { name: /View-twice photo · Opened/ }).waitFor();
+  }
 
   step('Voice note: hold to record, partner plays it and reacts at a moment');
   const mic = alice.getByRole('button', { name: 'Record a voice note' });
@@ -1685,6 +1762,20 @@ try {
   await shot(eve, 'delete-account');
   await eve.getByRole('button', { name: 'Delete my account forever' }).click();
   await eve.getByRole('button', { name: /Use e-mail instead/ }).waitFor({ timeout: 20000 });
+  // Signing out wiped the offline copy of the chats on this device.
+  const cachedDocs = await eve.evaluate(async () => {
+    const dbs = (await indexedDB.databases()).filter((d) => d.name && d.name.includes('firestore'));
+    let n = 0;
+    for (const d of dbs) {
+      const idb = await new Promise((res, rej) => { const r = indexedDB.open(d.name); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      for (const store of [...idb.objectStoreNames].filter((x) => x.startsWith('remoteDocuments'))) {
+        n += await new Promise((res) => { const t = idb.transaction(store).objectStore(store).count(); t.onsuccess = () => res(t.result); t.onerror = () => res(0); });
+      }
+      idb.close();
+    }
+    return n;
+  });
+  assert.equal(cachedDocs, 0, 'no cached chat documents after signing out');
   console.log('\nE2E PASSED — screenshots in', SHOTS);
 } catch (e) {
   console.error('\nE2E FAILED:', e);

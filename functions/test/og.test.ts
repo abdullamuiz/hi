@@ -72,6 +72,8 @@ describe('fetchPreview', () => {
 describe('notificationBody', () => {
   it('never leaks drop answers and summarises each kind', () => {
     expect(notificationBody({ kind: 'text', text: 'hello' })).toBe('hello');
+    expect(notificationBody({ kind: 'photo', text: 'secret caption', viewLimit: 1 })).toBe('📷 View-once photo');
+    expect(notificationBody({ kind: 'photo', viewLimit: 2 })).toBe('📷 View-twice photo');
     expect(notificationBody({ kind: 'voice', text: '' })).toBe('🎤 Voice note');
     expect(notificationBody({ kind: 'photo', text: '' })).toBe('Sent a photo');
     expect(notificationBody({ kind: 'drop', dropType: 'blind-reveal' })).toBe('Dropped a Blind Reveal — your move');

@@ -507,15 +507,30 @@ service cloud.firestore {
               && str(incoming().link.url, 8, 2048)
               && incoming().link.url.matches('^https?://.+');
           }
+          // Photo: a normal photo (with an optional small thumbnail beside it), or a
+          // view-once / view-twice photo kept under once/{me}/{tabId}/{msgId}.jpg so Storage
+          // rules can find this message and count the views.
           function validPhoto() {
+            let limit = incoming().get('viewLimit', 0);
             return incoming().kind == 'photo'
               && str(incoming().text, 0, 1000)
-              && onlyKeys(['uid', 'kind', 'text', 'photo', 'replyTo', 'expiresAt', 'createdAt'])
+              && onlyKeys(['uid', 'kind', 'text', 'photo', 'replyTo', 'expiresAt', 'createdAt', 'viewLimit'])
               && incoming().photo is map
-              && incoming().photo.keys().hasOnly(['path', 'width', 'height'])
+              && incoming().photo.keys().hasOnly(['path', 'width', 'height', 'thumbPath'])
               && incoming().photo.path is string
-              && incoming().photo.path.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}[.]jpg$')
-              && incoming().photo.width is int && incoming().photo.height is int;
+              && incoming().photo.width is int && incoming().photo.height is int
+              && (
+                (limit == 0
+                  && incoming().photo.path.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}[.]jpg$')
+                  && (incoming().photo.get('thumbPath', null) == null
+                      || (incoming().photo.thumbPath is string
+                          && incoming().photo.thumbPath.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}_t[.]jpg$'))))
+                ||
+                ((limit == 1 || limit == 2)
+                  && incoming().text == ''
+                  && !incoming().photo.keys().hasAny(['thumbPath'])
+                  && incoming().photo.path == 'rooms/' + roomId + '/once/' + me() + '/' + tabId + '/' + msgId + '.jpg')
+              );
           }
           // Voice note: the audio file is mine, in this room; a short waveform for the bubble.
           function validVoice() {
@@ -580,6 +595,16 @@ service cloud.firestore {
               && incoming().editedAt == request.time
               && request.time < resource.data.createdAt + duration.value(15, 'm');
           }
+          // View-once / view-twice: the recipient (never the sender) counts one view at a
+          // time, up to the limit. Nothing else changes.
+          function isView() {
+            return alive() && !mine()
+              && resource.data.kind == 'photo'
+              && resource.data.get('viewLimit', 0) > 0
+              && changedKeys().hasOnly(['viewCount'])
+              && incoming().viewCount == resource.data.get('viewCount', 0) + 1
+              && incoming().viewCount <= resource.data.viewLimit;
+          }
           // Delete for me: add or remove ONLY my own uid in hiddenFor.
           function isHide() {
             let before = resource.data.get('hiddenFor', []);
@@ -591,10 +616,10 @@ service cloud.firestore {
           // Delete for everyone: the sender only; content cleared, deleted = true.
           function isDeleteForEveryone() {
             return mine() && alive()
-              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt', 'effect'])
+              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt', 'effect', 'viewLimit', 'viewCount'])
               && incoming().deleted == true
               && incoming().text == ''
-              && !incoming().keys().hasAny(['link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt', 'effect']);
+              && !incoming().keys().hasAny(['link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt', 'effect', 'viewLimit', 'viewCount']);
           }
           // Quick reactions: { code: [uid] }. Only my own uid may appear or disappear.
           function rxSame(k) {
@@ -706,7 +731,7 @@ service cloud.firestore {
           }
 
           allow update: if isMember(roomId)
-            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase() || isPlayed() || isVoiceReact() || isThreadBump());
+            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase() || isPlayed() || isVoiceReact() || isThreadBump() || isView());
           allow delete: if false;
 
           // A side discussion under one message (thread tiles). Text only, plus quick

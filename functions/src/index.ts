@@ -11,7 +11,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { fetchPreview } from './og.js';
 import { notificationBody, openUrl, threadBody } from './notify.js';
-import { filesOfRemoved, filesToDelete } from './cleanup.js';
+import { exhaustedOnce, filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
 import { sendInvitePushes } from './invites.js';
 import { dayKeyIn, due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
@@ -247,13 +247,26 @@ export const deleteRoomData = onDocumentDeleted({ document: 'rooms/{roomId}', ti
   logger.info('deleted data of removed chat', { roomId: event.params.roomId });
 });
 
-/** "Delete for everyone": removes the message's photo from Storage too. */
+/**
+ * "Delete for everyone": removes the message's photo from Storage too.
+ * A view-once / view-twice photo that has just been used up: its file goes, and the
+ * message keeps only "Opened".
+ */
 export const deleteMessageFiles = onDocumentUpdated(MESSAGE, async (event) => {
-  const paths = filesToDelete(event.data?.before.data(), event.data?.after.data(), event.params.roomId);
-  if (!paths.length) return;
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
   const bucket = getStorage().bucket();
-  await Promise.all(paths.map((p) => bucket.file(p).delete({ ignoreNotFound: true })));
-  logger.info('deleted message files', { roomId: event.params.roomId, count: paths.length });
+  const paths = filesToDelete(before, after, event.params.roomId);
+  if (paths.length) {
+    await Promise.all(paths.map((p) => bucket.file(p).delete({ ignoreNotFound: true })));
+    logger.info('deleted message files', { roomId: event.params.roomId, count: paths.length });
+  }
+  const once = exhaustedOnce(before, after, event.params.roomId);
+  if (once) {
+    await bucket.file(once).delete({ ignoreNotFound: true });
+    await event.data!.after.ref.update({ 'photo.path': FieldValue.delete() });
+    logger.info('view-once photo used up', { roomId: event.params.roomId });
+  }
 });
 
 /**
