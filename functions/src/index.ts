@@ -12,7 +12,7 @@ import { fetchPreview } from './og.js';
 import { notificationBody, openUrl, threadBody } from './notify.js';
 import { filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
-import { due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
+import { dayKeyIn, due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
 
 initializeApp();
 // Small, capped instances keep a two-person app comfortably inside the free tier.
@@ -147,6 +147,7 @@ export const minuteJob = onSchedule({ schedule: 'every 1 minutes', timeoutSecond
         const cur = await tx.get(d.ref);
         if (!cur.exists) return;
         const tab = await tx.get(roomRef.collection('tabs').doc(s.tabId));
+        const room = await tx.get(roomRef);
         const { message, preview } = scheduledToMessage(cur.data() as any);
         const at = FieldValue.serverTimestamp();
         const exp = expiryMs(tab.data(), Date.now());
@@ -156,6 +157,8 @@ export const minuteJob = onSchedule({ schedule: 'every 1 minutes', timeoutSecond
         });
         tx.update(roomRef.collection('tabs').doc(s.tabId), { lastMessageAt: at });
         tx.update(roomRef, { lastMessage: { id: d.id, uid: s.senderId, tabId: s.tabId, text: preview, at } });
+        // The sender was active today (streaks and Rewind count rooms/{id}/days).
+        tx.set(roomRef.collection('days').doc(dayKeyIn(Date.now(), room.data()?.timezone)), { uids: FieldValue.arrayUnion(s.senderId) }, { merge: true });
       });
     } catch (e) {
       logger.warn('scheduled delivery failed', { id: d.id, error: String(e) });
