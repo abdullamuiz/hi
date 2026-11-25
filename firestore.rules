@@ -182,6 +182,19 @@ service cloud.firestore {
           );
       }
 
+      function validTopPin(p) {
+        return p is map
+          && p.keys().hasOnly(['msgId', 'tabId', 'uid', 'by', 'text', 'at'])
+          && str(p.msgId, 1, 64) && str(p.tabId, 1, 40) && str(p.uid, 1, 128) && str(p.by, 1, 128)
+          && str(p.text, 0, 160) && p.at is timestamp;
+      }
+      function validTopPins(l) {
+        return l is list && l.size() <= 3
+          && (l.size() < 1 || validTopPin(l[0]))
+          && (l.size() < 2 || validTopPin(l[1]))
+          && (l.size() < 3 || validTopPin(l[2]));
+      }
+
       // Nobody can join a chat someone has left, or the chat of someone who blocked them.
       function joinable() {
         return resource.data.get('left', null) == null
@@ -196,6 +209,14 @@ service cloud.firestore {
           changedKeys().hasOnly(['lastMessage'])
           && me() in resource.data.members
           && validLastMessage()
+        )
+        ||
+        // Pin messages to the top of the chat (max 3), or take them down.
+        (
+          changedKeys().hasOnly(['pinned'])
+          && me() in resource.data.members
+          && resource.data.get('left', null) == null
+          && validTopPins(incoming().pinned)
         )
         ||
         // The invited partner joins with their verified e-mail. Afterwards the room
@@ -682,19 +703,47 @@ service cloud.firestore {
       }
 
       // -------------------------------------------------------- scrapbook
+      // A scrap: a pinned Drop, message or photo, or a note written right here. Either of
+      // you can move scraps around the board (order) and edit or remove notes.
       match /pins/{pinId} {
+        function validScrapExtras() {
+          return incoming().get('kind', 'drop') in ['drop', 'message', 'photo', 'note']
+            && incoming().get('order', 0) is number
+            && (incoming().get('colour', null) == null || str(incoming().colour, 1, 20))
+            && (incoming().get('photoPath', null) == null
+                || (incoming().photoPath is string
+                    && incoming().photoPath.matches('^rooms/' + roomId + '/photos/[A-Za-z0-9_-]{1,128}/[A-Za-z0-9_.-]{1,80}$')))
+            && (incoming().get('senderId', null) == null || str(incoming().senderId, 1, 128));
+        }
         allow read: if isMember(roomId);
         allow create: if isMember(roomId)
-          && onlyKeys(['by', 'title', 'detail', 'dropId', 'messageId', 'tabId', 'createdAt'])
+          && onlyKeys(['by', 'title', 'detail', 'dropId', 'messageId', 'tabId', 'createdAt', 'kind', 'order', 'colour', 'photoPath', 'senderId'])
           && (incoming().get('tabId', null) == null || incoming().tabId is string)
           && incoming().by == me()
           && str(incoming().title, 1, 120)
           && str(incoming().detail, 0, 3000)
           && (incoming().dropId == null || incoming().dropId is string)
           && (incoming().messageId == null || incoming().messageId is string)
+          && validScrapExtras()
+          // A note has its own text and no link to a message or Drop.
+          && (incoming().get('kind', '') != 'note'
+              || (str(incoming().detail, 1, 1000) && incoming().dropId == null && incoming().messageId == null))
           && incoming().createdAt == request.time;
-        allow delete: if isMember(roomId) && resource.data.by == me();
-        allow update: if false;
+        allow update: if isMember(roomId) && (
+          // Move it on the board.
+          (changedKeys().hasOnly(['order']) && incoming().order is number)
+          ||
+          // Edit a note (either of you), maybe moving it too.
+          (resource.data.get('kind', '') == 'note'
+            && changedKeys().hasOnly(['detail', 'colour', 'editedBy', 'editedAt', 'order'])
+            && str(incoming().detail, 1, 1000)
+            && str(incoming().get('colour', '#FFE9A8'), 1, 20)
+            && incoming().get('order', 0) is number
+            && incoming().editedBy == me()
+            && incoming().editedAt == request.time)
+        );
+        // Your own pins; notes belong to both of you.
+        allow delete: if isMember(roomId) && (resource.data.by == me() || resource.data.get('kind', '') == 'note');
       }
 
       // -------------------------------------------------------- drops

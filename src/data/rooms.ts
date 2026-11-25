@@ -20,6 +20,7 @@ function toRoom(id: string, d: any): Room {
     lastMessage: d.lastMessage && typeof d.lastMessage === 'object' ? d.lastMessage : null,
     left: typeof d.left === 'string' ? d.left : null,
     streak: d.streak && typeof d.streak === 'object' && (d.streak.state === 'proposed' || d.streak.state === 'on') ? d.streak : null,
+    pinned: Array.isArray(d.pinned) ? d.pinned.filter((p: any) => p && typeof p.msgId === 'string').slice(0, 3) : [],
   };
 }
 

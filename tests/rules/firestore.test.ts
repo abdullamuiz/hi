@@ -1081,3 +1081,58 @@ describe('sessions (Phase 9)', () => {
     await assertFails(setDoc(prog(eve(), 'eve'), progress('eve', false)));
   });
 });
+
+describe('scrapbook: notes, board order and pinned messages', () => {
+  const pin = (db: Firestore, id: string) => doc(db, 'rooms', ROOM, 'pins', id);
+  const note = (by: string, extra: Record<string, unknown> = {}) => ({
+    by, title: 'Note', detail: 'Bring the camera', dropId: null, messageId: null, tabId: null,
+    kind: 'note', order: 100, colour: '#FFE9A8', createdAt: serverTimestamp(), ...extra,
+  });
+
+  it('either member writes, edits and removes notes; others are refused', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(pin(alice(), 'n1'), note('alice')));
+    await assertFails(setDoc(pin(eve(), 'n2'), note('eve')));
+    await assertFails(setDoc(pin(alice(), 'n3'), note('alice', { detail: '' })));
+    await assertFails(setDoc(pin(alice(), 'n4'), note('alice', { detail: 'x'.repeat(1001) })));
+    await assertFails(setDoc(pin(alice(), 'n5'), note('alice', { messageId: 'm1' })));
+    await assertFails(setDoc(pin(alice(), 'n6'), note('alice', { kind: 'sticker' })));
+    // Bob edits Alice's note.
+    await assertSucceeds(updateDoc(pin(bob(), 'n1'), { detail: 'Bring two cameras', colour: '#CFE6FF', editedBy: 'bob', editedAt: serverTimestamp() }));
+    await assertFails(updateDoc(pin(bob(), 'n1'), { detail: 'x', editedBy: 'alice', editedAt: serverTimestamp() }));
+    await assertFails(updateDoc(pin(bob(), 'n1'), { by: 'bob' }));
+    await assertFails(updateDoc(pin(eve(), 'n1'), { detail: 'mine now', editedBy: 'eve', editedAt: serverTimestamp() }));
+    await assertFails(deleteDoc(pin(eve(), 'n1')));
+    await assertSucceeds(deleteDoc(pin(bob(), 'n1')));
+  });
+
+  it('members can only move other scraps (order), not rewrite them', async () => {
+    await seedRoom();
+    await assertSucceeds(setDoc(pin(alice(), 'p1'), { by: 'alice', title: 'T', detail: 'D', dropId: 'd1', messageId: null, kind: 'drop', order: 5, createdAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(pin(bob(), 'p1'), { order: 7.5 }));
+    await assertFails(updateDoc(pin(bob(), 'p1'), { order: 'top' }));
+    await assertFails(updateDoc(pin(bob(), 'p1'), { detail: 'rewritten' }));
+    await assertFails(updateDoc(pin(eve(), 'p1'), { order: 1 }));
+    // Only the pinner removes a pinned Drop or message.
+    await assertFails(deleteDoc(pin(bob(), 'p1')));
+    await assertSucceeds(deleteDoc(pin(alice(), 'p1')));
+  });
+
+  it('photo scraps must point at this room’s photos', async () => {
+    await seedRoom();
+    const base = { by: 'bob', title: 'Photo from alice', detail: '', dropId: null, messageId: 'm9', tabId: 'general', kind: 'photo', order: 1, senderId: 'alice', createdAt: serverTimestamp() };
+    await assertSucceeds(setDoc(pin(bob(), 'ph1'), { ...base, photoPath: `rooms/${ROOM}/photos/alice/abc123.jpg` }));
+    await assertFails(setDoc(pin(bob(), 'ph2'), { ...base, photoPath: 'rooms/other/photos/alice/abc.jpg' }));
+  });
+
+  it('up to 3 messages pinned to the top, by members only', async () => {
+    await seedRoom();
+    const top = (i: number) => ({ msgId: `m${i}`, tabId: 'general', uid: 'alice', by: 'bob', text: `hello ${i}`, at: new Date() });
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', ROOM), { pinned: [top(1), top(2), top(3)] }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { pinned: [top(1), top(2), top(3), top(4)] }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { pinned: [{ ...top(1), extra: true }] }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { pinned: [top(1)], invites: [] }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { pinned: [top(1)] }));
+    await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM), { pinned: [] }));
+  });
+});
