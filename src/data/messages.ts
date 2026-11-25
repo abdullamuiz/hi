@@ -12,6 +12,7 @@ import { snippetOf } from '../lib/messages';
 import type { LastMessage, Message, PhraseReaction, ReactionCode, ReplyRef, VoiceReaction } from '../types';
 import type { VoiceFormat } from '../lib/voice';
 import { friendlyStorageError } from '../lib/errors';
+import { effectDef, previewFor, type EffectCode } from '../lib/effects';
 
 
 const msgsCol = (roomId: string, tabId: string) => collection(db, 'rooms', roomId, 'tabs', tabId, 'messages');
@@ -46,14 +47,17 @@ function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, da
   b.update(doc(db, 'rooms', roomId), { lastMessage: { id, uid: data.uid, tabId, text: preview.slice(0, 160), at: serverTimestamp() } });
 }
 
-export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null, opts: { urgent?: boolean } = {}) {
+export async function sendText(roomId: string, tabId: string, uid: string, raw: string, replyTo?: ReplyRef | null, opts: { urgent?: boolean; effect?: EffectCode | null } = {}) {
   const text = raw.trim().slice(0, 4000);
   if (!text) return;
-  const link = findLink(text);
+  const fx = effectDef(opts.effect);
+  // A bubble effect (sealed, whisper…) styles the text itself, so it is sent as plain text, without a link card.
+  const link = fx?.kind === 'bubble' ? null : findLink(text);
   const b = writeBatch(db);
   const reply = {
     ...(replyTo ? { replyTo: { msgId: replyTo.msgId, snippet: replyTo.snippet.slice(0, 160), senderId: replyTo.senderId } } : {}),
     ...(opts.urgent ? { urgent: true } : {}),
+    ...(fx ? { effect: fx.code } : {}),
   };
   if (link) {
     const data = {
@@ -65,7 +69,7 @@ export async function sendText(roomId: string, tabId: string, uid: string, raw: 
     };
     addMessage(b, roomId, tabId, newId(roomId, tabId), data, snippetOf(data as any));
   } else {
-    addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, ...reply }, snippetOf({ kind: 'text', text }));
+    addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'text', text, ...reply }, previewFor(snippetOf({ kind: 'text', text }), fx?.code));
   }
   await b.commit();
 }
@@ -164,7 +168,7 @@ export async function editMessage(roomId: string, m: Message, raw: string, last:
   if (!text || text === m.text) return;
   const b = writeBatch(db);
   b.update(msgRef(roomId, m), { text, editedAt: serverTimestamp() });
-  fixPreview(b, roomId, last, m, snippetOf({ kind: 'text', text }));
+  fixPreview(b, roomId, last, m, previewFor(snippetOf({ kind: 'text', text }), m.effect));
   await b.commit();
 }
 
@@ -179,6 +183,7 @@ export async function deleteForEveryone(roomId: string, m: Message, last: LastMe
     deleted: true, text: '',
     link: deleteField(), photo: deleteField(), dropId: deleteField(), replyTo: deleteField(), replyToNote: deleteField(),
     reactions: deleteField(), phraseReactions: deleteField(), editedAt: deleteField(),
+    ...(m.effect ? { effect: deleteField() } : {}),
     ...(m.kind === 'voice' ? { voice: deleteField(), voiceReactions: deleteField(), playedBy: deleteField() } : {}),
   });
   fixPreview(b, roomId, last, m, 'Message deleted');

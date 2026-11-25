@@ -808,3 +808,77 @@ button.phrase-chip { cursor: pointer; }
 .print-msg img { max-width: 45mm; max-height: 45mm; border-radius: 3pt; display: block; margin: 3pt 0; }
 .print-card { font-style: italic; color: #5b6170; }
 .print-rx { font-size: 9pt; }
+
+/* ------------------------------------------------------------------ effects (SPEC §4) */
+#fx-layer { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 60; pointer-events: none; }
+
+/* Composer: suggestion chip and the chosen effect. */
+.fx-suggest { flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 14px; border-top: 1px solid var(--line); background: var(--surface); min-height: 44px; }
+.fx-suggest-btn { flex: 1; text-align: left; border: none; background: transparent; color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; min-height: 44px; padding: 0; cursor: pointer; }
+.fx-suggest.armed { background: color-mix(in srgb, var(--them) 14%, var(--surface)); }
+.fx-armed-label { flex: 1; font-size: 14px; font-weight: 600; }
+
+/* Effects sheet. */
+.fx-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fx-opt { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 10px 12px; min-height: 56px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.fx-opt.on { border-color: var(--them); background: color-mix(in srgb, var(--them) 12%, var(--surface)); }
+.fx-opt-emoji { grid-row: span 2; font-size: 22px; }
+.fx-opt-name { font-weight: 600; font-size: 14px; }
+.fx-opt-desc { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+
+/* Label under a bubble ("🎉 Confetti · replay"). */
+.fx-tag { display: inline-block; margin: 3px 6px 0; font-size: 11.5px; color: var(--muted); background: none; border: none; padding: 0; font-family: inherit; }
+.fx-replay { cursor: pointer; min-height: 28px; text-decoration: underline dotted; text-underline-offset: 3px; }
+.msg.me .fx-tag { align-self: flex-end; }
+
+/* Bubble effects: static looks (also with reduced motion). */
+.bubble.fx-shout { font-size: 22px; font-weight: 700; line-height: 1.2; letter-spacing: .01em; }
+.bubble.fx-echo { text-shadow: 3px 3px 0 color-mix(in srgb, currentColor 22%, transparent), 6px 6px 0 color-mix(in srgb, currentColor 10%, transparent); }
+.fx-envelope { display: flex; align-items: center; gap: 10px; border: none; background: transparent; color: inherit; font: inherit; padding: 2px 0; min-height: 44px; cursor: pointer; text-align: left; }
+.fx-envelope-art { font-size: 30px; line-height: 1; }
+.fx-unsealed { display: inline-block; animation: fx-unseal .45s ease-out; }
+.fx-whisper-btn { display: grid; border: none; background: transparent; color: inherit; font: inherit; padding: 0; min-height: 44px; cursor: pointer; text-align: left; }
+.fx-whisper-btn > * { grid-area: 1 / 1; }
+.fx-whisper-blur { filter: blur(6px); opacity: .7; user-select: none; }
+.fx-whisper-hint { align-self: center; justify-self: center; font-size: 12.5px; font-weight: 600; background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--ink); padding: 3px 10px; border-radius: 99px; }
+.bubble.fx-whisper { font-size: 13.5px; }
+.fx-whisper-text { font-style: italic; }
+.fx-typing { white-space: pre-wrap; }
+.fx-caret { display: inline-block; width: 2px; height: 1em; margin-left: 1px; vertical-align: -2px; background: currentColor; animation: fx-blink .8s steps(1) infinite; }
+
+/* Bubble effects: motion, only when played (class fx-go). */
+.bubble.fx-shout.fx-go { animation: fx-shout .7s cubic-bezier(.2, 1.6, .4, 1) both; }
+.bubble.fx-echo.fx-go { animation: fx-echo 1.2s ease-out both; }
+.bubble.fx-glow.fx-go { animation: fx-glow 2.2s ease-in-out both; }
+.bubble.fx-spotlight.fx-go { position: relative; z-index: 5; animation: fx-spot 2.4s ease-in-out both; }
+.bubble.fx-sealed.fx-go, .bubble.fx-slow.fx-go { animation: fx-pop .35s ease-out both; }
+
+@keyframes fx-shout {
+  0% { transform: scale(.4); }
+  45% { transform: scale(1.15) rotate(-2deg); }
+  60% { transform: scale(1) translateX(-6px) rotate(1deg); }
+  72% { transform: translateX(6px); }
+  84% { transform: translateX(-3px); }
+  100% { transform: none; }
+}
+@keyframes fx-echo {
+  0% { text-shadow: 0 0 0 transparent, 0 0 0 transparent; opacity: .2; }
+  100% { text-shadow: 3px 3px 0 color-mix(in srgb, currentColor 22%, transparent), 6px 6px 0 color-mix(in srgb, currentColor 10%, transparent); opacity: 1; }
+}
+@keyframes fx-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 161, 95, 0); }
+  30%, 70% { box-shadow: 0 0 28px 10px rgba(242, 161, 95, .55); }
+  50% { box-shadow: 0 0 42px 16px rgba(242, 191, 95, .7); }
+}
+@keyframes fx-spot {
+  0% { box-shadow: 0 0 0 100vmax rgba(8, 12, 28, 0); }
+  15%, 80% { box-shadow: 0 0 0 100vmax rgba(8, 12, 28, .55), 0 0 30px 6px rgba(255, 255, 255, .25); }
+  100% { box-shadow: 0 0 0 100vmax rgba(8, 12, 28, 0); }
+}
+@keyframes fx-pop { 0% { transform: scale(.85); } 100% { transform: none; } }
+@keyframes fx-unseal { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: none; } }
+@keyframes fx-blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble.fx-go, .fx-unsealed, .fx-caret { animation: none !important; }
+}

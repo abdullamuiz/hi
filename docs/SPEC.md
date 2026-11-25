@@ -370,7 +370,8 @@ Profile · Quiet hours · Read receipts · Reduce motion override · Notificatio
 3. **Media** ✅ done: photos (compress + viewer with swipe, zoom, save), link previews (function), voice notes with waveform and timestamped reactions. Voice notes are capped at 2 minutes rather than 3.
 4. **Tab features** ✅ done: themes, disappearing tabs (TTL), mood weather, scrapbook, search, export (PDF/ZIP).
    - Disappearing tabs offer 24 hours, 7 days or 90 days (not only 24 h). Search runs on the phone over the latest 2,000 messages per chat (no MiniSearch dependency) and also works across all chats; filters are kind-based (photos, links, voice, Drops). PDF export uses the browser's print engine.
-5. **Effects & timing**: screen and bubble effects, keyword suggestions, scheduled messages ✅, quiet hours ✅ (with Urgent), push notifications ✅. Also done early: message ticks, read-receipts toggle, retry for refused messages, mute for a while.
+5. **Effects & timing** ✅ done: screen and bubble effects, keyword suggestions, scheduled messages ✅, quiet hours ✅ (with Urgent), push notifications ✅. Also done early: message ticks, read-receipts toggle, retry for refused messages, mute for a while.
+   - Effects: all four screen effects and all six bubble effects from §4. Whisper reveals on a tap for 5 seconds (press-and-hold already opens the message menu). Replays come from the small "🎉 Confetti · replay" label under the bubble rather than tapping the bubble itself. Bubble effects send as plain text, so a sealed link shows no preview card. Work tabs (Phase 10) will start with effects off; the check is in place, the per-tab switch comes with work mode.
 6. **Drop framework + first Drops**: registry, hidden-answer flow, Feeling Map, Blind Reveal, Gap Slider, Tag-team Story, `ADDING_A_DROP.md`, *Add from code*.
 7. **Remaining Drops**: 5–15 from the catalogue, thread tiles.
 8. **Streak & memories**: hot streak, milestones, On This Day, Rewind.

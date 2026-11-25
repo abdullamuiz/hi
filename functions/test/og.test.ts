@@ -77,4 +77,11 @@ describe('notificationBody', () => {
     expect(notificationBody({ kind: 'drop', dropType: 'blind-reveal' })).toBe('Dropped a Blind Reveal — your move');
     expect(notificationBody({ kind: 'link', text: '', link: { domain: 'youtube.com' } })).toBe('Shared a link from youtube.com');
   });
+
+  it('keeps sealed and whispered words off the lock screen, and marks screen effects', () => {
+    expect(notificationBody({ kind: 'text', text: 'the secret', effect: 'sealed' })).toBe('✉️ Sent you a sealed message');
+    expect(notificationBody({ kind: 'text', text: 'the secret', effect: 'whisper' })).toBe('🤫 Whispered something');
+    expect(notificationBody({ kind: 'text', text: 'Happy birthday!', effect: 'balloons' })).toBe('🎈 Happy birthday!');
+    expect(notificationBody({ kind: 'text', text: 'LOUD', effect: 'shout' })).toBe('LOUD');
+  });
 });

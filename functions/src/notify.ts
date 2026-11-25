@@ -11,13 +11,23 @@ export interface MsgLike {
   text?: string;
   link?: { url?: string; domain?: string };
   dropType?: string;
+  effect?: string;
 }
+
+/** Effect names for the push text (keep in step with src/lib/effects.ts). */
+const EFFECT_NAMES: Record<string, string> = {
+  confetti: '🎉', balloons: '🎈', fireworks: '🎆', glow: '✨',
+};
 
 export function notificationBody(m: MsgLike): string {
   const text = (m.text || '').replace(/\s+/g, ' ').trim();
   const cut = (s: string) => (s.length > 140 ? s.slice(0, 139) + '…' : s);
+  // Sealed and whispered messages keep their words off the lock screen.
+  if (m.effect === 'sealed') return '✉️ Sent you a sealed message';
+  if (m.effect === 'whisper') return '🤫 Whispered something';
+  const fx = m.effect && EFFECT_NAMES[m.effect] ? `${EFFECT_NAMES[m.effect]} ` : '';
   switch (m.kind) {
-    case 'text': return cut(text) || 'New message';
+    case 'text': return fx + (cut(text) || 'New message');
     case 'link': return cut(text ? `${text} · ${m.link?.domain || 'link'}` : `Shared a link from ${m.link?.domain || 'the web'}`);
     case 'photo': return cut(text ? `Photo: ${text}` : 'Sent a photo');
     case 'voice': return '🎤 Voice note';

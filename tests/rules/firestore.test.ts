@@ -812,3 +812,36 @@ describe('disappearing tabs (Phase 4)', () => {
     await assertSucceeds(b.commit());
   });
 });
+
+describe('effects (Phase 5)', () => {
+  it('a text or link message may carry one effect from the list', async () => {
+    await seedRoom();
+    for (const effect of ['confetti', 'balloons', 'fireworks', 'glow', 'shout', 'whisper', 'slow', 'spotlight', 'sealed', 'echo']) {
+      await assertSucceeds(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'yay', effect, createdAt: serverTimestamp() }));
+    }
+    await assertSucceeds(setDoc(doc(msgs(bob())), {
+      uid: 'bob', kind: 'link', text: '', effect: 'confetti', createdAt: serverTimestamp(),
+      link: { url: 'https://example.com', domain: 'example.com', isVideo: false, title: null, description: null, image: null, siteName: null, status: 'pending' },
+    }));
+  });
+
+  it('unknown effects, odd types and effects on other kinds are refused', async () => {
+    await seedRoom();
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'yay', effect: 'explode', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(alice())), { uid: 'alice', kind: 'text', text: 'yay', effect: ['confetti'], createdAt: serverTimestamp() }));
+    await assertFails(setDoc(doc(msgs(alice())), {
+      uid: 'alice', kind: 'photo', text: '', effect: 'confetti', createdAt: serverTimestamp(),
+      photo: { path: `rooms/${ROOM}/photos/alice/x.jpg`, width: 1, height: 1 },
+    }));
+  });
+
+  it('the effect cannot be changed later, and goes with delete for everyone', async () => {
+    await seedRoom();
+    const ref = doc(msgs(alice()), 'fx1');
+    await assertSucceeds(setDoc(ref, { uid: 'alice', kind: 'text', text: 'sealed note', effect: 'sealed', createdAt: serverTimestamp() }));
+    await assertFails(updateDoc(ref, { effect: 'confetti' }));
+    await assertFails(updateDoc(doc(msgs(bob()), 'fx1'), { effect: deleteField() }));
+    await assertFails(updateDoc(ref, { deleted: true, text: '' }));
+    await assertSucceeds(updateDoc(ref, { deleted: true, text: '', effect: deleteField() }));
+  });
+});

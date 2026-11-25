@@ -36,6 +36,8 @@ import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Schedu
 import { DropCard } from './DropCard';
 import { MicIcon, RecordBar, VoiceBubble, useVoiceRecorder } from './Voice';
 import { LinkCard, PhotoBubble, PhotoViewer } from './Bubbles';
+import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
+import { loadPlayed, motionOn, pickArrival, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
 import { MoodSheet, ScrapSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
 import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
@@ -58,6 +60,7 @@ type Sheet =
   | { kind: 'profile' }
   | { kind: 'delete-account' }
   | { kind: 'send-options' }
+  | { kind: 'effects' }
   | { kind: 'schedule'; id?: string }
   | { kind: 'search'; filter?: SearchFilter }
   | { kind: 'export' };
@@ -121,6 +124,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [editing, setEditing] = useState<Message | null>(null);
   const [selected, setSelected] = useState<Set<string> | null>(null);
   const [highlight, setHighlight] = useState('');
+  // Effects: the one chosen for the next message, a dismissed suggestion, and replay counters.
+  const [fx, setFx] = useState<EffectCode | null>(null);
+  const [fxDismissed, setFxDismissed] = useState<EffectCode | null>(null);
+  const [fxRun, setFxRun] = useState<Record<string, number>>({});
+  const fxPlayed = useRef<Set<string>>(loadPlayed());
   const inputRef = useRef<HTMLInputElement>(null);
   const [theme, setTheme] = useState<ThemePrefs>(currentPrefs);
   const [push, setPush] = useState<PushStatus>('unsupported');
@@ -274,13 +282,14 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   }, [tabReady, activeTab]);
 
   /** The server refused a message: keep it here as "Not sent · Tap to retry". */
-  const keepFailed = (tabId: string, text: string, reply: ReplyRef | null, e: any) => {
-    setFailed((cur) => [...cur, { localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tabId, text, replyTo: reply, at: Date.now(), error: String(e?.message || e) }]);
+  const keepFailed = (tabId: string, text: string, reply: ReplyRef | null, e: any, effect: EffectCode | null = null) => {
+    setFailed((cur) => [...cur, { localId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, tabId, text, replyTo: reply, effect, at: Date.now(), error: String(e?.message || e) }]);
     flash('Message not sent. Tap it to try again.');
   };
   const retry = (f: Failed) => {
     setFailed((cur) => cur.filter((x) => x.localId !== f.localId));
-    sendText(room.id, f.tabId, user.uid, f.text, f.replyTo).catch((e) => keepFailed(f.tabId, f.text, f.replyTo, e));
+    const effect = (f.effect as EffectCode | null | undefined) ?? null;
+    sendText(room.id, f.tabId, user.uid, f.text, f.replyTo, { effect }).catch((e) => keepFailed(f.tabId, f.text, f.replyTo, e, effect));
   };
 
   const send = (opts: { urgent?: boolean } = {}) => {
@@ -297,10 +306,13 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     setTyping(room.id, user.uid, activeTab, false).catch(() => {});
     if (!tabReady) { queued.current = t; setDraft(''); return; }
     const reply = replyTo;
+    const effect = fx;
     setDraft('');
     setReplyTo(null);
+    setFx(null);
+    setFxDismissed(null);
     const tab = activeTab;
-    sendText(room.id, tab, user.uid, t, reply, opts).catch((e) => keepFailed(tab, t, reply, e));
+    sendText(room.id, tab, user.uid, t, reply, { ...opts, effect }).catch((e) => keepFailed(tab, t, reply, e, effect));
   };
 
   // --- scheduled messages ------------------------------------------------------
@@ -419,6 +431,34 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const expiring = !!messages?.some((m) => m.expiresAt);
   const nowTick = useNow(15_000, expiring);
   const shown = useMemo(() => (messages ? notExpired(visibleTo(messages, user.uid), Math.max(nowTick, Date.now())) : null), [messages, user.uid, nowTick]);
+
+  // --- effects -------------------------------------------------------------------
+  const motion = motionOn(currentTab);
+  /** Plays a message's effect (on arrival, or when its label is tapped). */
+  const playFx = (m: Message) => {
+    if (!m.effect || !motionOn(currentTab)) return;
+    setFxRun((r) => ({ ...r, [m.id]: (r[m.id] || 0) + 1 }));
+    if (isCanvasEffect(m.effect)) {
+      const code = m.effect;
+      requestAnimationFrame(() => playScreen(code, document.getElementById(`m-${m.id}`)?.getBoundingClientRect()));
+    }
+  };
+  // A new message with an effect plays once on each phone as it arrives (the sender's too);
+  // played ids are remembered on this device so a reload doesn't replay them.
+  useEffect(() => {
+    if (!shown) return;
+    const items = shown
+      .filter((m) => m.effect && !m.deleted)
+      .map((m) => ({ id: m.id, effect: m.effect!, createdMs: toMillis(m.createdAt) }));
+    const { play, mark } = pickArrival(items, fxPlayed.current, Date.now());
+    if (!mark.length) return;
+    mark.forEach((id) => fxPlayed.current.add(id));
+    savePlayed(fxPlayed.current);
+    const m = play && shown.find((x) => x.id === play.id);
+    if (m) playFx(m);
+  }, [shown]);
+  // Suggest an effect from the draft's words ("congrats" → confetti); never applied without a tap.
+  const fxSuggestion = !fx && !editing ? suggestEffect(draft) : null;
   const photos = useMemo(() => (shown || []).filter((m) => m.kind === 'photo' && m.photo && !m.deleted), [shown]);
   // Ticks: read only when we both share read receipts.
   const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
@@ -596,8 +636,9 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           if (m.deleted) {
             body = <div class={`bubble ${mine ? 'mine' : 'theirs'} deleted`}>Message deleted</div>;
           } else if (m.kind === 'text') {
+            const run = m.effect ? fxRun[m.id] || 0 : 0;
             body = (
-              <div class={`bubble ${mine ? 'mine' : 'theirs'}`}>
+              <div key={`fx${run}`} class={`bubble ${mine ? 'mine' : 'theirs'}${m.effect ? ` fx-${m.effect}` : ''}${run && motion ? ' fx-go' : ''}`}>
                 {m.replyTo && <ReplyQuote reply={m.replyTo} name={quoteName(m.replyTo.senderId)} mine={mine} onJump={() => jumpTo(m.replyTo!.msgId)} />}
                 {m.replyToNote && (
                   <div class={`quote note-reply${mine ? ' on-mine' : ''}`}>
@@ -605,8 +646,15 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                     <span class="quote-text">{noteLabel({ ...m.replyToNote, atMs: null })}</span>
                   </div>
                 )}
-                <PhraseText text={m.text} phrases={m.phraseReactions} me={user.uid} nameOf={nameOf}
-                  onRemove={(p) => removePhraseReaction(room.id, m, p).catch((e) => flash(e.message))} />
+                {(() => {
+                  const textEl = (
+                    <PhraseText text={m.text} phrases={m.phraseReactions} me={user.uid} nameOf={nameOf}
+                      onRemove={(p) => removePhraseReaction(room.id, m, p).catch((e) => flash(e.message))} />
+                  );
+                  return m.effect
+                    ? <EffectText msgId={m.id} effect={m.effect} mine={mine} text={m.text} run={run} motion={motion}>{textEl}</EffectText>
+                    : textEl;
+                })()}
                 {m.editedAt && <span class="edited"> · edited</span>}
                 {m.scheduled && <span class="edited"> · scheduled</span>}
                 {mine && ticks.byId[m.id] && <StatusMark status={ticks.byId[m.id]} showRead={false} />}
@@ -662,6 +710,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
             >
               {m.urgent && !m.deleted && <span class="urgent-tag">Urgent</span>}
               {body}
+              {m.effect && !m.deleted && <EffectTag effect={m.effect} motion={motion} onReplay={() => playFx(m)} />}
               <ReactionChips msg={m} me={user.uid} onToggle={(code, on) => react(m, code, on)} />
               {mine && m.kind !== 'text' && !m.deleted && ticks.byId[m.id] && (
                 <span class="msg-meta"><StatusMark status={ticks.byId[m.id]} showRead={false} /></span>
@@ -694,6 +743,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         onSendNow={sendNow}
         onCancel={cancelSched}
       />
+      {fx ? (
+        <EffectArmed effect={fx} onClear={() => setFx(null)} />
+      ) : fxSuggestion && fxSuggestion !== fxDismissed ? (
+        <EffectSuggestion effect={fxSuggestion} onApply={() => setFx(fxSuggestion)} onDismiss={() => setFxDismissed(fxSuggestion)} />
+      ) : null}
       {(replyTo || editing) && (
         <div class="compose-strip" role="status">
           <span class={`strip-bar${(editing || replyTo!.senderId === user.uid) ? ' me' : ''}`} aria-hidden="true" />
@@ -732,7 +786,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           </button>
         ) : (
           <button type="button" class="send-btn" {...sendLong} onClick={() => send()}
-            aria-label={editing ? 'Save edit' : 'Send'} aria-description={editing ? undefined : 'Press and hold for Schedule and Urgent'}><SendIcon /></button>
+            aria-label={editing ? 'Save edit' : 'Send'} aria-description={editing ? undefined : 'Press and hold for Effects, Schedule and Urgent'}><SendIcon /></button>
         )}
       </footer>
       </>)}
@@ -895,8 +949,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                 urgentLeft={urgentLeft}
                 partnerName={partner.name}
                 onSchedule={() => setSheet({ kind: 'schedule' })}
+                onEffects={() => setSheet({ kind: 'effects' })}
                 onUrgent={() => { setSheet(null); send({ urgent: true }); }}
               />
+            )}
+            {sheet.kind === 'effects' && (
+              <EffectsSheet current={fx} onPick={(e) => { setFx(e); setSheet(null); inputRef.current?.focus(); }} />
             )}
             {sheet.kind === 'schedule' && (() => {
               const existing = sheet.id ? scheduled.find((x) => x.id === sheet.id) : undefined;

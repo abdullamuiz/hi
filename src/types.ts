@@ -121,6 +121,8 @@ export interface Message {
   scheduled?: boolean;
   /** Sent as Urgent: may break through the other person's quiet hours (3 a day). */
   urgent?: boolean;
+  /** A screen or bubble effect (SPEC §4), from the list in src/lib/effects.ts. */
+  effect?: import('./lib/effects').EffectCode;
   /** Client-only: still waiting to reach the server. */
   pending?: boolean;
 }

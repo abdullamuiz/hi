@@ -374,6 +374,15 @@ Open the contact's profile → **Export chat**, then choose the whole chat or ju
 
 Both are made on your phone from what you can see: deleted, deleted-for-me and expired messages are left out, and Drops appear only as "A Drop" (never hidden answers). Exports read up to the latest 5,000 messages.
 
+### Effects
+
+Long-press **Send → Effects…** to pick one for the next message, or tap the suggestion chip that appears when you type "congrats", "happy birthday", "thank you" or "happy new year" (it's never applied without a tap).
+
+- **Screen effects:** Confetti, Balloons (tap to pop), Fireworks and Glow. They play once on each phone as the message arrives, including for the sender. Each phone remembers what it has played, so a reload doesn't replay them; the small label under the bubble replays one.
+- **Bubble effects:** Shout, Whisper (blurred until tapped), Slow reveal, Spotlight, Sealed (an envelope to open) and Echo. Sealed and whispered words stay out of the chat-list preview and the push notification.
+- **Settings → Play effects** turns them off on this phone; phones set to reduce motion get a "Sent with Confetti" label instead. Effects are drawn on a canvas or in CSS, with no libraries.
+- The effect is stored on the message as `effect`; the rules accept only the ten names above, on text and link messages.
+
 ## Icons and themes
 
 - **Icons:** the designer's sets live in `design/icons/`. **Teal** is for **light mode**: it's the Home Screen/install icon (light is the default) and the tab icon while the app is light. **Navy** is for **dark mode**. `npm run icons` copies them into `public/icons/` and generates:
