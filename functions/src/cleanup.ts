@@ -12,3 +12,13 @@ export function filesToDelete(before: MsgFiles | undefined, after: MsgFiles | un
   return [before.photo?.path, before.voice?.path]
     .filter((p): p is string => typeof p === 'string' && SAFE.test(p) && p.startsWith(`rooms/${roomId}/`));
 }
+
+/**
+ * Storage files of a message that was deleted outright (a disappearing tab's TTL policy,
+ * or a deleted chat). Same safety checks as above.
+ */
+export function filesOfRemoved(data: MsgFiles | undefined, roomId: string): string[] {
+  if (!data || data.deleted === true) return [];
+  return [data.photo?.path, data.voice?.path]
+    .filter((p): p is string => typeof p === 'string' && SAFE.test(p) && p.startsWith(`rooms/${roomId}/`));
+}

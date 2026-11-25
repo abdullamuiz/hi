@@ -2,8 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { User } from 'firebase/auth';
 import {
   addPhraseReaction, addVoiceReaction, createDrop, deleteForEveryone, editMessage, hideMessage, markPlayed, removePhraseReaction,
-  removeVoiceReaction, sendPhoto, sendText, sendVoice, setReaction, watchMessages, type VoiceRecording,
+  removeVoiceReaction, sendPhoto, sendText, sendVoice, setDisappearing, setReaction, watchMessages, type VoiceRecording,
 } from '../data/messages';
+import { notExpired, systemText } from '../lib/disappear';
+import { takeJump, type Jump } from '../lib/jump';
+import { SearchSheet } from './Search';
+import { ExportSheet } from './Export';
+import type { SearchFilter } from '../lib/search';
 import { addPin, watchPins } from '../data/pins';
 import { GENERAL, createTab, ensureGeneralTab, updateTab, watchTabs } from '../data/tabs';
 import { cancelScheduled, deliverScheduled, markRead, readUpTo, scheduleMessage, updateScheduled, useDeliveryPrefs, useMyReads } from '../data/delivery';
@@ -53,7 +58,9 @@ type Sheet =
   | { kind: 'profile' }
   | { kind: 'delete-account' }
   | { kind: 'send-options' }
-  | { kind: 'schedule'; id?: string };
+  | { kind: 'schedule'; id?: string }
+  | { kind: 'search'; filter?: SearchFilter }
+  | { kind: 'export' };
 
 interface Toast { text: string; undo?: () => void }
 
@@ -96,7 +103,12 @@ const failedKey = (roomId: string) => `hi.failed.${roomId}`;
 export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: ChatProps) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activeTab, setActiveTab] = useState<string>(() => initialTab(room.id));
+  // A search result (here or on the chat list) can ask this chat to open at a message.
+  const [jump, setJump] = useState<Jump | null>(() => takeJump(room.id));
+  const [activeTab, setActiveTabState] = useState<string>(() => jump?.tabId || initialTab(room.id));
+  // Read the open tab from this time on (instead of only its latest messages), to reach an older message.
+  const [windowFrom, setWindowFrom] = useState<number | null>(null);
+  const setActiveTab = (id: string) => { setWindowFrom(null); setActiveTabState(id); };
   const [members, setMembers] = useState<Record<string, Member>>({});
   const [pins, setPins] = useState<Pin[]>([]);
   // dropId → Drop type, reported by each Drop card (for reply / pin / list previews).
@@ -167,8 +179,29 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     setMessages(null);
     try { localStorage.setItem(tabKey(room.id), activeTab); } catch { /* ignore */ }
     if (location.search.includes('tab=')) history.replaceState(null, '', location.pathname);
-    return watchMessages(room.id, activeTab, setMessages, (e) => flash(e.message));
-  }, [room.id, activeTab]);
+    return watchMessages(room.id, activeTab, setMessages, (e) => flash(e.message), windowFrom);
+  }, [room.id, activeTab, windowFrom]);
+
+  // Jump to a message from search: once the tab has loaded, scroll to it; if it's older
+  // than what's loaded, load the tab from that message on and try again.
+  useEffect(() => {
+    if (!jump || !messages || jump.tabId !== activeTab) return;
+    if (messages.some((m) => m.id === jump.msgId)) {
+      const id = jump.msgId;
+      setJump(null);
+      setTimeout(() => jumpTo(id), 80);
+    } else if (windowFrom == null || windowFrom > jump.atMs) {
+      setWindowFrom(Math.max(0, jump.atMs - 1000));
+    } else {
+      setJump(null);
+      flash('That message isn’t available any more.');
+    }
+  }, [jump, messages, activeTab, windowFrom]);
+  const openFromSearch = (j: Jump) => {
+    setSheet(null);
+    if (j.tabId !== activeTab) setActiveTab(j.tabId);
+    setJump(j);
+  };
 
   // Mark the open tab read when it opens and whenever new messages arrive while visible.
   useEffect(() => {
@@ -382,7 +415,10 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     if (n > 0) nav.setAppBadge?.(n).catch?.(() => {}); else nav.clearAppBadge?.().catch?.(() => {});
   };
   // --- message actions ---------------------------------------------------------
-  const shown = useMemo(() => (messages ? visibleTo(messages, user.uid) : null), [messages, user.uid]);
+  // Disappearing tabs: hide messages the moment they expire (the server deletes them later).
+  const expiring = !!messages?.some((m) => m.expiresAt);
+  const nowTick = useNow(15_000, expiring);
+  const shown = useMemo(() => (messages ? notExpired(visibleTo(messages, user.uid), Math.max(nowTick, Date.now())) : null), [messages, user.uid, nowTick]);
   const photos = useMemo(() => (shown || []).filter((m) => m.kind === 'photo' && m.photo && !m.deleted), [shown]);
   // Ticks: read only when we both share read receipts.
   const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
@@ -513,6 +549,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         onAdd={() => setSheet({ kind: 'tab-new' })}
         onArchived={() => setSheet({ kind: 'archived' })}
         onUnreadTotal={setUnreadTotal}
+        onSearch={() => setSheet({ kind: 'search' })}
       />
 
       <Feed
@@ -552,6 +589,9 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
         </>}
         renderMessage={(m) => {
           const mine = m.uid === user.uid;
+          if (m.kind === 'system') {
+            return <div class="row center" id={`m-${m.id}`}><div class="sys sys-line">{systemText(m, mine ? 'You' : partner.name)}</div></div>;
+          }
           let body: preact.ComponentChildren = null;
           if (m.deleted) {
             body = <div class={`bubble ${mine ? 'mine' : 'theirs'} deleted`}>Message deleted</div>;
@@ -751,11 +791,28 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                     updateTab(room.id, t.id, { archived }).catch((e) => flash(e.message));
                     if (archived) setActiveTab(GENERAL);
                   }}
+                  onDisappearing={left ? undefined : (hours) => {
+                    setSheet(null);
+                    setDisappearing(room.id, t.id, user.uid, hours).catch((e) => flash(e.message));
+                  }}
                 />
               ) : null;
             })()}
             {sheet.kind === 'invite' && (
               <AddContactSheet user={user} room={room} onToast={flash} onClose={() => setSheet(null)} />
+            )}
+            {sheet.kind === 'search' && (
+              <SearchSheet me={user.uid} scope={[{ roomId: room.id, name: partner.name }]} initialFilter={sheet.filter} onOpen={openFromSearch} />
+            )}
+            {sheet.kind === 'export' && (
+              <ExportSheet
+                roomId={room.id}
+                me={{ uid: user.uid, name: me.name }}
+                partner={{ uid: partnerUid, name: partner.name }}
+                tab={{ id: activeTab, name: currentTab?.name || 'General' }}
+                onToast={flash}
+                onDone={() => setSheet(null)}
+              />
             )}
             {sheet.kind === 'actions' && (() => {
               const m = byId(sheet.msgId);
@@ -819,6 +876,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
                   setSheet(null);
                   try { if (left) await deleteRoom(room.id); else await leaveRoom(room.id, user.uid); onBack(); } catch (e: any) { flash(e.message); }
                 }}
+                onExport={() => setSheet({ kind: 'export' })}
+                onMedia={() => setSheet({ kind: 'search', filter: 'photos' })}
                 onBlock={async () => {
                   setSheet(null);
                   try { await blockContact(user.uid, partnerUid, partnerProfile?.name || partnerMember?.name || partner.name, left ? [] : [room.id]); if (left) await deleteRoom(room.id); onBack(); } catch (e: any) { flash(e.message); }

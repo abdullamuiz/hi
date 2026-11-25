@@ -1,18 +1,18 @@
 import { initializeApp } from 'firebase-admin/app';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getMessaging } from 'firebase-admin/messaging';
 import { getStorage } from 'firebase-admin/storage';
 import { setGlobalOptions } from 'firebase-functions/v2';
-import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentDeleted, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { fetchPreview } from './og.js';
 import { notificationBody, openUrl } from './notify.js';
-import { filesToDelete } from './cleanup.js';
+import { filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
-import { due, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
+import { due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
 
 initializeApp();
 // Small, capped instances keep a two-person app comfortably inside the free tier.
@@ -67,7 +67,8 @@ async function pushTo(uid: string, data: Record<string, string>) {
  */
 export const notifyPartner = onDocumentCreated(MESSAGE, async (event) => {
   const msg = event.data?.data();
-  if (!msg) return;
+  // Setting changes ("… turned on disappearing messages") don't buzz anyone's phone.
+  if (!msg || msg.kind === 'system') return;
   const { roomId, tabId } = event.params;
   const db = getFirestore();
   const room = (await db.doc(`rooms/${roomId}`).get()).data();
@@ -133,10 +134,14 @@ export const minuteJob = onSchedule({ schedule: 'every 1 minutes', timeoutSecond
       await db.runTransaction(async (tx) => {
         const cur = await tx.get(d.ref);
         if (!cur.exists) return;
+        const tab = await tx.get(roomRef.collection('tabs').doc(s.tabId));
         const { message, preview } = scheduledToMessage(cur.data() as any);
         const at = FieldValue.serverTimestamp();
+        const exp = expiryMs(tab.data(), Date.now());
         tx.delete(d.ref);
-        tx.set(roomRef.collection('tabs').doc(s.tabId).collection('messages').doc(d.id), { ...message, createdAt: at });
+        tx.set(roomRef.collection('tabs').doc(s.tabId).collection('messages').doc(d.id), {
+          ...message, ...(exp ? { expiresAt: Timestamp.fromMillis(exp) } : {}), createdAt: at,
+        });
         tx.update(roomRef.collection('tabs').doc(s.tabId), { lastMessageAt: at });
         tx.update(roomRef, { lastMessage: { id: d.id, uid: s.senderId, tabId: s.tabId, text: preview, at } });
       });
@@ -166,6 +171,15 @@ export const minuteJob = onSchedule({ schedule: 'every 1 minutes', timeoutSecond
   if (ready.length || held.size) logger.info('minute job', { delivered: ready.length, held: held.size });
 });
 
+
+/** A message removed outright (disappearing tab TTL, deleted chat): remove its files too. */
+export const deleteRemovedFiles = onDocumentDeleted(MESSAGE, async (event) => {
+  const paths = filesOfRemoved(event.data?.data(), event.params.roomId);
+  if (!paths.length) return;
+  const bucket = getStorage().bucket();
+  await Promise.all(paths.map((p) => bucket.file(p).delete({ ignoreNotFound: true })));
+  logger.info('deleted files of removed message', { roomId: event.params.roomId, count: paths.length });
+});
 
 /** "Delete for everyone": removes the message's photo from Storage too. */
 export const deleteMessageFiles = onDocumentUpdated(MESSAGE, async (event) => {

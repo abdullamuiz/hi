@@ -1,7 +1,9 @@
 import {
   arrayRemove, arrayUnion, collection, deleteField, doc, FieldPath, limitToLast, onSnapshot, orderBy, query,
-  serverTimestamp, updateDoc, writeBatch, type WriteBatch,
+  serverTimestamp, Timestamp, updateDoc, where, writeBatch, type WriteBatch,
 } from 'firebase/firestore';
+import { ttlOf } from './tabs';
+import { expiryFor, ttlLabel } from '../lib/disappear';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { findLink } from '../lib/links';
@@ -14,8 +16,14 @@ import { friendlyStorageError } from '../lib/errors';
 
 const msgsCol = (roomId: string, tabId: string) => collection(db, 'rooms', roomId, 'tabs', tabId, 'messages');
 
-export function watchMessages(roomId: string, tabId: string, cb: (m: Message[]) => void, onError?: (e: Error) => void) {
-  const q = query(msgsCol(roomId, tabId), orderBy('createdAt'), limitToLast(300));
+/**
+ * The open tab's messages: the latest 300, or (to reach an older message from search)
+ * everything from `fromMs` on, up to 1,500.
+ */
+export function watchMessages(roomId: string, tabId: string, cb: (m: Message[]) => void, onError?: (e: Error) => void, fromMs?: number | null) {
+  const q = fromMs != null
+    ? query(msgsCol(roomId, tabId), where('createdAt', '>=', Timestamp.fromMillis(fromMs)), orderBy('createdAt'), limitToLast(1500))
+    : query(msgsCol(roomId, tabId), orderBy('createdAt'), limitToLast(300));
   // Metadata changes too, so a message flips from "sending" to "sent" when the server has it.
   return onSnapshot(q, { includeMetadataChanges: true }, (s) => {
     cb(s.docs.map((d) => ({
@@ -30,8 +38,10 @@ const newId = (roomId: string, tabId: string) => doc(msgsCol(roomId, tabId)).id;
  * Writes a message, bumps the tab's lastMessageAt and the room's chat-list preview,
  * all in the same atomic batch.
  */
-function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>, preview: string) {
-  b.set(doc(msgsCol(roomId, tabId), id), { ...data, createdAt: serverTimestamp() });
+function addMessage(b: WriteBatch, roomId: string, tabId: string, id: string, data: Record<string, unknown>, preview: string, ttlHours = ttlOf(roomId, tabId)) {
+  // Disappearing tab: the message carries its expiry (rules check it matches the tab).
+  const exp = expiryFor(ttlHours);
+  b.set(doc(msgsCol(roomId, tabId), id), { ...data, ...(exp ? { expiresAt: Timestamp.fromMillis(exp) } : {}), createdAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId, 'tabs', tabId), { lastMessageAt: serverTimestamp() });
   b.update(doc(db, 'rooms', roomId), { lastMessage: { id, uid: data.uid, tabId, text: preview.slice(0, 160), at: serverTimestamp() } });
 }
@@ -122,6 +132,19 @@ export async function createDrop(
   addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'drop', text: '', dropId: dropRef.id }, snippetOf({ kind: 'drop', text: '' }, title));
   await b.commit();
   return dropRef.id;
+}
+
+/**
+ * Turns disappearing messages on (for `hours`) or off for a tab, and posts the
+ * "X turned on disappearing messages" line, in one batch (rules require both together).
+ */
+export async function setDisappearing(roomId: string, tabId: string, uid: string, hours: number) {
+  const b = writeBatch(db);
+  const on = hours > 0;
+  b.update(doc(db, 'rooms', roomId, 'tabs', tabId), on ? { disappearing: true, ttlHours: hours } : { disappearing: false });
+  const text = on ? `Disappearing messages: ${ttlLabel(hours)}` : 'Disappearing messages off';
+  addMessage(b, roomId, tabId, newId(roomId, tabId), { uid, kind: 'system', system: 'disappearing', ttlHours: on ? hours : 0, text }, text, on ? hours : 0);
+  await b.commit();
 }
 
 // ---------------------------------------------------------------------------- message actions

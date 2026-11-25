@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { due, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision } from '../src/delivery';
+import { due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision } from '../src/delivery';
 
 const utc = (h: number, m = 0) => Date.UTC(2026, 10, 24, h, m);
 
@@ -72,5 +72,18 @@ describe('mute', () => {
     expect(isMuted({ muted: false, mutedUntilMs: 10 }, 5)).toBe(true);
     expect(isMuted({ muted: false, mutedUntilMs: 10 }, 15)).toBe(false);
     expect(isMuted(undefined, 5)).toBe(false);
+  });
+});
+
+describe('expiryMs (scheduled delivery into a disappearing tab)', () => {
+  const now = 1_700_000_000_000;
+  it('follows the tab setting', () => {
+    expect(expiryMs({ disappearing: true, ttlHours: 168 }, now)).toBe(now + 168 * 3_600_000);
+    expect(expiryMs({ disappearing: true }, now)).toBe(now + 24 * 3_600_000);
+    expect(expiryMs({ disappearing: true, ttlHours: 7 }, now)).toBe(now + 24 * 3_600_000);
+  });
+  it('is null for tabs that keep messages', () => {
+    expect(expiryMs({ disappearing: false, ttlHours: 168 }, now)).toBeNull();
+    expect(expiryMs(undefined, now)).toBeNull();
   });
 });

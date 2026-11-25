@@ -79,7 +79,7 @@ jobs:
           TARGETS="hosting,firestore:rules"
           if [ "$DEPLOY_BACKEND" = "true" ]; then
             npm ci --prefix functions
-            TARGETS="$TARGETS,storage,functions"
+            TARGETS="$TARGETS,storage,functions,firestore:indexes"
           fi
           npx firebase deploy --only "$TARGETS" --project hi-dropchat --non-interactive --force
           rm -f "$KEY"
