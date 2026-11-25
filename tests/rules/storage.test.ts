@@ -41,3 +41,23 @@ describe('photo storage', () => {
     await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/photos/alice/big.jpg`), big, { contentType: 'image/jpeg' }));
   });
 });
+
+describe('voice storage', () => {
+  const audio = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]);
+  it('a member uploads a voice note into their own folder; the partner can read it', async () => {
+    const path = `rooms/${ROOM}/voice/alice/v1.webm`;
+    await assertSucceeds(uploadBytes(ref(st('alice'), path), audio, { contentType: 'audio/webm' }));
+    await assertSucceeds(uploadBytes(ref(st('alice'), `rooms/${ROOM}/voice/alice/v2.m4a`), audio, { contentType: 'audio/mp4' }));
+    await assertSucceeds(getBytes(ref(st('bob'), path)));
+    await assertFails(getBytes(ref(st('eve'), path)));
+  });
+
+  it('rejects other folders, other file types, outsiders and big files', async () => {
+    await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/voice/bob/x.webm`), audio, { contentType: 'audio/webm' }));
+    await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/voice/alice/x.mp3`), audio, { contentType: 'audio/mpeg' }));
+    await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/voice/alice/y.webm`), audio, { contentType: 'image/jpeg' }));
+    await assertFails(uploadBytes(ref(st('eve'), `rooms/${ROOM}/voice/eve/x.webm`), audio, { contentType: 'audio/webm' }));
+    const big = new Uint8Array(5 * 1024 * 1024 + 1);
+    await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/voice/alice/big.webm`), big, { contentType: 'audio/webm' }));
+  });
+});

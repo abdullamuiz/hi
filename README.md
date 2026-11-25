@@ -79,7 +79,7 @@ This runs three suites:
 | Suite | What it checks |
 |---|---|
 | `npm run test:unit` | Link detection, image sizing, labels, Drop registry (every Drop definition is valid) |
-| `npm run test:rules` | **Firestore + Storage security rules** against the emulators: only members can read/write, you can only write your own answers, a hidden answer can't be read until both lock in, locked answers are frozen, a third person can never join, photo uploads limited to your own folder and 5 MB |
+| `npm run test:rules` | **Firestore + Storage security rules** against the emulators: only members can read/write, you can only write your own answers, a hidden answer can't be read until both lock in, locked answers are frozen, a third person can never join, photo and voice uploads limited to your own folder and 5 MB, voice notes' played marks and timed reactions are your own only |
 | `npm --prefix functions test` | Open Graph parsing, SSRF protection for link previews, push text never leaking answers |
 
 There is also a full end-to-end run: two browsers sign in, pair up, chat, send a photo, and play all four Drops against the emulators.
@@ -209,7 +209,7 @@ src/
     feeling-map.drop.tsx, blind-reveal.drop.tsx, gap-slider.drop.tsx, tag-team-story.drop.tsx
   data/                  Firestore/Storage/FCM access, one file per concern
 public/sw.js             service worker: offline shell + push display
-functions/src/           linkPreview (Open Graph), notifyPartner (FCM), deleteMessageFiles (photo cleanup)
+functions/src/           linkPreview (Open Graph), notifyPartner (FCM), deleteMessageFiles (photo + voice cleanup)
 firestore.rules          the security model, documented inline
 storage.rules
 tests/                   unit, rules, e2e
@@ -223,8 +223,9 @@ rooms/{roomId}                      one chat: owner, members (max 2), invites [e
                                     lastMessage (chat-list preview), left (who left), timezone (Indian/Maldives)
   members/{uid}                     name, photo, mood weather, lastSeen, typing (+tab), lastRead {tabId: time}
   tabs/{tabId}                      name, colour, archived, order, lastMessageAt   ("general" always exists)
-    messages/{id}                   text | link | photo | drop, + replyTo, editedAt, reactions {code: [uid]},
-                                    phraseReactions, hiddenFor [uid], deleted, urgent, scheduled
+    messages/{id}                   text | link | photo | voice | drop, + replyTo, editedAt, reactions {code: [uid]},
+                                    phraseReactions, hiddenFor [uid], deleted, urgent, scheduled,
+                                    voice {path, durationMs, peaks, mime}, playedBy [uid], voiceReactions
   scheduled/{id}                    a scheduled message; only its sender can see it (id = the message id it becomes)
   pins/{id}                         scrapbook
   drops/{dropId}                    type + content (the Drop's JSON definition snapshot)
@@ -303,6 +304,38 @@ Long-press a message (or right-click / the ⋯ button on a computer) for **Reply
 ### Photos
 
 Photos are re-encoded in the browser to JPEG, longest side **1600 px** (this also strips EXIF/GPS), then uploaded to `rooms/{roomId}/photos/{uid}/…`. Storage rules allow members to read, and the owner to write once (≤ 5 MB, images only).
+
+**Viewer:** tap a photo to open it full screen.
+- Swipe sideways for the chat's other photos, and swipe down to close.
+- Pinch, double-tap or use the mouse wheel to zoom; drag to pan.
+- **Save** shares or downloads the photo, and **Pin to scrapbook** pins it.
+- Escape or the phone's back gesture closes the viewer without leaving the chat.
+
+### Voice notes
+
+When the message box is empty, the Send button becomes a microphone.
+
+**Recording**
+- **Hold** the mic to record and let go to send.
+- **Slide left** to cancel, or **slide up** to lock and record hands-free; locked recordings get a delete button and a Send button.
+- A **quick tap** (or Enter) also records hands-free.
+- A note can be up to **2 minutes**.
+- Format: Opus in WebM where the browser supports it, AAC in MP4 on iPhone/Safari.
+- The app works out a 64-point waveform on the phone and stores it with the message, so the bubble draws instantly.
+
+**Playing**
+- The bubble has play/pause, a waveform that fills as it plays (tap it, or use the arrow keys, to jump), the length, and **1× / 1.5× / 2×**.
+- Only one note plays at a time.
+
+**Reactions and played status**
+- While listening, tap **☺+** and pick a reaction. It's pinned to that moment and shows as a marker above the waveform; tapping a marker plays from there. **Undo** removes your last one.
+- Notes you haven't played have a dot. Once the other person plays yours, it says **Played**.
+
+**Storage**
+- Files go to `rooms/{roomId}/voice/{uid}/{id}.webm|m4a`. Members can read them; only the owner can create one (audio only, under 5 MB).
+- **Delete for everyone** clears the message, and the `deleteMessageFiles` function removes the audio file.
+
+> Voice notes and photos use Cloud Storage, which needs the **Blaze** plan (section 4) and `DEPLOY_BACKEND=true` so the Storage rules deploy. Until then, sending one says "Voice notes need the Blaze plan — see README".
 
 ## Tabs
 

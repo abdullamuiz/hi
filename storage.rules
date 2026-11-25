@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Photos live at rooms/{roomId}/photos/{uid}/{file}.jpg
+// Photos live at rooms/{roomId}/photos/{uid}/{file}.jpg, voice notes at rooms/{roomId}/voice/{uid}/{file}.webm|m4a
 // Readable by room members; writable only by the uploader, once, as a small image.
 service firebase.storage {
   match /b/{bucket}/o {
@@ -16,6 +16,17 @@ service firebase.storage {
         && file.matches('^[A-Za-z0-9_-]{1,64}[.]jpg$')
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
+    }
+
+    // Voice notes: rooms/{roomId}/voice/{uid}/{file}.webm|m4a
+    match /rooms/{roomId}/voice/{uid}/{file} {
+      allow read: if isMember(roomId);
+      allow create: if isMember(roomId)
+        && request.auth.uid == uid
+        && file.matches('^[A-Za-z0-9_-]{1,64}[.](webm|m4a)$')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
       allow update, delete: if false;
     }
 

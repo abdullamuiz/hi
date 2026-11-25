@@ -29,6 +29,7 @@ export function snippetOf(m: Pick<Message, 'kind' | 'text' | 'link' | 'deleted'>
     case 'text': return cut(m.text || '', max);
     case 'link': return cut(m.text ? `${m.text} ${m.link?.url || ''}` : m.link?.url || 'Link', max);
     case 'photo': return cut(m.text ? `📷 ${m.text}` : '📷 Photo', max);
+    case 'voice': return '🎤 Voice note';
     case 'drop': return cut(`Dropped ${dropTitle}`, max);
     default: return '';
   }

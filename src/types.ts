@@ -83,10 +83,15 @@ export interface Message {
   id: string;
   tabId: string;
   uid: string;
-  kind: 'text' | 'link' | 'photo' | 'drop';
+  kind: 'text' | 'link' | 'photo' | 'voice' | 'drop';
   text: string;
   link?: LinkPreview;
   photo?: PhotoRef;
+  voice?: VoiceRef;
+  /** Voice notes: uids who have played it. */
+  playedBy?: string[];
+  /** Voice notes: reactions dropped at a moment in the audio. */
+  voiceReactions?: VoiceReaction[];
   dropId?: string;
   createdAt: Timestamp | null;
   /** Reply-quote of an earlier message. */
@@ -121,6 +126,16 @@ export interface Scheduled {
   replyTo: ReplyRef | null;
   sendAt: number;
 }
+
+export interface VoiceRef {
+  path: string;
+  durationMs: number;
+  /** About 64 values from 0 to 1. */
+  peaks: number[];
+  mime: string;
+}
+
+export interface VoiceReaction { uid: string; atMs: number; reaction: ReactionCode }
 
 export type ReactionCode = 'heart' | 'laugh' | 'wow' | 'sad' | 'up' | 'fire';
 

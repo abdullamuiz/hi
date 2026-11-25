@@ -361,6 +361,21 @@ service cloud.firestore {
               && incoming().photo.path.matches('^rooms/' + roomId + '/photos/' + me() + '/[A-Za-z0-9_-]{1,64}[.]jpg$')
               && incoming().photo.width is int && incoming().photo.height is int;
           }
+          // Voice note: the audio file is mine, in this room; a short waveform for the bubble.
+          function validVoice() {
+            return incoming().kind == 'voice'
+              && incoming().text == ''
+              && onlyKeys(['uid', 'kind', 'text', 'voice', 'replyTo', 'createdAt'])
+              && incoming().voice is map
+              && incoming().voice.keys().hasOnly(['path', 'durationMs', 'peaks', 'mime'])
+              && incoming().voice.path is string
+              && incoming().voice.path.matches('^rooms/' + roomId + '/voice/' + me() + '/[A-Za-z0-9_-]{1,64}[.](webm|m4a)$')
+              && incoming().voice.durationMs is int
+              && incoming().voice.durationMs > 0 && incoming().voice.durationMs <= 180000
+              && incoming().voice.peaks is list && incoming().voice.peaks.size() <= 64
+              && str(incoming().voice.mime, 1, 64)
+              && incoming().voice.mime.matches('^audio/[A-Za-z0-9.+-]+$');
+          }
           function validDrop() {
             return incoming().kind == 'drop'
               && str(incoming().text, 0, 200)
@@ -392,10 +407,10 @@ service cloud.firestore {
           // Delete for everyone: the sender only; content cleared, deleted = true.
           function isDeleteForEveryone() {
             return mine() && alive()
-              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'editedAt'])
+              && changedKeys().hasOnly(['deleted', 'text', 'link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt'])
               && incoming().deleted == true
               && incoming().text == ''
-              && !incoming().keys().hasAny(['link', 'photo', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'editedAt']);
+              && !incoming().keys().hasAny(['link', 'photo', 'voice', 'dropId', 'replyTo', 'replyToNote', 'reactions', 'phraseReactions', 'voiceReactions', 'playedBy', 'editedAt']);
           }
           // Quick reactions: { code: [uid] }. Only my own uid may appear or disappear.
           function rxSame(k) {
@@ -439,6 +454,42 @@ service cloud.firestore {
               );
           }
 
+          // Voice notes: "played" marks (my own uid only) and reactions at a moment in the audio.
+          function isPlayed() {
+            let before = resource.data.get('playedBy', []);
+            let after = incoming().get('playedBy', []);
+            return alive()
+              && resource.data.kind == 'voice'
+              && changedKeys().hasOnly(['playedBy'])
+              && after is list && after.size() <= 2
+              && after.removeAll([me()]) == before.removeAll([me()]);
+          }
+          function validVoiceReaction(r) {
+            return r is map
+              && r.keys().hasOnly(['uid', 'atMs', 'reaction'])
+              && r.uid == me()
+              && r.atMs is int && r.atMs >= 0 && r.atMs <= 180000
+              && r.reaction in reactionCodes();
+          }
+          function isVoiceReact() {
+            let before = resource.data.get('voiceReactions', []);
+            let after = incoming().get('voiceReactions', []);
+            return alive()
+              && resource.data.kind == 'voice'
+              && changedKeys().hasOnly(['voiceReactions'])
+              && after is list && after.size() <= 50
+              && (
+                (after.size() == before.size() + 1
+                  && (before.size() == 0 || after[0:before.size()] == before)
+                  && validVoiceReaction(after[before.size()]))
+                ||
+                (after.size() == before.size() - 1
+                  && after.removeAll(before).size() == 0
+                  && before.removeAll(after).size() == 1
+                  && before.removeAll(after)[0].uid == me())
+              );
+          }
+
           allow read: if isMember(roomId);
           allow create: if isMember(roomId)
             && roomData(roomId).get('left', null) == null
@@ -447,10 +498,10 @@ service cloud.firestore {
             && incoming().createdAt == request.time
             && validReply()
             && validFlags()
-            && (validText() || validLink() || validPhoto() || validDrop());
+            && (validText() || validLink() || validPhoto() || validVoice() || validDrop());
           // Link previews are filled in by a Cloud Function (Admin SDK bypasses rules).
           allow update: if isMember(roomId)
-            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase());
+            && (isEdit() || isHide() || isDeleteForEveryone() || isReact() || isPhrase() || isPlayed() || isVoiceReact());
           allow delete: if false;
         }
       }
