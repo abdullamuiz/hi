@@ -24,3 +24,8 @@ export function getDrop(type: string): DropDefinition<any> | undefined {
 export function withDefaults<C extends Record<string, unknown>>(def: DropDefinition<C>, content: Record<string, unknown> | undefined): C {
   return { ...def.content, ...(content || {}) } as C;
 }
+
+/** The Drops to offer in the + tray: all visible ones, or only the solo ones in Notes to self. */
+export function trayDrops(list: DropDefinition<any>[], self: boolean): DropDefinition<any>[] {
+  return list.filter((d) => !d.hidden && (!self || d.solo));
+}

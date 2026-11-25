@@ -1,5 +1,5 @@
 import {
-  collection, deleteDoc, deleteField, doc, onSnapshot, writeBatch, query, serverTimestamp,
+  collection, deleteDoc, deleteField, doc, getDoc, onSnapshot, writeBatch, query, serverTimestamp,
   setDoc, Timestamp, updateDoc, where, arrayUnion,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -21,10 +21,11 @@ function toRoom(id: string, d: any): Room {
     left: typeof d.left === 'string' ? d.left : null,
     streak: d.streak && typeof d.streak === 'object' && (d.streak.state === 'proposed' || d.streak.state === 'on') ? d.streak : null,
     pinned: Array.isArray(d.pinned) ? d.pinned.filter((p: any) => p && typeof p.msgId === 'string').slice(0, 3) : [],
+    self: d.self === true,
   };
 }
 
-export function watchMyRooms(uid: string, cb: (rooms: Room[]) => void, onError?: (e: Error) => void) {
+export function watchMyRooms(uid: string, cb: (rooms: Room[], fromServer: boolean) => void, onError?: (e: Error) => void) {
   // Only rooms the server has confirmed: a room I'm still creating isn't readable for
   // its sub-collections yet, so opening it early would get listeners refused.
   return onSnapshot(
@@ -36,7 +37,7 @@ export function watchMyRooms(uid: string, cb: (rooms: Room[]) => void, onError?:
       // Activity days are filed in the room's zone, also for messages sent without the
       // chat open (note replies, scheduled messages).
       rooms.forEach((r) => setRoomZone(r.id, r.timezone));
-      cb(rooms);
+      cb(rooms, !s.metadata.fromCache);
     },
     onError,
   );
@@ -121,6 +122,64 @@ export async function joinByCode(roomId: string, code: string, user: User) {
 
 /** Say no to an e-mail invite. */
 export const declineInvite = (roomId: string) => updateDoc(doc(db, 'rooms', roomId), { invites: [] });
+
+// ---------------------------------------------------------------- Notes to self
+
+/** The id of the Notes to self room created automatically for a user. */
+export const selfRoomId = (uid: string) => `self_${uid}`;
+
+/** My device's time zone (falls back to the app default). */
+function deviceZone(): string {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TZ; } catch { return DEFAULT_TZ; }
+}
+
+/**
+ * Creates my Notes to self room (rooms/self_{uid}) with its General tab, my profile in it
+ * and the users/{uid}.selfRoom pointer, in one write. The fixed id makes it impossible to
+ * end up with two, even from two phones at once (the second write is simply refused).
+ */
+export async function createSelfRoom(user: User) {
+  const id = selfRoomId(user.uid);
+  const b = writeBatch(db);
+  b.set(doc(db, 'rooms', id), {
+    owner: user.uid,
+    ownerName: user.displayName || user.email || '',
+    members: [user.uid],
+    invites: [],
+    self: true,
+    timezone: deviceZone(),
+    createdAt: serverTimestamp(),
+  });
+  b.set(doc(db, 'rooms', id, 'members', user.uid), memberProfile(user));
+  b.set(doc(db, 'rooms', id, 'tabs', GENERAL), generalTabDoc(user.uid));
+  b.set(doc(db, 'users', user.uid), { selfRoom: id }, { merge: true });
+  await b.commit();
+}
+
+/**
+ * Turns a chat nobody has joined into my Notes to self: its invite and share link go, and
+ * it can never be joined. An empty automatic Notes to self room is removed, so there's one.
+ */
+export async function makeSelfRoom(room: Room, uid: string) {
+  const b = writeBatch(db);
+  b.update(doc(db, 'rooms', room.id), { self: true, invites: [], inviteCode: deleteField() });
+  b.set(doc(db, 'users', uid), { selfRoom: room.id }, { merge: true });
+  await b.commit();
+  // The automatic one goes if nothing was ever written in it.
+  const autoId = selfRoomId(uid);
+  if (autoId === room.id) return;
+  try {
+    const auto = await getDoc(doc(db, 'rooms', autoId));
+    if (auto.exists() && !auto.data().lastMessage) await removeRoom(autoId);
+  } catch { /* not there, or not mine */ }
+}
+
+/** The Notes to self room to show: a converted one wins over the automatic one. */
+export function pickSelfRoom(rooms: Room[], uid: string): Room | null {
+  const mine = rooms.filter((r) => r.self && r.owner === uid);
+  if (!mine.length) return null;
+  return mine.find((r) => r.id !== selfRoomId(uid)) || mine[0];
+}
 
 /** Remove a chat nobody has joined yet. */
 export const removeRoom = (roomId: string) => deleteDoc(doc(db, 'rooms', roomId));

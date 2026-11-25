@@ -12,6 +12,7 @@ export default defineDrop<Content>({
   title: 'Time Capsule',
   trayDescription: 'A message that opens on a date',
   order: 14,
+  solo: true,
   content: { openOn: '', openAtMs: 0 },
   setup: [{ key: 'openOn', label: 'Opens on', kind: 'date' }],
   prepare(c) {
@@ -23,6 +24,7 @@ export default defineDrop<Content>({
   subtitle: (c) => `Opens ${new Date(c.openAtMs).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`,
   pinTitle: () => 'Time Capsule',
   pinDetail(c, api) {
+    if (api.createdBy.isMe && !api.partner.uid && Date.now() < c.openAtMs) return `Opens ${new Date(c.openAtMs).toLocaleDateString()}`;
     if (api.createdBy.isMe) return api.mine<string>(K) || 'Not sealed yet';
     return api.revealed(K) ? api.theirs<string>(K) || '' : `Opens ${new Date(c.openAtMs).toLocaleDateString()}`;
   },
@@ -32,6 +34,7 @@ export default defineDrop<Content>({
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState('');
     const author = api.createdBy.isMe;
+    const solo = !api.partner.uid;
     const p = api.partner.name;
     const date = new Date(content.openAtMs).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
     const open = Date.now() >= content.openAtMs;
@@ -41,13 +44,28 @@ export default defineDrop<Content>({
       if (!api.iLocked(K)) {
         return (
           <div class="stack-10">
-            <div class="q">Write your message. {p} can open it on {date}.</div>
+            <div class="q">{solo ? `Write to future you. It opens on ${date}.` : `Write your message. ${p} can open it on ${date}.`}</div>
             <label for="tc-msg" class="sr">Your message</label>
             <textarea id="tc-msg" class="field" rows={4} maxLength={500} value={draft} onInput={(e) => setDraft(e.currentTarget.value)} />
             <button type="button" class="btn-primary" disabled={!draft.trim() || busy}
               onClick={async () => { setBusy(true); try { await api.lock(K, draft.trim().slice(0, 500)); } finally { setBusy(false); } }}>
               Seal it
             </button>
+          </div>
+        );
+      }
+      // A capsule to myself (Notes to self) stays closed until the day, then reads like a letter.
+      if (solo) {
+        return open ? (
+          <div class="stack-10">
+            <div class="capsule open"><span class="capsule-lock" aria-hidden="true">💌</span><div class="cd-label">From past you · sealed until {date}</div></div>
+            <div class="reveal-card me"><div class="reveal-ans">{api.mine<string>(K)}</div></div>
+          </div>
+        ) : (
+          <div class="stack-10">
+            <div class="capsule"><span class="capsule-lock" aria-hidden="true">🔒</span>
+              <div><div class="cd-label">Sealed until {date}</div><div class="cd-sub">{timeLeft(content.openAtMs - Date.now())} to go</div></div>
+            </div>
           </div>
         );
       }
