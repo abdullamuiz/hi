@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filesOfRemoved, filesToDelete } from '../src/cleanup';
+import { exhaustedOnce, filesOfRemoved, filesToDelete } from '../src/cleanup';
 import { openUrl } from '../src/notify';
 
 const photo = { path: 'rooms/r1/photos/alice/abc.jpg', width: 1, height: 1 };
@@ -49,5 +49,28 @@ describe('filesOfRemoved (disappearing tab TTL, deleted chat)', () => {
     expect(filesOfRemoved({ photo, deleted: true }, 'r1')).toEqual([]);
     expect(filesOfRemoved({ photo }, 'r2')).toEqual([]);
     expect(filesOfRemoved({ photo: { path: 'rooms/r1/photos/a/../x.jpg' } }, 'r1')).toEqual([]);
+  });
+});
+
+describe('thumbnails and view-once photos', () => {
+  const once = { path: 'rooms/r1/once/alice/t1/m1.jpg', width: 1, height: 1 };
+  it('deletes the thumbnail with the photo', () => {
+    const p = { path: 'rooms/r1/photos/alice/abc.jpg', thumbPath: 'rooms/r1/photos/alice/abc_t.jpg' };
+    expect(filesToDelete({ photo: p }, { deleted: true }, 'r1')).toEqual([p.path, p.thumbPath]);
+    expect(filesOfRemoved({ photo: p }, 'r1')).toEqual([p.path, p.thumbPath]);
+  });
+  it('deletes a view-once file when deleted for everyone or removed', () => {
+    expect(filesToDelete({ photo: once, viewLimit: 1 }, { deleted: true }, 'r1')).toEqual([once.path]);
+    expect(filesOfRemoved({ photo: once, viewLimit: 1 }, 'r1')).toEqual([once.path]);
+  });
+  it('flags the file when the last view is counted, once', () => {
+    expect(exhaustedOnce({ photo: once, viewLimit: 1 }, { photo: once, viewLimit: 1, viewCount: 1 }, 'r1')).toBe(once.path);
+    expect(exhaustedOnce({ photo: once, viewLimit: 2, viewCount: 0 }, { photo: once, viewLimit: 2, viewCount: 1 }, 'r1')).toBeNull();
+    expect(exhaustedOnce({ photo: once, viewLimit: 2, viewCount: 1 }, { photo: once, viewLimit: 2, viewCount: 2 }, 'r1')).toBe(once.path);
+    // already used up (e.g. our own photo.path delete re-triggering): nothing more
+    expect(exhaustedOnce({ photo: once, viewLimit: 1, viewCount: 1 }, { photo: { width: 1, height: 1 }, viewLimit: 1, viewCount: 1 }, 'r1')).toBeNull();
+    // normal photos and other rooms are never touched
+    expect(exhaustedOnce({ photo }, { photo, viewCount: 1 }, 'r1')).toBeNull();
+    expect(exhaustedOnce({ photo: once, viewLimit: 1 }, { photo: once, viewLimit: 1, viewCount: 1 }, 'r2')).toBeNull();
   });
 });

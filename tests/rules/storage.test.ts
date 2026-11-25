@@ -61,3 +61,28 @@ describe('voice storage', () => {
     await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/voice/alice/big.webm`), big, { contentType: 'audio/webm' }));
   });
 });
+
+describe('thumbnails and view-once photos', () => {
+  it('a thumbnail sits next to the photo and reads like it', async () => {
+    const path = `rooms/${ROOM}/photos/alice/p9_t.jpg`;
+    await assertSucceeds(uploadBytes(ref(st('alice'), path), jpeg, { contentType: 'image/jpeg' }));
+    await assertSucceeds(getBytes(ref(st('bob'), path)));
+  });
+
+  it('only the recipient can open a view-once photo, and only while views are left', async () => {
+    const msg = (extra: object) => env.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), 'rooms', ROOM, 'tabs', 'general', 'messages', 'once1'), {
+        uid: 'alice', kind: 'photo', text: '', viewLimit: 1, photo: { path: `rooms/${ROOM}/once/alice/general/once1.jpg`, width: 1, height: 1 }, ...extra,
+      });
+    });
+    const path = `rooms/${ROOM}/once/alice/general/once1.jpg`;
+    await msg({});
+    await assertFails(uploadBytes(ref(st('alice'), `rooms/${ROOM}/once/bob/general/once1.jpg`), jpeg, { contentType: 'image/jpeg' }));
+    await assertSucceeds(uploadBytes(ref(st('alice'), path), jpeg, { contentType: 'image/jpeg' }));
+    await assertFails(getBytes(ref(st('alice'), path)));   // the sender can't read it back
+    await assertFails(getBytes(ref(st('eve'), path)));     // outsiders never
+    await assertSucceeds(getBytes(ref(st('bob'), path)));  // the recipient, with a view left
+    await msg({ viewCount: 1 });
+    await assertFails(getBytes(ref(st('bob'), path)));     // used up
+  });
+});
