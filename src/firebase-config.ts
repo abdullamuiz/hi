@@ -26,7 +26,7 @@ export const firebaseConfig = {
  * Firebase console → Project settings → Cloud Messaging → Web configuration →
  * Web Push certificates → Generate key pair, then paste the key here.
  */
-export const vapidKey = 'REPLACE_ME';
+export const vapidKey = 'BHLcXH95pxZ2hrDJd7Y4H6177HKke93YkRim92e2hy-YN-_7kkMqGW7oi81UGScboJuPLdosYpOQGEoa-64YVhg';
 
 /** Region your Cloud Functions are deployed to (only needed if you change it in functions/src). */
 export const functionsRegion = 'us-central1';

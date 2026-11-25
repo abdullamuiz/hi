@@ -24,7 +24,7 @@ const TOKEN_KEY = 'drops.fcmToken';
 /** Ask for permission (must run from a tap) and register this device's FCM token. */
 export async function enablePush(uid: string): Promise<void> {
   if (usingEmulators) throw new Error('Push needs a real Firebase project — fill in src/firebase-config.ts.');
-  if (vapidKey === 'REPLACE_ME') throw new Error('Add your Web Push key (vapidKey) to src/firebase-config.ts.');
+  if ((vapidKey as string) === 'REPLACE_ME') throw new Error('Add your Web Push key (vapidKey) to src/firebase-config.ts.');
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error('Notifications were not allowed.');
   const reg = await navigator.serviceWorker.ready;
