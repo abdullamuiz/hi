@@ -1495,7 +1495,13 @@ div.tod-card { opacity: .55; }
 /* ---------------------------------------------------------------- rounded edges around the feed
    The bars above the messages round off at the bottom and the bars below round off at the top,
    so on phones the chat reads as one rounded window between them, like the desktop card. */
-.app > :has(+ .feed):not(.feed) { border-bottom-left-radius: 22px; border-bottom-right-radius: 22px; }
+.app > :has(+ .feed):not(.feed) {
+  position: relative; z-index: 2;
+  border-bottom-left-radius: 22px; border-bottom-right-radius: 22px;
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.18);
+}
 .app > .feed + :is(.composer, .compose-strip, footer, div[class*="strip"], div[class*="bar"]) {
+  position: relative; z-index: 2;
   border-top-left-radius: 22px; border-top-right-radius: 22px;
+  box-shadow: 0 -6px 18px -6px rgba(0, 0, 0, 0.18);
 }
