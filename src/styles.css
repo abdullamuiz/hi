@@ -80,6 +80,16 @@ input, textarea { font-family: inherit; font-size: 16px; color: var(--ink); }
   body { background: var(--desk); }
   .app { box-shadow: 0 0 0 1px var(--line); }
 }
+/* On computers the app sits as a rounded card on the desk. The transform makes the card the
+   containing block for fixed panels (sheets, scrapbook, viewers, effects) so they share its corners. */
+@media (min-width: 560px) and (min-height: 640px) {
+  .app {
+    inset: 16px 0;
+    border-radius: 24px;
+    box-shadow: 0 0 0 1px var(--line), 0 18px 50px rgba(0, 0, 0, 0.18);
+    transform: translateZ(0);
+  }
+}
 
 /* ------------------------------------------------------------------ header */
 .hdr {
