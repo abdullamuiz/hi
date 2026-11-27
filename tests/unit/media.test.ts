@@ -92,3 +92,10 @@ describe('watch together', () => {
     expect(countdownStage(10_000, 17_000)).toEqual({ n: null, go: false, done: true });
   });
 });
+
+import { watchInviteText as _wit, watchInviteTitle as _wiT } from '../../src/lib/media';
+describe('watch-together chat line', () => {
+  it('round-trips the title', () => { expect(_wiT(_wit('Lofi "live" mix'))).toBe('Lofi "live" mix'); });
+  it('reads the older wording', () => { expect(_wiT('▶ Watching "YouTube video" together, tap Join at the top')).toBe('YouTube video'); });
+  it('ignores normal text', () => { expect(_wiT('Watching a movie tonight')).toBeNull(); expect(_wiT(undefined)).toBeNull(); });
+});

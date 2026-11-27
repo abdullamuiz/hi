@@ -182,3 +182,11 @@ export const fmtTime = (sec: number) => {
   const ss = String(s % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 };
+
+/** The chat line sent when someone starts watching together. */
+export const watchInviteText = (title: string) => `▶ Watching "${title}" together`;
+/** The title in a watch-together chat line (also matches the older "…, tap Join at the top" wording), else null. */
+export function watchInviteTitle(text: string | undefined | null): string | null {
+  const m = /^▶ Watching "(.+)" together(?:, tap Join at the top)?$/s.exec(text || '');
+  return m ? m[1] : null;
+}
