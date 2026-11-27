@@ -57,10 +57,10 @@ import { evictMedia, evictedBetween, seenOf } from '../lib/mediaCache';
 import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
 import { loadPlayed, motionOn, pickArrival, previewFor, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
 import { MoodSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
-import { CountdownOverlay, MediaPanel, MediaSwitch, TogetherBar, TogetherView } from './Media';
+import { CountdownOverlay, MediaPanel, MediaSwitch, TogetherBar, TogetherView, WatchInviteCard } from './Media';
 import { startCountdown, startVideo, watchTogether } from '../data/media';
 import type { MediaKind } from '../lib/media';
-import { countdownStage } from '../lib/media';
+import { countdownStage, watchInviteText, watchInviteTitle } from '../lib/media';
 import { currentMode, toggledPrefs } from '../lib/themes';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
 import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon } from './icons';
@@ -147,6 +147,8 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [together, setTogether] = useState<Together | null>(null);
   const [togetherOpen, setTogetherOpen] = useState(false);
   const [togetherHidden, setTogetherHidden] = useState('');
+  /** Watch-together cards I tapped "Later" on. */
+  const [laterIds, setLaterIds] = useState<string[]>([]);
   const [countdownSeen, setCountdownSeen] = useState(0);
   // A Drop opened on its own (from the countdown banner), as a pop-up.
   const [dropPop, setDropPop] = useState<string | null>(null);
@@ -576,7 +578,7 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
       await startVideo(room.id, user.uid, item);
       setMedia(null);
       setTogetherOpen(true);
-      await sendText(room.id, activeTab, user.uid, `▶ Watching "${item.title}" together, tap Join at the top`);
+      await sendText(room.id, activeTab, user.uid, watchInviteText(item.title));
     } catch (e: any) { flash(e?.message || 'Could not start that.'); }
   };
 
@@ -668,6 +670,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     seenRef.current = { tab: activeTab, seen: next };
   }, [messages]);
 
+  // Only the newest watch-together card can be live.
+  const latestInvite = useMemo(() => {
+    const list = shown || [];
+    for (let i = list.length - 1; i >= 0; i--) if (list[i].kind === 'text' && watchInviteTitle(list[i].text) != null) return list[i].id;
+    return '';
+  }, [shown]);
   const photos = useMemo(() => (shown || []).filter((m) => m.kind === 'photo' && m.photo?.path && !m.deleted && !m.viewLimit), [shown]);
   // Ticks: read only when we both share read receipts.
   const partnerRead = delivery.readReceipts ? partnerMember?.lastRead?.[activeTab] : undefined;
@@ -889,6 +897,17 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           let body: preact.ComponentChildren = null;
           if (m.deleted) {
             body = <div class={`bubble ${mine ? 'mine' : 'theirs'} deleted`}>Message deleted</div>;
+          } else if (m.kind === 'text' && !m.effect && !m.replyTo && watchInviteTitle(m.text) != null) {
+            const title = watchInviteTitle(m.text)!;
+            const key = together ? `${together.itemId}:${together.by}` : '';
+            const live = together?.kind === 'video' && together.title === title
+              && Date.now() - together.atMs < 3 * 3600_000 && (m.id === latestInvite);
+            body = (
+              <WatchInviteCard title={title} mine={mine} live={live} saved={laterIds.includes(m.id)} partnerName={partner.name}
+                onWatch={() => setTogetherOpen(true)}
+                onLater={() => { setTogetherHidden(key); setLaterIds((l) => [...l, m.id]); flash('Saved in your Watch list 🎬'); }}
+                onList={() => setMedia('watch')} />
+            );
           } else if (m.kind === 'text') {
             const run = m.effect ? fxRun[m.id] || 0 : 0;
             body = (

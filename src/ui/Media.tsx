@@ -641,3 +641,37 @@ export function CountdownOverlay({ together, roomId, me, onClose }: { together: 
   );
 }
 
+
+/** In the chat: the "watching together" message as a card with Watch now / Later. */
+export function WatchInviteCard({ title, mine, live, saved, partnerName, onWatch, onLater, onList }: {
+  title: string; mine: boolean; live: boolean; saved: boolean; partnerName: string;
+  onWatch(): void; onLater(): void; onList(): void;
+}) {
+  return (
+    <div class={`bubble watch-card ${mine ? 'mine' : 'theirs'}`}>
+      <div class="watch-card-top"><span class="watch-card-play" aria-hidden="true">▶</span>
+        <span class="watch-card-txt">
+          <span class="watch-card-label">{mine ? 'You started watching' : `${partnerName} is watching`}</span>
+          <b class="watch-card-title">{title}</b>
+        </span>
+      </div>
+      {live && !mine && !saved && (
+        <div class="watch-card-btns">
+          <button type="button" class="btn-primary small" onClick={onWatch}>▶ Watch now</button>
+          <button type="button" class="btn-ghost small" onClick={onLater}>Later</button>
+        </div>
+      )}
+      {live && !mine && saved && (
+        <div class="watch-card-btns"><span class="fine">Saved in your Watch list</span>
+          <button type="button" class="link-btn" onClick={onWatch}>Watch now</button></div>
+      )}
+      {live && mine && (
+        <div class="watch-card-btns"><button type="button" class="btn-ghost small" onClick={onWatch}>Open player</button></div>
+      )}
+      {!live && (
+        <div class="watch-card-btns"><span class="fine">Ended</span>
+          <button type="button" class="link-btn" onClick={onList}>Watch list</button></div>
+      )}
+    </div>
+  );
+}
