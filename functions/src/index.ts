@@ -14,6 +14,7 @@ import { notificationBody, openUrl, threadBody } from './notify.js';
 import { exhaustedOnce, filesOfRemoved, filesToDelete } from './cleanup.js';
 import { accountPlan } from './account.js';
 import { sendInvitePushes } from './invites.js';
+import { mediaPatch, mediaPushBody } from './media.js';
 import { alertPayload, alertTargets, emailApprovalOk, Refused, signOutOthersPlan, tokensOfDevice, type DeviceDoc, type TokenDoc } from './devices.js';
 import { dayKeyIn, due, expiryMs, isMuted, isQuiet, scheduledToMessage, summaryText, urgentDecision, type Held } from './delivery.js';
 
@@ -43,6 +44,38 @@ export const linkPreview = onDocumentCreated({ document: MESSAGE, timeoutSeconds
   } catch (e) {
     logger.info('link preview failed', { url: msg.link.url, error: String(e) });
     await snap.ref.update({ 'link.status': 'failed' });
+  }
+});
+
+/**
+ * A link added to the Watch list or Music: fill in the page's title and poster, then a quiet
+ * push to the other person ("Sam added Dune to your Watch list"). Muted chats and quiet hours
+ * get no push (it isn't worth holding for the summary).
+ */
+export const mediaAdded = onDocumentCreated({ document: 'rooms/{roomId}/media/{itemId}', timeoutSeconds: 20 }, async (event) => {
+  const snap = event.data;
+  const item = snap?.data();
+  if (!snap || !item || item.preview !== 'pending') return;
+  let og = null;
+  try { og = await fetchPreview(String(item.url)); } catch (e) { logger.info('media preview failed', { url: item.url, error: String(e) }); }
+  const patch = mediaPatch(item, og);
+  await snap.ref.update(patch);
+
+  const db = getFirestore();
+  const { roomId } = event.params;
+  const room = (await db.doc(`rooms/${roomId}`).get()).data();
+  if (!room || room.self === true) return;
+  const recipients: string[] = (room.members || []).filter((u: string) => u !== item.addedBy);
+  const adder = (await db.doc(`rooms/${roomId}/members/${item.addedBy}`).get()).data();
+  const now = Date.now();
+  for (const uid of recipients) {
+    const c = (await db.doc(`users/${uid}/contacts/${item.addedBy}`).get()).data();
+    if (isMuted({ muted: c?.muted, mutedUntilMs: c?.mutedUntil?.toMillis?.() ?? null }, now)) continue;
+    if (isQuiet(now, (await db.doc(`users/${uid}`).get()).data()?.quiet)) continue;
+    await pushTo(uid, {
+      title: 'Hi', body: mediaPushBody(String(adder?.name || ''), String(patch.title || item.title || ''), item.kind === 'music' ? 'music' : 'watch'),
+      tag: `media-${roomId}`, url: `./?room=${roomId}`, room: roomId,
+    });
   }
 });
 

@@ -1375,3 +1375,77 @@ describe('devices & signing out other devices', () => {
     await assertSucceeds(getDoc(doc(bob(), 'rooms', ROOM)));
   });
 });
+
+describe('media: Watch list, Music and watching together', () => {
+  const mediaCol = (db: Firestore) => collection(db, 'rooms', ROOM, 'media');
+  const item = (by: string, extra: Record<string, unknown> = {}) => ({
+    kind: 'watch', url: 'https://www.netflix.com/title/80057281', provider: 'netflix', title: 'Netflix title',
+    image: null, siteName: null, description: null, videoId: null, addedBy: by, addedAt: serverTimestamp(),
+    status: 'want', episode: '', ratings: {}, reactions: {}, order: 1, preview: 'pending', ...extra,
+  });
+
+  it('members add links (with the badge count in the same batch); others cannot', async () => {
+    await seedRoom();
+    const a = alice();
+    const b = writeBatch(a);
+    b.set(doc(mediaCol(a), 'm1'), item('alice'));
+    b.update(doc(a, 'rooms', ROOM), { mediaWantCount: increment(1) });
+    await assertSucceeds(b.commit());
+    await assertSucceeds(setDoc(doc(mediaCol(bob()), 'm2'), item('bob', { kind: 'music', status: null, provider: 'spotify', url: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC' })));
+    await assertFails(setDoc(doc(mediaCol(eve()), 'm3'), item('eve')));
+    await assertFails(getDocs(mediaCol(eve())));
+    // Can't claim someone else added it, add a non-https link, or pre-fill ratings.
+    await assertFails(setDoc(doc(mediaCol(alice()), 'm4'), item('bob')));
+    await assertFails(setDoc(doc(mediaCol(alice()), 'm5'), item('alice', { url: 'http://x.com/a' })));
+    await assertFails(setDoc(doc(mediaCol(alice()), 'm6'), item('alice', { ratings: { alice: 5 } })));
+    await assertFails(setDoc(doc(mediaCol(alice()), 'm7'), item('alice', { kind: 'music' })));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { mediaWantCount: 3 }));
+  });
+
+  it('either moves it along; you keep only your own stars and reaction; only the adder removes it', async () => {
+    await seedRoom();
+    await setDoc(doc(mediaCol(alice()), 'm1'), item('alice'));
+    const ref = (db: Firestore) => doc(db, 'rooms', ROOM, 'media', 'm1');
+    await assertSucceeds(updateDoc(ref(bob()), { status: 'watching', order: 2 }));
+    await assertSucceeds(updateDoc(ref(bob()), { episode: 'S2 E5' }));
+    await assertFails(updateDoc(ref(bob()), { status: 'binged', order: 3 }));
+    await assertFails(updateDoc(ref(bob()), { title: 'Something else' }));
+    await assertSucceeds(updateDoc(ref(bob()), new FieldPath('ratings', 'bob'), 4));
+    await assertFails(updateDoc(ref(bob()), new FieldPath('ratings', 'alice'), 1));
+    await assertFails(updateDoc(ref(bob()), new FieldPath('ratings', 'bob'), 9));
+    await assertSucceeds(updateDoc(ref(alice()), new FieldPath('reactions', 'alice'), '🔥'));
+    await assertFails(updateDoc(ref(bob()), new FieldPath('reactions', 'alice'), '👎'));
+    await assertSucceeds(updateDoc(ref(bob()), new FieldPath('ratings', 'bob'), deleteField()));
+    await assertFails(deleteDoc(ref(bob())));
+    await assertSucceeds(deleteDoc(ref(alice())));
+  });
+
+  it('song of the day is set by a member, as themselves', async () => {
+    await seedRoom();
+    await assertSucceeds(updateDoc(doc(bob(), 'rooms', ROOM), { songOfDay: { id: 'm2', by: 'bob', at: serverTimestamp() } }));
+    await assertFails(updateDoc(doc(bob(), 'rooms', ROOM), { songOfDay: { id: 'm2', by: 'alice', at: serverTimestamp() } }));
+    await assertFails(updateDoc(doc(eve(), 'rooms', ROOM), { songOfDay: null }));
+    await assertSucceeds(updateDoc(doc(alice(), 'rooms', ROOM), { songOfDay: null }));
+  });
+
+  it('watch together: members share playback, presence and reactions', async () => {
+    await seedRoom();
+    const now = (db: Firestore) => doc(db, 'rooms', ROOM, 'together', 'now');
+    const state = (by: string, extra: Record<string, unknown> = {}) => ({
+      kind: 'video', itemId: 'm1', title: 'Clip', provider: 'youtube', videoId: 'dQw4w9WgXcQ', state: 'paused',
+      positionSec: 0, atMs: 1, countdownAtMs: null, by, updatedAt: serverTimestamp(), ...extra,
+    });
+    await assertSucceeds(setDoc(now(alice()), state('alice')));
+    await assertSucceeds(updateDoc(now(bob()), { state: 'playing', positionSec: 12.5, atMs: 2, by: 'bob', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(now(bob()), { state: 'playing', positionSec: 13, atMs: 3, by: 'alice', updatedAt: serverTimestamp() }));
+    await assertFails(setDoc(now(eve()), state('eve')));
+    await assertFails(getDoc(now(eve())));
+    await assertFails(setDoc(doc(alice(), 'rooms', ROOM, 'together', 'other'), state('alice')));
+    await assertSucceeds(setDoc(now(alice()), state('alice', { kind: 'countdown', videoId: null, provider: 'netflix', countdownAtMs: 5000 })));
+    await assertSucceeds(setDoc(doc(bob(), 'rooms', ROOM, 'together', 'now', 'people', 'bob'), { atMs: 1, at: serverTimestamp() }));
+    await assertFails(setDoc(doc(bob(), 'rooms', ROOM, 'together', 'now', 'people', 'alice'), { atMs: 1, at: serverTimestamp() }));
+    await assertSucceeds(setDoc(doc(collection(bob(), 'rooms', ROOM, 'together', 'now', 'rx')), { uid: 'bob', emoji: '🔥', atMs: 1, at: serverTimestamp() }));
+    await assertFails(setDoc(doc(collection(bob(), 'rooms', ROOM, 'together', 'now', 'rx')), { uid: 'alice', emoji: '🔥', atMs: 1, at: serverTimestamp() }));
+    await assertSucceeds(deleteDoc(now(bob())));
+  });
+});

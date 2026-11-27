@@ -48,11 +48,12 @@ export const GoogleIcon = () => (
  * Mood weather as faces: a smiling sun, a "meh" cloud, a sleepy fog blob and a
  * frustrated storm cloud. Colours come from the theme (--sun, --cloud, --storm).
  */
-export function MoodIcon({ mood, size = 22 }: { mood: MoodId; size?: number }) {
+/** Mood faces. `accent` draws every mood in the app accent (headers, chat list); otherwise each has its own colour. */
+export function MoodIcon({ mood, size = 22, accent = false }: { mood: MoodId; size?: number; accent?: boolean }) {
   const common = { 'aria-hidden': true as const, width: size, height: size, viewBox: '0 0 24 24', fill: 'none', 'stroke-width': 1.7, 'stroke-linecap': 'round' as const, 'stroke-linejoin': 'round' as const };
   switch (mood) {
     case 'sunny': {
-      const c = 'var(--sun)';
+      const c = accent ? 'var(--me)' : 'var(--sun)';
       return (
         <svg {...common} style={{ stroke: c }}>
           <circle cx="12" cy="12" r="5.6" />
@@ -64,7 +65,7 @@ export function MoodIcon({ mood, size = 22 }: { mood: MoodId; size?: number }) {
       );
     }
     case 'cloudy': {
-      const c = 'var(--cloud)';
+      const c = accent ? 'var(--me)' : 'var(--cloud)';
       return (
         <svg {...common} style={{ stroke: c }}>
           <path d="M6.8 19.5h10.4a4.3 4.3 0 0 0 .5-8.57A6 6 0 0 0 6.3 9.6a4.96 4.96 0 0 0 .5 9.9z" />
@@ -75,7 +76,7 @@ export function MoodIcon({ mood, size = 22 }: { mood: MoodId; size?: number }) {
       );
     }
     case 'foggy': {
-      const c = 'var(--cloud)';
+      const c = accent ? 'var(--me)' : 'var(--cloud)';
       // A soft fog "ghost" with a wavy hem, sleepy closed eyes, a little yawn and a z.
       return (
         <svg {...common} style={{ stroke: c }}>
@@ -88,7 +89,7 @@ export function MoodIcon({ mood, size = 22 }: { mood: MoodId; size?: number }) {
       );
     }
     case 'stormy': {
-      const c = 'var(--storm)';
+      const c = accent ? 'var(--me)' : 'var(--storm)';
       return (
         <svg {...common} style={{ stroke: c }}>
           <path d="M7 15.2h10.6a3.6 3.6 0 0 0 .3-7.18A6 6 0 0 0 6.6 6.4 4.4 4.4 0 0 0 7 15.2z" />

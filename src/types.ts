@@ -31,6 +31,10 @@ export interface Room {
   /** Latest thread reply anywhere in the chat (for the chat list's 💬 dot). */
   lastThreadReplyAt: Timestamp | null;
   lastThreadReplyBy: string | null;
+  /** How many Watch list items are "Want to watch" (the 🎬 badge, without listening to the list). */
+  mediaWantCount: number;
+  /** Music: the pinned song of the day. */
+  songOfDay: { id: string; by: string } | null;
 }
 
 /** room.pinned[]: a message pinned to the top of the chat. */
@@ -264,4 +268,47 @@ export interface Pin {
   senderId?: string | null;
   editedBy?: string | null;
   editedAt?: Timestamp | null;
+}
+
+/** rooms/{id}/media/{itemId}: one Watch list title or Music song. */
+export interface MediaItem {
+  id: string;
+  kind: 'watch' | 'music';
+  url: string;
+  provider: 'netflix' | 'prime' | 'disney' | 'youtube' | 'spotify' | 'apple' | 'other';
+  title: string;
+  image: string | null;
+  siteName: string | null;
+  description: string | null;
+  /** YouTube video id, when it's a YouTube link. */
+  videoId: string | null;
+  addedBy: string;
+  addedAt: Timestamp | null;
+  /** Watch list only. */
+  status: 'want' | 'watching' | 'watched' | null;
+  /** "S2 E5" for a series being watched. */
+  episode: string;
+  /** uid → 1..5 stars. */
+  ratings: Record<string, number>;
+  /** uid → one emoji. */
+  reactions: Record<string, string>;
+  order: number;
+  /** The server fills title/image from the page (pending → ok | failed). */
+  preview: 'pending' | 'ok' | 'failed';
+}
+
+/** rooms/{id}/together/now: what's playing together (YouTube) or a 3-2-1 countdown. */
+export interface Together {
+  kind: 'video' | 'countdown';
+  itemId: string;
+  title: string;
+  provider: MediaItem['provider'];
+  videoId: string | null;
+  state: 'playing' | 'paused';
+  positionSec: number;
+  /** Writer's clock (ms) when this state was set; phones' clocks are close enough for sync. */
+  atMs: number;
+  /** 3-2-1: when to press play (ms). */
+  countdownAtMs: number | null;
+  by: string;
 }

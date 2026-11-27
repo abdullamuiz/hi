@@ -44,9 +44,9 @@ async function person(email, startUrl = APP) {
     await shot(page, 'splash-drawing');
     await page.locator('#splash').waitFor({ state: 'detached', timeout: 8000 });
     await shot(page, 'sign-in');
-    await page.getByRole('button', { name: 'Switch to dark mode' }).click();
+    await menuTap(page, 'Switch to dark mode');
     await shot(page, 'sign-in-dark');
-    await page.getByRole('button', { name: 'Switch to light mode' }).click();
+    await menuTap(page, 'Switch to light mode');
   }
   await page.getByRole('button', { name: /Use e-mail instead/ }).click();
   await page.getByLabel('E-mail me a sign-in link').fill(email);
@@ -72,6 +72,13 @@ async function person(email, startUrl = APP) {
 }
 
 const step = (s) => console.log('•', s);
+
+/** In a chat, Settings and Light/Dark live in the ⋯ menu; on other screens they're plain buttons. */
+async function menuTap(p, name) {
+  const menu = p.getByRole('button', { name: 'Chat menu' });
+  if (await menu.count() && await menu.first().isVisible()) await menu.first().click();
+  await p.getByRole('button', { name }).first().click();
+}
 
 /** Signs an existing account in on a new browser (a second device): no profile setup this time. */
 async function signInAgain(email) {
@@ -585,6 +592,7 @@ try {
   await shot(alice, 'feeling-map-revealed');
   for (const [p, f] of [[alice, fA], [bob, fB]]) {
     await f.getByRole('button', { name: 'Next scene' }).click();
+    await f.getByText('Scene 2 of 2').waitFor(); // the step comes back from the server first
     await f.getByRole('button', { name: /Mood grid/ }).click({ position: { x: p === alice ? 300 : 60, y: 150 } });
     await f.getByRole('button', { name: 'Lock in & reveal' }).click();
   }
@@ -1011,8 +1019,7 @@ try {
   await alice.getByRole('button', { name: /Your mood weather/ }).click();
   await shot(alice, 'mood-sheet');
   await alice.getByRole('button', { name: /Stormy/ }).click();
-  await bob.getByText(/Stormy · online/).waitFor();
-  await bob.getByRole('img', { name: "alice's mood: Stormy" }).waitFor();
+    await bob.getByRole('img', { name: "alice's mood: Stormy" }).waitFor();
   await alice.getByRole('button', { name: 'Your mood weather: Stormy. Change it' }).waitFor();
   await shot(bob, 'header-their-mood');
 
@@ -1024,10 +1031,10 @@ try {
   }));
   assert.deepEqual(await state(alice), { theme: 'hi-light', mode: 'light', favicon: './icons/favicon-teal.svg' });
   await shot(alice, 'theme-hi');
-  await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await menuTap(alice, 'Switch to dark mode');
   assert.deepEqual(await state(alice), { theme: 'hi-dark', mode: 'dark', favicon: './icons/favicon-navy.svg' });
   await shot(alice, 'theme-dark');
-  await alice.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(alice, 'Settings');
   await alice.getByRole('radio', { name: /^Hi/, checked: true }).waitFor();
   await alice.getByRole('radio', { name: 'Dark', checked: true }).waitFor();
   await shot(alice, 'settings-dark');
@@ -1045,9 +1052,9 @@ try {
   await alice.getByRole('textbox', { name: 'Message' }).waitFor();
   assert.equal((await state(alice)).mode, 'dark');
   assert.equal((await state(bob)).mode, 'light', "bob's theme is his own");
-  await alice.getByRole('button', { name: 'Switch to light mode' }).click();
+  await menuTap(alice, 'Switch to light mode');
   assert.equal((await state(alice)).mode, 'light');
-  await alice.getByRole('button', { name: 'Switch to dark mode' }).click();
+  await menuTap(alice, 'Switch to dark mode');
 
   step('Pull down and hold 2 s at the top of the chat to refresh (a quick tug does nothing)');
   // Scroll to the very top and make sure it stays there (late layout can nudge it).
@@ -1186,7 +1193,7 @@ try {
   await alice.getByRole('button', { name: /^Bobby 🐻.*muted/ }).waitFor();
 
   step('Read receipts off: nobody sees "Read" (both ways)');
-  await bob.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(bob, 'Settings');
   await bob.getByRole('radiogroup', { name: 'Read receipts' }).getByRole('radio', { name: 'Off' }).click();
   await bob.getByText('Nobody sees when you’ve read their messages').waitFor();
   await bob.keyboard.press('Escape');
@@ -1197,7 +1204,7 @@ try {
   await alice.locator('.msg', { hasText: 'Are you reading these?' }).getByRole('img', { name: 'Sent' }).waitFor();
   await alice.waitForTimeout(1500);
   assert.equal(await alice.locator('.read-label').count(), 0, 'no "Read" while Bob has read receipts off');
-  await bob.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(bob, 'Settings');
   await bob.getByRole('radiogroup', { name: 'Read receipts' }).getByRole('radio', { name: 'On' }).click();
   await bob.keyboard.press('Escape');
   await alice.locator('.msg', { hasText: 'Are you reading these?' }).locator('.read-label').waitFor();
@@ -1286,7 +1293,7 @@ try {
   assert.equal(await fxCount(bob), before, 'no animation with reduced motion');
   assert.equal(await bob.locator('#fx-layer').count(), 0);
   await bob.emulateMedia({ reducedMotion: 'no-preference' });
-  await bob.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(bob, 'Settings');
   await bob.getByRole('radiogroup', { name: 'Play effects' }).getByRole('radio', { name: 'Off' }).click();
   await bob.keyboard.press('Escape');
   await alice.getByRole('textbox', { name: 'Message' }).fill('Happy new year!');
@@ -1316,7 +1323,7 @@ try {
     assert.equal(await dropFx(), fxBefore, 'no Drop overlay with effects turned off');
     assert.equal(await bob.locator('#drop-fx').count(), 0);
   }
-  await bob.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(bob, 'Settings');
   await bob.getByRole('radiogroup', { name: 'Play effects' }).getByRole('radio', { name: 'On' }).click();
   await bob.keyboard.press('Escape');
 
@@ -1360,7 +1367,7 @@ try {
   assert.equal(await bob.getByText('Never mind this one').count(), 0);
 
   step('Quiet hours in Settings');
-  await alice.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(alice, 'Settings');
   await alice.getByRole('radiogroup', { name: 'Quiet hours' }).getByRole('radio', { name: 'On' }).click();
   await alice.getByLabel('Quiet hours start').waitFor();
   await alice.getByText('Notifications wait until 07:00').waitFor();
@@ -1413,7 +1420,7 @@ try {
   await alice.getByRole('button', { name: 'Add contact' }).waitFor();
   assert.equal(await alice.getByRole('button', { name: /^dave/ }).count(), 0);
   await dave.getByText('alice left this chat.').waitFor();
-  await alice.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(alice, 'Settings');
   await alice.locator('.settings-row', { hasText: 'dave' }).getByRole('button', { name: 'Unblock' }).waitFor();
   await shot(alice, 'settings-blocked');
   await alice.keyboard.press('Escape');
@@ -1775,12 +1782,115 @@ try {
   await bob.getByRole('button', { name: 'Turn off streak' }).click();
   await alice.locator('.streak-chip').waitFor({ state: 'detached' });
 
+  step('Header: 🎬 🎵 switch, ⋯ menu with Light/Dark and Settings; mood faces after the name');
+  await alice.getByRole('button', { name: 'Chat menu' }).click();
+  await alice.getByRole('button', { name: /Switch to (dark|light) mode/ }).waitFor();
+  await alice.getByRole('button', { name: 'Settings' }).waitFor();
+  await alice.waitForTimeout(300);
+  await shot(alice, 'chat-menu');
+  await alice.keyboard.press('Escape');
+  await alice.getByRole('button', { name: /^Your mood weather/ }).waitFor();
+  await shot(alice, 'header-media');
+
+  step('Watch list: paste links, both see them, move along, rate, badge, Pick for tonight, 3-2-1');
+  for (const p of [alice, bob]) await p.evaluate(() => localStorage.setItem('hi.fakePlayer', '1'));
+  const NF = 'https://www.netflix.com/title/80057281';
+  const YT = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
+  await alice.getByRole('button', { name: /^Watch list/ }).first().click();
+  const panelA = alice.locator('.media-panel');
+  await panelA.waitFor();
+  await alice.locator('#media-url').fill(NF);
+  await panelA.getByRole('button', { name: 'Add', exact: true }).click();
+  await panelA.locator('.media-card', { hasText: 'Netflix title' }).waitFor();
+  await alice.locator('#media-url').fill(YT);
+  await panelA.getByRole('button', { name: 'Add', exact: true }).click();
+  await panelA.locator('.media-card', { hasText: 'YouTube video' }).waitFor();
+  // The badge on the switch counts "Want to watch".
+  await alice.getByRole('button', { name: 'Watch list, 2 to watch' }).first().waitFor();
+  // The server tries to read the pages (offline here), then the cards stop loading.
+  await alice.waitForFunction(() => !document.querySelector('.media-loading'), null, { timeout: 30000 });
+  await shot(alice, 'media-watch');
+  await bob.getByRole('button', { name: 'Watch list, 2 to watch' }).click();
+  await bob.locator('.media-panel .media-card', { hasText: 'Netflix title' }).waitFor();
+
+  await alice.getByRole('button', { name: '🎡 Pick for tonight' }).click();
+  await alice.getByText(/^Tonight:/).waitFor({ timeout: 10000 });
+  await shot(alice, 'media-pick');
+  await alice.keyboard.press('Escape');
+
+  await panelA.getByRole('button', { name: 'Netflix title. Options' }).click();
+  await alice.getByRole('radio', { name: 'Watching' }).click();
+  await alice.getByRole('radio', { name: '4 stars' }).click();
+  await alice.getByRole('button', { name: 'React 🍿' }).click();
+  await alice.waitForTimeout(300);
+  await shot(alice, 'media-item');
+  await alice.keyboard.press('Escape');
+  await bob.getByRole('tab', { name: /^Watching · 1/ }).click();
+  const nfB = bob.locator('.media-panel .media-card', { hasText: 'Netflix title' });
+  await nfB.getByText('alice ★★★★☆').waitFor();
+  await nfB.getByText('🍿 1').waitFor();
+  await bob.getByRole('button', { name: 'Watch list, 1 to watch' }).first().waitFor();
+
+  await panelA.getByRole('tab', { name: /^Watching · 1/ }).click();
+  await panelA.getByRole('button', { name: 'Netflix title. Options' }).click();
+  await alice.getByRole('button', { name: '3-2-1 Play together' }).click();
+  await bob.locator('.countdown-overlay').waitFor();
+  await alice.locator('.countdown-overlay').waitFor();
+  await shot(bob, 'media-countdown');
+  await bob.getByText('Press play on Netflix… now!').waitFor({ timeout: 10000 });
+  await alice.getByText('Press play on Netflix… now!').waitFor({ timeout: 5000 });
+  await bob.locator('.countdown-overlay').waitFor({ state: 'detached', timeout: 15000 });
+
+  step('Music: Spotify and YouTube songs, song of the day with its player');
+  await panelA.getByRole('button', { name: 'Music' }).click();
+  await alice.locator('#media-url').fill('https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC');
+  await panelA.getByRole('button', { name: 'Add', exact: true }).click();
+  await panelA.locator('.media-card', { hasText: 'Spotify' }).first().waitFor();
+  await alice.locator('#media-url').fill('https://youtu.be/kJQP7kiw5Fk');
+  await panelA.getByRole('button', { name: 'Add', exact: true }).click();
+  await panelA.locator('.media-card', { hasText: 'YouTube video' }).waitFor();
+  await panelA.getByRole('button', { name: /^Spotify\. Options$/ }).click();
+  await alice.getByRole('button', { name: '⭐ Make song of the day' }).click();
+  await panelA.locator('.media-sotd iframe[src^="https://open.spotify.com/embed/track/4uLU6hMCjMI75M1A2tKUQC"]').waitFor();
+  await panelA.getByRole('button', { name: 'Play YouTube video' }).click();
+  await panelA.locator('iframe[src^="https://www.youtube-nocookie.com/embed/kJQP7kiw5Fk"]').waitFor();
+  await shot(alice, 'media-music');
+  await bob.locator('.media-panel').getByRole('button', { name: 'Music' }).click();
+  await bob.locator('.media-panel .media-sotd').getByText('Song of the day · from alice').waitFor();
+
+  step('Watch together (YouTube): play, pause and reactions sync; end for both');
+  await panelA.getByRole('button', { name: /^Watch list/ }).click();
+  await panelA.getByRole('tab', { name: /^Want · 1/ }).click();
+  await panelA.getByRole('button', { name: 'YouTube video. Options' }).click();
+  await alice.getByRole('button', { name: '▶ Watch together' }).click();
+  await alice.locator('.together [data-testid="together-player"][data-state]').waitFor();
+  await bob.keyboard.press('Escape'); // close Bob's panel: the chat shows "alice is watching … Join"
+  await bob.locator('.together-bar').getByRole('button', { name: 'Join' }).click();
+  const tpB = bob.locator('.together [data-testid="together-player"]');
+  await tpB.and(bob.locator('[data-state]')).waitFor();
+  await alice.getByText('In sync with Bobby 🐻').waitFor({ timeout: 20000 });
+  await alice.getByRole('button', { name: 'Play for both' }).click();
+  await bob.locator('.together [data-state="playing"]').waitFor({ timeout: 8000 });
+  await alice.waitForTimeout(2500);
+  const tA = Number(await alice.locator('.together [data-testid="together-player"]').getAttribute('data-time'));
+  const tB = Number(await tpB.getAttribute('data-time'));
+  assert.ok(Math.abs(tA - tB) < 2, `in sync: alice ${tA}s, bob ${tB}s`);
+  await bob.getByRole('button', { name: 'React 🔥' }).click();
+  await alice.locator('.together-float').first().waitFor();
+  await shot(alice, 'media-together');
+  await bob.getByRole('button', { name: 'Pause for both' }).click();
+  await alice.locator('.together [data-state="paused"]').waitFor({ timeout: 8000 });
+  await alice.getByRole('button', { name: 'End for both' }).click();
+  await bob.locator('.together').waitFor({ state: 'detached', timeout: 10000 });
+  await bob.getByText(/Watching "YouTube video" together/).first().waitFor();
+  for (const p of [alice, bob]) await p.evaluate(() => localStorage.removeItem('hi.fakePlayer'));
+
   step('Devices: a second sign-in, rename, primary, remote sign-out, protection + approval, sign out all others');
   {
     const a2 = await signInAgain('alice@example.com');
     // Signed in: the chat list or a chat (whichever the app opens) is showing.
     await a2.locator('header.hdr').first().waitFor({ timeout: 20000 });
-    await alice.getByRole('button', { name: 'Settings' }).first().click();
+    await menuTap(alice, 'Settings');
     await alice.getByRole('button', { name: 'Manage devices' }).click();
     const panel = alice.getByRole('dialog', { name: 'Devices' });
     await panel.locator('.device-row').nth(1).waitFor();
@@ -1832,7 +1942,7 @@ try {
   }
 
   step('Delete account (Eve, who has no chats)');
-  await eve.getByRole('button', { name: 'Settings' }).click();
+  await menuTap(eve, 'Settings');
   await eve.getByRole('button', { name: 'Delete account' }).click();
   await eve.getByText('Delete your account?').waitFor();
   await eve.getByRole('button', { name: 'Continue' }).click();
