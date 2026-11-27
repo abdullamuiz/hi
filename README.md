@@ -478,6 +478,22 @@ An installed (Home Screen) app has no address bar or reload button, so:
 - **Device protection** (optional): a new device waits on "Waiting for approval…" until the primary taps Approve. If the primary is lost, **Approve by e-mail** sends a link; opening it on the waiting device approves it and makes it primary (`approveDeviceByEmail`). This is a lock inside Hi. The database identifies the *account*, not the device, so the real protection is Google's [2-Step Verification](https://myaccount.google.com/signinoptions/two-step-verification).
 - No location is collected.
 
+## Watch list and Music
+
+The 🎬 🎵 switch in a chat's header opens two shared lists that slide in from the right.
+- **Watch list:** paste a Netflix, Prime Video, Disney+ or YouTube link.
+  - Each title goes from Want → Watching → Watched. You each give it ⭐ and a reaction, and 🎡 Pick for tonight spins the wheel over the Want list.
+  - The `mediaAdded` function fills in the title and poster from the page, and sends the other person a quiet push.
+- **Music:** paste a Spotify, YouTube or Apple Music link.
+  - It plays inline, the playlist is shared, and one song can be ⭐ Song of the day.
+- **Watching together:**
+  - YouTube plays in sync: play, pause and seek follow on both phones, with live reactions.
+  - Netflix, Prime and Disney+ can't be controlled from outside, so they get a shared **3-2-1 Play** countdown instead.
+  - Spotify plays together in Spotify's own Jam.
+- **Data:** items live in `rooms/{id}/media`, and the shared player in `rooms/{id}/together/now`. The 🎬 badge reads `room.mediaWantCount`, so the chat screen doesn't listen to the list.
+- **No keys needed.**
+- **Tests:** add `localStorage['hi.fakePlayer'] = '1'` to use a fake player instead of YouTube's.
+
 ## Scaling to more users
 
 The free tier fits roughly 25–35 heavy or 75–150 normal daily users. The parked plan to make Hi lighter on the database (less frequent presence updates, throttled typing, smaller message pages, no listeners for chats you aren't looking at) is in [`docs/SCALING.md`](docs/SCALING.md).

@@ -25,6 +25,8 @@ function toRoom(id: string, d: any): Room {
     moves: d.moves && typeof d.moves === 'object' ? d.moves : {},
     lastThreadReplyAt: d.lastThreadReplyAt || null,
     lastThreadReplyBy: typeof d.lastThreadReplyBy === 'string' ? d.lastThreadReplyBy : null,
+    mediaWantCount: typeof d.mediaWantCount === 'number' && d.mediaWantCount > 0 ? Math.floor(d.mediaWantCount) : 0,
+    songOfDay: d.songOfDay && typeof d.songOfDay.id === 'string' ? { id: d.songOfDay.id, by: String(d.songOfDay.by || '') } : null,
   };
 }
 

@@ -28,7 +28,6 @@ import { usePullToRefresh } from './PullToRefresh';
 import { enablePush, pushStatus, type PushStatus } from '../data/push';
 import { chooseTheme } from '../data/prefs';
 import { currentPrefs, onThemeChange, type ThemePrefs } from '../lib/themes';
-import { ModeToggle } from './ModeToggle';
 import { drops, getDrop, trayDrops } from '../drops/registry';
 import type { DropDefinition, Person } from '../drops/types';
 import { firstName } from '../lib/names';
@@ -36,7 +35,7 @@ import { blockContact, deleteRoom, leaveRoom, setContact, unblock, type Blocked,
 import { displayName, noteLabel } from '../lib/profile';
 import { Avatar, ContactSheet, DeleteAccountSheet, ProfileForm, useProfile } from './Profile';
 import { dayLabel, lastSeenLabel, toMillis } from '../lib/time';
-import type { Member, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab, TopPin } from '../types';
+import type { Member, MediaItem, Message, MoodId, Pin, ReactionCode, ReplyRef, Room, Scheduled, Tab, TopPin, Together } from '../types';
 import { DropCard } from './DropCard';
 import { ThreadTile, ThreadView } from './Thread';
 import { DailyBanner } from './Daily';
@@ -58,8 +57,13 @@ import { evictMedia, evictedBetween, seenOf } from '../lib/mediaCache';
 import { EffectArmed, EffectsSheet, EffectSuggestion, EffectTag, EffectText, isCanvasEffect, playScreen } from './Effects';
 import { loadPlayed, motionOn, pickArrival, previewFor, savePlayed, suggestEffect, type EffectCode } from '../lib/effects';
 import { MoodSheet, SettingsSheet, SetupSheet, TraySheet } from './Sheets';
+import { CountdownOverlay, MediaPanel, MediaSwitch, TogetherBar, TogetherView } from './Media';
+import { startCountdown, startVideo, watchTogether } from '../data/media';
+import type { MediaKind } from '../lib/media';
+import { countdownStage } from '../lib/media';
+import { currentMode, toggledPrefs } from '../lib/themes';
 import { ArchivedSheet, TabBar, TabSheet } from './Tabs';
-import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon, SettingsIcon } from './icons';
+import { BackIcon, BookmarkIcon, XIcon, MoodIcon, MOODS, PhotoIcon, PlusIcon, SendIcon } from './icons';
 
 type Sheet =
   | null
@@ -84,7 +88,8 @@ type Sheet =
   | { kind: 'search'; filter?: SearchFilter }
   | { kind: 'export' }
   | { kind: 'streak' }
-  | { kind: 'self-info' };
+  | { kind: 'self-info' }
+  | { kind: 'menu' };
 
 interface Toast { text: string; undo?: () => void }
 
@@ -137,6 +142,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
   const [pins, setPins] = useState<Pin[]>([]);
   const [countdowns, setCountdowns] = useState<CountdownDrop[]>([]);
   const [scrapOpen, setScrapOpen] = useState(false);
+  // Watch list / Music panel, the watch-together view, and what's playing together.
+  const [media, setMedia] = useState<MediaKind | null>(null);
+  const [together, setTogether] = useState<Together | null>(null);
+  const [togetherOpen, setTogetherOpen] = useState(false);
+  const [togetherHidden, setTogetherHidden] = useState('');
+  const [countdownSeen, setCountdownSeen] = useState(0);
   // A Drop opened on its own (from the countdown banner), as a pop-up.
   const [dropPop, setDropPop] = useState<string | null>(null);
   // dropId → Drop type, reported by each Drop card (for reply / pin / list previews).
@@ -237,6 +248,12 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     ];
     return () => unsubs.forEach((u) => u());
   }, [room.id, user.uid]);
+
+  // What's playing together in this chat (one small doc).
+  useEffect(() => {
+    if (room.self) { setTogether(null); return; }
+    return watchTogether(room.id, setTogether);
+  }, [room.id, room.self]);
 
   // If the saved/linked tab doesn't exist (any more), fall back to General.
   useEffect(() => {
@@ -553,6 +570,16 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
     }
   };
 
+  // ▶ Watch together: start the shared session, tell them in the chat, and open the player.
+  const watchTogetherOn = async (item: MediaItem) => {
+    try {
+      await startVideo(room.id, user.uid, item);
+      setMedia(null);
+      setTogetherOpen(true);
+      await sendText(room.id, activeTab, user.uid, `▶ Watching "${item.title}" together, tap Join at the top`);
+    } catch (e: any) { flash(e?.message || 'Could not start that.'); }
+  };
+
   const pin = (p: NewPin) =>
     addPin(room.id, user.uid, { tabId: activeTab, ...p, order: topOrder(pins) }).then(() => flash('Pinned to scrapbook')).catch((e) => flash(e.message));
   /** A message (or photo) as a scrap. */
@@ -759,8 +786,9 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           <div class="hdr-name-row">
             <span class="hdr-name">{partner.name}</span>
             {partnerUid && partnerMember?.mood && (
-              <span class="their-mood" role="img" aria-label={`${partner.name}'s mood: ${MOODS.find((m) => m.id === partnerMember.mood)?.label}`}>
-                <MoodIcon mood={partnerMember.mood} size={22} />
+              <span class="their-mood" role="img" aria-label={`${partner.name}'s mood: ${MOODS.find((m) => m.id === partnerMember.mood)?.label}`}
+                title={`${partner.name}'s mood: ${MOODS.find((m) => m.id === partnerMember.mood)?.label}`}>
+                <MoodIcon mood={partnerMember.mood} size={26} accent />
               </span>
             )}
           </div>
@@ -768,23 +796,23 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
             <div class="hdr-sub-row">
               {streak.state === 'on' && streak.result && <StreakChip count={streak.result.count} onClick={() => setSheet({ kind: 'streak' })} />}
               <PartnerStatus member={partnerMember} joined={!!partnerUid} invited={room.invites[0] || ''} />
+              {/* Mine sits under theirs, after their status and marked "you", so the faces are never confused. */}
+              <button type="button" class="my-mood" onClick={() => setSheet({ kind: 'mood' })}
+                aria-label={`Your mood weather: ${MOODS.find((m) => m.id === myMood)?.label}. Change it`} title="Your mood">
+                <span class="my-mood-tag" aria-hidden="true">you</span>
+                <MoodIcon mood={myMood} size={22} accent />
+              </button>
             </div>
           )}
         </div>
         <div class="hdr-actions">
-          {!isSelf && (
-            <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'mood' })}
-              aria-label={`Your mood weather: ${MOODS.find((m) => m.id === myMood)?.label}. Change it`}>
-              <MoodIcon mood={myMood} size={24} />
-            </button>
-          )}
-          <ModeToggle uid={user.uid} />
-          <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'settings' })} aria-label="Settings">
-            <SettingsIcon />
+          <MediaSwitch want={room.mediaWantCount} onOpen={(k) => { setSheet(null); setMedia(k); }} />
+          <button type="button" class="icon-btn" onClick={() => { setSheet(null); setScrapOpen(true); }} aria-label="Open scrapbook">
+            <BookmarkIcon />
+            {pins.length > 0 && <span class="badge">{pins.length}</span>}
           </button>
-        <button type="button" class="icon-btn" onClick={() => { setSheet(null); setScrapOpen(true); }} aria-label="Open scrapbook">
-          <BookmarkIcon />
-          {pins.length > 0 && <span class="badge">{pins.length}</span>}
+          <button type="button" class="icon-btn" onClick={() => setSheet({ kind: 'menu' })} aria-label="Chat menu" aria-haspopup="dialog">
+            <MoreIcon />
           </button>
         </div>
       </header>
@@ -809,6 +837,11 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
           onToScrapbook={topToScrapbook} />
       )}
       <CountdownBanner items={countdowns} onOpen={setDropPop} />
+      {together?.kind === 'video' && !togetherOpen && togetherHidden !== `${together.itemId}:${together.by}`
+        && Date.now() - together.atMs < 3 * 3600_000 && (
+        <TogetherBar together={together} me={user.uid} partnerName={partner.name}
+          onJoin={() => setTogetherOpen(true)} onDismiss={() => setTogetherHidden(`${together.itemId}:${together.by}`)} />
+      )}
 
       <Feed
         messages={shown}
@@ -1095,6 +1128,20 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
             setTimeout(() => openPinnedMessage(p.tabId, p.messageId!), 120);
           }} />
       )}
+      {media && (
+        <MediaPanel room={room} me={me} partner={partner} kind={media} onKind={setMedia} onToast={flash}
+          onClose={() => setMedia(null)}
+          onWatchTogether={(item) => watchTogetherOn(item)}
+          onCountdown={(item) => startCountdown(room.id, user.uid, item).catch((e) => flash(e.message))} />
+      )}
+      {togetherOpen && together?.kind === 'video' && (
+        <TogetherView roomId={room.id} me={me} partner={partner} together={together} onToast={flash}
+          onClose={() => setTogetherOpen(false)} />
+      )}
+      {together?.kind === 'countdown' && together.countdownAtMs && countdownSeen !== together.countdownAtMs
+        && !countdownStage(together.countdownAtMs, Date.now()).done && (
+        <CountdownOverlay together={together} roomId={room.id} me={user.uid} onClose={() => setCountdownSeen(together.countdownAtMs || 0)} />
+      )}
       {dropPop && (
         <div class="scrap-pop chat-pop" role="dialog" aria-modal="true" aria-label="Countdown">
           <button type="button" class="scrim" onClick={() => setDropPop(null)} aria-label="Close" />
@@ -1173,6 +1220,20 @@ export function Chat({ user, room, contacts, blocked, scheduled = [], onBack }: 
             {sheet.kind === 'invite' && (
               <AddContactSheet user={user} room={room} onToast={flash} onClose={() => setSheet(null)}
                 onMakeSelf={async () => { await makeSelfRoom(room, user.uid); flash('This is now your Notes to self'); }} />
+            )}
+            {sheet.kind === 'menu' && (
+              <ChatMenu
+                isSelf={isSelf}
+                partnerName={partner.name}
+                canContact={!!partnerUid}
+                muted={isMuted(prefs)}
+                onMode={() => { const next = toggledPrefs(); setTheme(next); chooseTheme(user.uid, next); setSheet(null); }}
+                onSettings={() => setSheet({ kind: 'settings' })}
+                onSearch={() => setSheet({ kind: 'search' })}
+                onContact={() => setSheet({ kind: isSelf ? 'self-info' : 'contact' })}
+                onMute={partnerUid ? () => { setSheet(null); const m = !isMuted(prefs); setContact(user.uid, partnerUid, muteFor(m ? 'always' : 'off')).then(() => flash(m ? 'Muted' : 'Unmuted')).catch((e) => flash(e.message)); } : undefined}
+                onExport={() => setSheet({ kind: 'export' })}
+              />
             )}
             {sheet.kind === 'self-info' && (
               <div class="stack">
@@ -1466,9 +1527,9 @@ function useNow(ms: number, active = true) {
 function PartnerStatus({ member, joined, invited }: { member?: Member; joined: boolean; invited: string }) {
   const now = useNow(30_000);
   if (!joined) return <div class="hdr-sub">{invited ? 'Invite sent · not joined yet' : 'No one invited yet'}</div>;
-  const mood = member?.mood ? MOODS.find((m) => m.id === member.mood) : undefined;
+  // Their mood is the face by the name (labelled for screen readers), so this is just presence.
   const seen = lastSeenLabel(member?.lastSeen ? member.lastSeen.toMillis() : null, now);
-  return <div class="hdr-sub">{mood ? `${mood.label} · ${seen}` : seen}</div>;
+  return <div class="hdr-sub">{seen}</div>;
 }
 
 function TypingIndicator({ member, name, tabId }: { member?: Member; name: string; tabId: string }) {
@@ -1477,4 +1538,29 @@ function TypingIndicator({ member, name, tabId }: { member?: Member; name: strin
   const now = useNow(1000, until > Date.now());
   if (until <= Math.max(now, Date.now())) return null;
   return <div class="row"><div class="bubble theirs typing">{name} is typing…</div></div>;
+}
+
+const MoreIcon = () => (
+  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9" /><circle cx="12" cy="12" r="1.9" /><circle cx="19" cy="12" r="1.9" /></svg>
+);
+
+/** ⋯ in the chat header: light/dark, settings and this chat's options. */
+function ChatMenu(p: {
+  isSelf: boolean; partnerName: string; canContact: boolean; muted: boolean;
+  onMode(): void; onSettings(): void; onSearch(): void; onContact(): void; onMute?: () => void; onExport(): void;
+}) {
+  const dark = currentMode() === 'dark';
+  return (
+    <div class="stack">
+      <div class="sheet-title">{p.isSelf ? 'Notes to self' : p.partnerName}</div>
+      <div class="act-list">
+        <button type="button" class="act-btn" onClick={p.onMode} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>{dark ? '☀️ Light mode' : '🌙 Dark mode'}</button>
+        <button type="button" class="act-btn" onClick={p.onSettings} aria-label="Settings">⚙️ Settings</button>
+        <button type="button" class="act-btn" onClick={p.onSearch}>🔎 Search this chat</button>
+        {(p.canContact || p.isSelf) && <button type="button" class="act-btn" onClick={p.onContact}>{p.isSelf ? '📝 About Notes to self' : `👤 ${p.partnerName}’s profile`}</button>}
+        {p.onMute && <button type="button" class="act-btn" onClick={p.onMute}>{p.muted ? '🔔 Unmute notifications' : '🔕 Mute notifications'}</button>}
+        <button type="button" class="act-btn" onClick={p.onExport}>📤 Export chat</button>
+      </div>
+    </div>
+  );
 }

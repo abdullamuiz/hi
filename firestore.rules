@@ -310,6 +310,25 @@ service cloud.firestore {
           && me() in resource.data.members
           && validMoves(incoming().moves, resource.data.members)
         )        ||
+        // Watch list badge count (kept with each status change) and Music's song of the day.
+        (
+          changedKeys().hasOnly(['mediaWantCount'])
+          && me() in resource.data.members
+          && incoming().mediaWantCount is int
+          && incoming().mediaWantCount >= -1000 && incoming().mediaWantCount <= 10000
+        )
+        ||
+        (
+          changedKeys().hasOnly(['songOfDay'])
+          && me() in resource.data.members
+          && (incoming().songOfDay == null
+              || (incoming().songOfDay is map
+                  && incoming().songOfDay.keys().hasOnly(['id', 'by', 'at'])
+                  && str(incoming().songOfDay.id, 1, 64)
+                  && incoming().songOfDay.by == me()
+                  && incoming().songOfDay.at == request.time))
+        )
+        ||
         // Pin messages to the top of the chat (max 3), or take them down.
         (
           changedKeys().hasOnly(['pinned'])
@@ -882,6 +901,90 @@ service cloud.firestore {
         );
         // Your own pins; notes belong to both of you.
         allow delete: if isMember(roomId) && (resource.data.by == me() || resource.data.get('kind', '') == 'note');
+      }
+
+      // -------------------------------------------------------- media (Watch list, Music)
+      // rooms/{id}/media/{itemId}: a pasted link. The adder sets what it is; either of you
+      // moves it along (status, episode, order) and keeps your own stars and reaction.
+      // The server fills title/image/siteName/description from the page (preview).
+      match /media/{itemId} {
+        function providers() { return ['netflix', 'prime', 'disney', 'youtube', 'spotify', 'apple', 'other']; }
+        function optStr(k, max) { return incoming().get(k, null) == null || str(incoming().get(k, null), 0, max); }
+        function validStatus() {
+          return (incoming().kind == 'watch' && incoming().status in ['want', 'watching', 'watched'])
+            || (incoming().kind == 'music' && incoming().status == null);
+        }
+        function onlyMyKey(field) {
+          return incoming()[field].diff(resource.data.get(field, {})).affectedKeys().hasOnly([me()]);
+        }
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId)
+          && onlyKeys(['kind', 'url', 'provider', 'title', 'image', 'siteName', 'description', 'videoId',
+                       'addedBy', 'addedAt', 'status', 'episode', 'ratings', 'reactions', 'order', 'preview'])
+          && incoming().kind in ['watch', 'music']
+          && str(incoming().url, 10, 2048) && incoming().url.matches('^https://.+')
+          && incoming().provider in providers()
+          && str(incoming().title, 1, 200)
+          && (incoming().image == null || (str(incoming().image, 10, 2048) && incoming().image.matches('^https://.+')))
+          && optStr('siteName', 80) && optStr('description', 300)
+          && (incoming().videoId == null || (incoming().videoId is string && incoming().videoId.matches('^[A-Za-z0-9_-]{11}$')))
+          && incoming().addedBy == me()
+          && incoming().addedAt == request.time
+          && validStatus()
+          && incoming().episode == ''
+          && incoming().ratings == {} && incoming().reactions == {}
+          && incoming().order is number
+          && incoming().preview == 'pending';
+        allow update: if isMember(roomId) && (
+          (changedKeys().hasOnly(['status', 'order'])
+            && resource.data.kind == 'watch'
+            && incoming().status in ['want', 'watching', 'watched']
+            && incoming().order is number)
+          || (changedKeys().hasOnly(['episode']) && str(incoming().episode, 0, 40))
+          || (changedKeys().hasOnly(['order']) && incoming().order is number)
+          || (changedKeys().hasOnly(['ratings'])
+            && incoming().ratings is map && onlyMyKey('ratings')
+            && (!(me() in incoming().ratings)
+                || (incoming().ratings[me()] is int && incoming().ratings[me()] >= 1 && incoming().ratings[me()] <= 5)))
+          || (changedKeys().hasOnly(['reactions'])
+            && incoming().reactions is map && onlyMyKey('reactions')
+            && (!(me() in incoming().reactions) || str(incoming().reactions[me()], 1, 16)))
+        );
+        allow delete: if isMember(roomId) && resource.data.addedBy == me();
+      }
+
+      // rooms/{id}/together/now: what you're watching together (YouTube sync) or a 3-2-1.
+      match /together/{docId} {
+        allow read: if isMember(roomId);
+        allow create, update: if isMember(roomId)
+          && docId == 'now'
+          && onlyKeys(['kind', 'itemId', 'title', 'provider', 'videoId', 'state', 'positionSec', 'atMs', 'countdownAtMs', 'by', 'updatedAt'])
+          && incoming().kind in ['video', 'countdown']
+          && str(incoming().itemId, 1, 64) && str(incoming().title, 0, 200)
+          && incoming().provider is string
+          && (incoming().videoId == null || (incoming().videoId is string && incoming().videoId.matches('^[A-Za-z0-9_-]{11}$')))
+          && incoming().state in ['playing', 'paused']
+          && incoming().positionSec is number && incoming().positionSec >= 0
+          && incoming().atMs is number
+          && (incoming().countdownAtMs == null || incoming().countdownAtMs is number)
+          && incoming().by == me()
+          && incoming().updatedAt == request.time;
+        allow delete: if isMember(roomId);
+
+        match /people/{uid} {
+          allow read: if isMember(roomId);
+          allow create, update: if isMember(roomId) && uid == me()
+            && onlyKeys(['atMs', 'at']) && incoming().atMs is number && incoming().at == request.time;
+          allow delete: if false;
+        }
+        match /rx/{rxId} {
+          allow read: if isMember(roomId);
+          allow create: if isMember(roomId)
+            && onlyKeys(['uid', 'emoji', 'atMs', 'at'])
+            && incoming().uid == me() && str(incoming().emoji, 1, 16)
+            && incoming().atMs is number && incoming().at == request.time;
+          allow update, delete: if false;
+        }
       }
 
       // -------------------------------------------------------- drops

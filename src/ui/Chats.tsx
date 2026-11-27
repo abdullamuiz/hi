@@ -381,7 +381,7 @@ function ContactRow({ room, me, contacts, reads, onOpen, onInvite, onMute }: Row
         <span class="chat-text" aria-hidden="true">
           <span class="chat-top">
             <span class="chat-name">{name}</span>
-            {partner?.mood && !room.left && <MoodIcon mood={partner.mood} size={18} />}
+            {partner?.mood && !room.left && <MoodIcon mood={partner.mood} size={20} accent />}
             {fire > 0 && <span class="row-streak"><FlameIcon size={13} />{fire}</span>}
             {muted && <span class="muted-mark" title={muteLabel(prefs)}>🔕</span>}
             <span class="chat-time">{timeLabel(lastMs)}</span>

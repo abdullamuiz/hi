@@ -107,7 +107,7 @@ export default defineDrop<Content>({
 const SLICE_COLOURS = ['#1E7F93', '#F2A15F', '#7C8CF0', '#6FB36F', '#D96C8A', '#E8C547', '#4FA3B8', '#C98A5A', '#9B7FD1', '#58A37A', '#E07A6E', '#B8A140'];
 
 /** The wheel itself: SVG slices that rotate under a fixed pointer. */
-function Wheel({ options, rot, tick, landed, winner, me }: {
+export function Wheel({ options, rot, tick, landed, winner, me }: {
   options: Opt[]; rot: number; tick: number; landed: boolean; winner: number; me: string;
 }) {
   const n = options.length;
