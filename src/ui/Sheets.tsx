@@ -4,7 +4,7 @@ import type { DropDefinition } from '../drops/types';
 import type { SessionTest } from '../sessions/types';
 import type { PushStatus } from '../data/push';
 import { signOut } from '../data/auth';
-import { disablePush } from '../data/push';
+import { blockedHelp, disablePush, hasPushToken } from '../data/push';
 import type { MoodId } from '../types';
 import { MoodIcon, MOODS } from './icons';
 import { MODES, PALETTES, type ThemePrefs } from '../lib/themes';
@@ -189,6 +189,7 @@ interface SettingsProps {
 }
 
 export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = [], onUnblock, onEditProfile, onDeleteAccount, onToast }: SettingsProps) {
+  const [pushHelp, setPushHelp] = useState(false);
   const pushLabel: Record<PushStatus, string> = {
     granted: 'On',
     denied: 'Blocked in browser settings',
@@ -244,8 +245,13 @@ export function SettingsSheet({ user, prefs, onTheme, push, onPush, blocked = []
       <div class="settings">
         <div class="settings-row">
           <span>Notifications</span>
-          {push === 'default' ? <button type="button" class="link-btn" onClick={onPush}>Turn on</button> : <span>{pushLabel[push]}</span>}
+          {push === 'default' || (push === 'granted' && !hasPushToken())
+            ? <button type="button" class="link-btn" onClick={onPush}>Turn on</button>
+            : push === 'denied'
+              ? <button type="button" class="link-btn" onClick={() => setPushHelp(!pushHelp)}>Blocked · How to fix</button>
+              : <span>{pushLabel[push]}</span>}
         </div>
+        {push === 'denied' && pushHelp && <div class="fine install-steps">{blockedHelp()}</div>}
         {onEditProfile && (
           <div class="settings-row">
             <span>Profile</span>

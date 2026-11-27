@@ -22,12 +22,23 @@ export async function pushStatus(): Promise<PushStatus> {
 
 const TOKEN_KEY = 'drops.fcmToken';
 
+/** What to do when the browser has blocked notifications: it won't ask again, so point to the right setting. */
+export function blockedHelp(ua = navigator.userAgent, ios = isIOS()): string {
+  if (ios) return 'Notifications are off for Hi. Open iPhone Settings → Notifications → Hi → Allow Notifications, then tap Turn on again.';
+  if (/Macintosh/.test(ua) && /Safari\//.test(ua) && !/(Chrome|Chromium|Edg|OPR|Firefox)\//.test(ua)) {
+    return 'Safari is blocking notifications. Safari → Settings → Websites → Notifications → set hi-dropchat.web.app to Allow, then reload.';
+  }
+  if (/Firefox\//.test(ua)) return 'Firefox is blocking notifications. Click the lock icon in the address bar → Permissions → allow Notifications, then reload.';
+  if (/Android/.test(ua)) return 'Notifications are blocked. Tap the lock icon in the address bar (or long-press the Hi icon → App info) → Notifications → Allow.';
+  return 'Notifications are blocked. Click the lock/tune icon left of the address → Site settings → Notifications → Allow, then reload.';
+}
+
 /** Ask for permission (must run from a tap) and register this device's FCM token. */
 export async function enablePush(uid: string): Promise<void> {
   if (usingEmulators) throw new Error('Push needs a real Firebase project — fill in src/firebase-config.ts.');
   if ((vapidKey as string) === 'REPLACE_ME') throw new Error('Add your Web Push key (vapidKey) to src/firebase-config.ts.');
   const perm = await Notification.requestPermission();
-  if (perm !== 'granted') throw new Error('Notifications were not allowed.');
+  if (perm !== 'granted') throw new Error(blockedHelp());
   const reg = await navigator.serviceWorker.ready;
   const { getMessaging, getToken } = await fcm();
   const token = await getToken(getMessaging(app), { vapidKey, serviceWorkerRegistration: reg });
@@ -37,6 +48,11 @@ export async function enablePush(uid: string): Promise<void> {
   const { linkPushToken } = await import('./devices');
   linkPushToken(uid, token);
   try { localStorage.setItem(TOKEN_KEY, token); } catch { /* ignore */ }
+}
+
+/** True once this device has registered for push (permission alone isn't enough). */
+export function hasPushToken(): boolean {
+  try { return !!localStorage.getItem(TOKEN_KEY); } catch { return false; }
 }
 
 /** Forget this device's token (on sign-out) so the partner's messages stop arriving here. */
